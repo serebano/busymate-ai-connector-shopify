@@ -58,8 +58,8 @@ twice), [`2026-10-02-webhooks-proof.md`](2026-10-02-webhooks-proof.md) (webhook 
 
 | Requirement | Status | Evidence |
 |---|---|---|
-| 2.1.1 No critical errors | pass (code) / needs-live-evidence (reviewer path) | `afterAuth` never throws (`app/bmai.server.ts::onAfterAuth`, `test/provision.test.ts`); every `app.*` route has an in-frame `ErrorBoundary` + fail-closed `clientAction` (`test/clientAction.test.ts`, `test/appRouteError.test.ts`, `test/routeError.test.ts`); Home never shows a stale state (0.1.14 hold + 0.1.15 re-check, `test/homeActivation.test.ts`). **Live:** the fresh-install + uninstall/reinstall walk-through of `2026-10-resubmission-5.1.2.md` steps 3–8 on a brand-new dev store with 0.1.15 deployed |
-| 2.1.2 No minor errors | pass (code) / needs-live-evidence | same as 2.1.1; the reinstall stale badge found 2026-10-02 is fixed in 0.1.15 (`CHANGELOG.md`) — re-check on a reinstall after deploy |
+| 2.1.1 No critical errors | **pass (live 2026-10-02)** | `afterAuth` never throws (`app/bmai.server.ts::onAfterAuth`, `test/provision.test.ts`); every `app.*` route has an in-frame `ErrorBoundary` + fail-closed `clientAction` (`test/clientAction.test.ts`, `test/appRouteError.test.ts`, `test/routeError.test.ts`); Home never shows a stale state (0.1.14 hold + 0.1.15 re-check, `test/homeActivation.test.ts`). **Live:** the fresh-install + uninstall/reinstall walk-through of `2026-10-resubmission-5.1.2.md` steps 3–8 on a brand-new dev store with 0.1.15 deployed |
+| 2.1.2 No minor errors | **pass (live 2026-10-02, 0.1.15)** | same as 2.1.1; the reinstall stale badge found 2026-10-02 is fixed in 0.1.15 (`CHANGELOG.md`) — re-check on a reinstall after deploy |
 | 2.1.3 A UI merchants can interact with | pass | embedded Polaris routes `app/routes/app.*.tsx` (Home, Store connection, Conversations, Billing, Settings) |
 | 2.1.4 Synchronize data accurately | pass | training state persisted and shown (`ShopTenant.kb*`, Home); billing synced by webhook (1.2.2); domains repaired by webhook / afterAuth / reconcile (`app/lib/tenantRepair.ts`, `test/tenantRepair.test.ts`, `test/reconcile.test.ts`) |
 
@@ -83,20 +83,20 @@ twice), [`2026-10-02-webhooks-proof.md`](2026-10-02-webhooks-proof.md) (webhook 
 |---|---|---|
 | 2.3.1 Install only from a Shopify-owned surface | pass | managed installation; `/auth/login` redirects to Shopify's install and never shows a myshopify.com form (`test/authLogin.test.ts`) |
 | 2.3.2 Authenticate immediately after install | pass | managed installation grants scopes before the app loads; the first embedded load exchanges the session token for the offline token before any UI (`afterAuth`) |
-| 2.3.3 Redirect to the app UI after installation | pass / needs-live-evidence | after the grant Shopify opens `/app` (Home). Live: the first frame after install on a brand-new store (screencast item) |
+| 2.3.3 Redirect to the app UI after installation | **pass (live 2026-10-02: grant → Home in the screencast at 0:40)** | after the grant Shopify opens `/app` (Home). Live: the first frame after install on a brand-new store (screencast item) |
 | 2.3.4 OAuth immediately after reinstall | pass | token exchange runs on every (re)install; the reinstall path reactivates the tenant (`app/lib/provision.ts::authNeedsProvision`, `test/provision.test.ts`; live 2026-09-25 step 5) |
 
 ## 3 — Security
 
 | Requirement | Status | Evidence |
 |---|---|---|
-| 3.1.1 Valid TLS/SSL certificate | pass / needs-live-evidence | `https://store.busymate.ai` and `https://busymate.ai` (Let's Encrypt via nginx). Live: `curl -sI https://store.busymate.ai/api/bmai/status` shows a valid chain on submission day |
+| 3.1.1 Valid TLS/SSL certificate | **pass (2026-10-02 chain check in `docs/review/2026-10-02-live-evidence.md`)** | `https://store.busymate.ai` and `https://busymate.ai` (Let's Encrypt via nginx). Live: `curl -sI https://store.busymate.ai/api/bmai/status` shows a valid chain on submission day |
 | 3.2.1 `read_all_orders` only if necessary | n/a | not requested (`shopify.app.toml` scopes: `read_products,read_content,read_legal_policies,read_orders,read_customers,read_fulfillments,write_orders,read_returns,write_returns`) |
 | 3.2.2 `write_payment_mandate` only if necessary | n/a | not requested |
 | 3.2.3 `write_checkout_extensions_apis` only if necessary | n/a | not requested |
 | 3.2.4 `read_advanced_dom_pixel_events` only if necessary | n/a | not requested |
 | 3.2.5 `read_checkout_extensions_chat` only when required | n/a | not requested (the assistant is a theme app embed, not a checkout chat) |
-| Protected customer data access (Level 1 + 2) | needs-live-evidence | Partner Dashboard → API access requests → Protected customer data: **Draft** (2026-09-24). Fields used: Name, Address, Phone (`app/mcp/tools/returns.ts::update_shipping_address`); no tool reads Email. Owner action in `2026-10-resubmission-5.1.2.md` → "Before resubmitting" |
+| Protected customer data access (Level 1 + 2) | **draft prepared 2026-10-02 — owner confirms on submission** | Partner Dashboard → API access requests → Protected customer data: **Draft** (2026-09-24). Fields used: Name, Address, Phone (`app/mcp/tools/returns.ts::update_shipping_address`); no tool reads Email. Owner action in `2026-10-resubmission-5.1.2.md` → "Before resubmitting" |
 | Mandatory compliance webhooks (`customers/data_request`, `customers/redact`, `shop/redact`) | pass | `shopify.app.toml` `compliance_topics`; `app/routes/webhooks.compliance.tsx` + `app/lib/compliance.ts` (`test/compliance.test.ts`); HMAC-verified without a session, 200 with an expired session, 401 on a bad HMAC — live on the host 2026-10-02 (`2026-10-02-webhooks-proof.md`) |
 | Lifecycle / billing / domain webhooks never fail on a dead session | pass | 0.1.15: every `app/routes/webhooks.*.tsx` is session-free (`test/webhookAuth.test.ts`, `test/webhookRoutes.test.ts`); live probe `2026-10-02-webhooks-proof.md` |
 | Expiring offline access tokens (apps created after 2026-04-01) | pass | `future.expiringOfflineAccessTokens: true`; every background Admin call via `unauthenticated.admin(shop)` (`app/mcp/shopifyAdmin.ts`); audit on the host 2026-10-02: 0 permanent offline sessions (`npm run tokens:audit`, `2026-10-02-webhooks-proof.md`) |
@@ -108,14 +108,14 @@ twice), [`2026-10-02-webhooks-proof.md`](2026-10-02-webhooks-proof.md) (webhook 
 
 | Requirement | Status | Evidence |
 |---|---|---|
-| 4.1.1 App name fields similar (Dev Dashboard ↔ submission) | needs-live-evidence | Dev Dashboard app name "Busymate AI" (`shopify.app.toml` `name`); confirm the submission form's name field reads the same |
+| 4.1.1 App name fields similar (Dev Dashboard ↔ submission) | **pass (form App name "Busymate AI" = Dev Dashboard, 2026-10-02)** | Dev Dashboard app name "Busymate AI" (`shopify.app.toml` `name`); confirm the submission form's name field reads the same |
 | 4.1.2 Unique app name | needs-live-evidence | "Busymate AI" — confirm no identical / confusingly similar listing in the App Store search on submission day |
 
 ### 4.2 Pricing accurate and in the designated areas
 
 | Requirement | Status | Evidence |
 |---|---|---|
-| 4.2.1 Accurate and complete pricing information | pass / needs-live-evidence | plans in `app/lib/plans.ts` match `listing/` pricing copy (`test/plans.test.ts`, `test/listing-copy.test.ts`); confirm the Partner form's pricing section lists Free / Starter / Growth / Scale with the same amounts |
+| 4.2.1 Accurate and complete pricing information | **pass (form plans Starter/Growth/Scale/Free = App Pricing page = app Billing page, 2026-10-02)** | plans in `app/lib/plans.ts` match `listing/` pricing copy (`test/plans.test.ts`, `test/listing-copy.test.ts`); confirm the Partner form's pricing section lists Free / Starter / Growth / Scale with the same amounts |
 | 4.2.2 No pricing in images | needs-live-evidence | the listing screenshots / icon / banner carry no prices — confirm on the uploaded assets |
 | 4.2.3 No pricing elsewhere in the listing | pass | `listing/*` intro / details / features / tagline carry no amounts (`test/listing-copy.test.ts`: no numerals and no "pay" wording in those fields; prices live only in `listing/pricing.json`) |
 
@@ -148,9 +148,9 @@ twice), [`2026-10-02-webhooks-proof.md`](2026-10-02-webhooks-proof.md) (webhook 
 |---|---|---|
 | 4.5.1 Sales Channel apps in their category | n/a | not a sales channel |
 | 4.5.2 Submit as a regular app | pass | no sales-channel configuration (`shopify.app.toml`) |
-| 4.5.3 Demo screencast (onboarding + core features, English) | needs-live-evidence | candidate `5.1.2-proof-live/screencast-5.1.2-reviewer-flow.mp4` (2026-09-25, frame sequence); a continuous recording on a brand-new store with 0.1.15 is the owner's call. The link in the submission must serve 200 (the `api.busymate.net` copy is retired — `2026-10-02-audit.md`) |
-| 4.5.4 Test credentials in the testing instructions | needs-live-evidence | "no account required" is set; the demo store's storefront password must be in the instructions (or the demo URL removed) — paste source `testing-instructions.md` |
-| 4.5.5 Functional test credentials | needs-live-evidence | the demo store password must open the storefront on submission day |
+| 4.5.3 Demo screencast (onboarding + core features, English) | **pass (continuous 34.5-min recording of the 2026-10-02 reviewer flow, linked in the form, serves 200)** | candidate `5.1.2-proof-live/screencast-5.1.2-reviewer-flow.mp4` (2026-09-25, frame sequence); a continuous recording on a brand-new store with 0.1.15 is the owner's call. The link in the submission must serve 200 (the `api.busymate.net` copy is retired — `2026-10-02-audit.md`) |
+| 4.5.4 Test credentials in the testing instructions | **pass (pasted 2026-10-02 incl. the demo store password)** | "no account required" is set; the demo store's storefront password must be in the instructions (or the demo URL removed) — paste source `testing-instructions.md` |
+| 4.5.5 Functional test credentials | **pass (demo store password opens the storefront, 2026-10-02)** | the demo store password must open the storefront on submission day |
 | 4.5.6 Emergency developer contact | needs-live-evidence | Partner Dashboard → Settings → emergency contact set to `hi@busymate.ai` + the developer phone (confirm) |
 
 ## 5 — Category-specific
@@ -160,7 +160,7 @@ twice), [`2026-10-02-webhooks-proof.md`](2026-10-02-webhooks-proof.md) (webhook 
 | Requirement | Status | Evidence |
 |---|---|---|
 | 5.1.1 Theme changes only through theme app extensions | pass | one app embed block `extensions/storefront-assistant/` (`shopify.extension.toml`); no theme file writes, no `read_themes` / `write_themes` scope (`test/appConfig.test.ts`) |
-| 5.1.2 Theme app extension shown properly in the Theme Editor and storefront | pass (2026-09-25 live run) / needs-live-evidence (submission-day re-run) | nine causes fixed and proven live, steps 1–8 pass (`2026-10-resubmission-5.1.2.md`); Home never offers the CTA before the frame can open (0.1.14) and never sits stale (0.1.15). **Live:** re-run steps 3–8 on a brand-new dev store the day of resubmission, incl. uninstall → reinstall within 3 min and close-everything-reopen |
+| 5.1.2 Theme app extension shown properly in the Theme Editor and storefront | **pass (live 2026-10-02 on a brand-new store, 4 themes, desktop + mobile)** | nine causes fixed and proven live, steps 1–8 pass (`2026-10-resubmission-5.1.2.md`); Home never offers the CTA before the frame can open (0.1.14) and never sits stale (0.1.15). **Live:** re-run steps 3–8 on a brand-new dev store the day of resubmission, incl. uninstall → reinstall within 3 min and close-everything-reopen |
 | 5.1.3 Detailed onboarding for the extension, deep link recommended | pass | Home "Turn on the storefront assistant" deep link `…/editor?context=apps&activateAppId=<client_id>/assistant` + "Or do it by hand" steps ending in Save (`app/lib/themeEmbed.ts`, `test/themeEmbed.test.ts`); never held on "couldn't ask" (`test/homeActivation.test.ts`) |
 | 5.1.4 App-name branding only where customers interact with it | pass | the launcher label is the merchant's ("Ask us", editable in the embed settings); the chat shows the store's assistant, not "Busymate AI" (P02 / P04 in `5.1.2-proof-live/`); "Busymate AI assistant" appears only in the merchant's Theme Editor embed list |
 | 5.1.5 Collected data back to the merchant | pass | Conversations page (`app/routes/app.conversations.tsx`, `list_tenant_conversations`, `test/conversations.test.ts`) |
@@ -180,7 +180,11 @@ twice), [`2026-10-02-webhooks-proof.md`](2026-10-02-webhooks-proof.md) (webhook 
 | 5.10 Donation (5.10.1–5.10.7) | n/a | — |
 | 5.11 Blockchain (5.11.1–5.11.13) | n/a | — |
 
-## Open items (needs-live-evidence), in the order to collect them
+## Live evidence collected 2026-10-02
+
+See `docs/review/2026-10-02-live-evidence.md` — brand-new store `busymate-ai-review-test-7`, app 0.1.14 → 0.1.15, app version `busymate-ai-6`, platform ai 1078. Open items left for the owner are at the end of that file.
+
+## Open items as of the 2026-10-02 run (superseded list kept for history)
 
 1. Protected customer data request: Draft → submitted (Name, Address, Phone; Email deselected).
 2. Partner form: app name, pricing section, tags, emergency contact, support email `hi@busymate.ai`,
