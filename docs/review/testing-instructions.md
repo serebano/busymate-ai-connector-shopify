@@ -1,3 +1,9 @@
+<!-- Paste source for the Partner Dashboard "Testing instructions" field (2800 chars max).
+     Before pasting (audit 2026-10-02, docs/review/2026-10-02-audit.md): the form's "Demo store URL"
+     is a password-protected development store — either add its storefront password to the ACCESS
+     paragraph below (the password lives in that store's Online Store → Preferences, never in this
+     public repo) or clear the Demo store URL field. Support email in the form: hi@busymate.ai.
+     Screencast URL: a link that opens without sign-in (not the retired api.busymate.net host). -->
 ACCESS / REQUIREMENT 4.5.4
 No separate Busymate AI account, password, SSO or two-factor login exists or is required: Shopify authenticates the embedded app, and shoppers use your test store's native customer sign-in. There are no credentials to provide. Support: hi@busymate.ai
 
