@@ -97,6 +97,32 @@ with developer hints on any unknown route — is removed by the branded root
 `ErrorBoundary` (`app/root.tsx` + `app/lib/routeError.ts`), and `/favicon.ico` +
 `/robots.txt` are now real files under `public/`.
 
+## 3e. Releasing an app version (`shopify app deploy`) without the interactive login 🔒
+
+The theme extension + `shopify.app.toml` config reach Shopify only through an **app version**.
+Since 2026-05 the non-interactive credential is the Dev Dashboard **App automation token**
+(Settings → App automation token → Rotate; 1/3/6 months; the value is shown once). The Shopify CLI
+reads it from `SHOPIFY_APP_AUTOMATION_TOKEN`. The token lives in the Vault under that name
+(`SHOPIFY_APP_AUTOMATION_TOKEN`, rotated 2026-10-02, 6 months) — never in a file, never on argv.
+
+- `shopify.app.production.toml` = `shopify.app.toml` with the real (public) `client_id`; it is
+  gitignored. `--config production` selects it.
+- Run through a value-blind wrapper that resolves the Vault secret and hands it to the CLI via the
+  environment only (the busymate-devtools helpers `scripts/lib/bootstrap-pair.mjs` +
+  `scripts/lib/app-secret.mjs`); print status, never the token:
+
+```bash
+# from the app checkout; the CLI 4.x has no --force (CI=1 makes it non-interactive)
+SHOPIFY_APP_AUTOMATION_TOKEN=<from the Vault, via env> \
+  npx shopify app deploy --config production --allow-updates \
+    --message "<version>: <what the extension/config change is>" \
+    --source-control-url "https://github.com/serebano/busymate-ai-connector-shopify/commit/<sha>"
+```
+
+`busymate-ai-6` (2026-10-02) was released this way. `app versions list --config production` is the
+read-only check. The GitHub `deploy.yml` workflow expects the same value as the
+`SHOPIFY_APP_AUTOMATION_TOKEN` repository secret.
+
 ## 3c. Expiring offline access tokens — one-off cycling of pre-upgrade sessions 🔒
 
 Public apps created after 2026-04-01 must use **expiring** offline access tokens;
