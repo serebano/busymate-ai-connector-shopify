@@ -4,6 +4,58 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-10-02 — 0.1.15: Home re-checks while the runtime settles; webhooks never 5xx on a dead session; webhook + token compliance proof; requirements matrix
+
+Owner order 2026-10-02 "make the Shopify connector 100% ready" (busymate-devtools#3995).
+
+**Home stale badge after a reinstall** (found live on `busymate-ai-review-test-7`, app 0.1.14): right
+after a reinstall Home painted "1/4 done · Activating" and "Assistant provisioned: To do — waiting to
+become active" while "Turn on the storefront assistant" was already ENABLED — the platform's
+`/api/embed-status` answered `frameable:true` before the runtime-readiness read said `ready` — and no
+self re-check ran, because the re-check was tied to the HOLD (`activating`), which is off whenever the
+CTA is offered. The badge stayed stale until a manual reload ("2/4 · Live").
+
+- `app/lib/homeActivation.ts` now returns `{ embedReady, activating, recheck }`: the RE-CHECK condition
+  is separate from the HOLD condition. Home keeps re-checking (5 s × 5 min, then 30 s) whenever the
+  runtime is not yet `ready` — pending / orphaned / unverified / null while published, or not published
+  at all — even while the CTA is offered; the "being activated" banner stays tied to the hold only. A
+  runtime `error` is the one settled non-ready state and is never re-polled (Retry setup re-runs the
+  lifecycle). `app/routes/app._index.tsx` wires `useActivationRecheck(data.recheck)`.
+- `app/lib/runtimeReadiness.ts`: the pending / unverified copy no longer says "Refresh to check again"
+  (the page checks by itself).
+- `test/homeActivation.test.ts`: the reinstall case (published, runtime pending, frameable true →
+  embedReady true, activating false, recheck true), the ready case (recheck false) and an exhaustive
+  arm sweep (`recheck === activating || runtime not settled`; an offered CTA is never "activating").
+
+**Webhooks never answer 5xx on a dead session** (owner item d). `authenticate.webhook` loads the
+shop's offline session and, under expiring offline tokens, REFRESHES it first; after an uninstall, or
+for a shop whose refresh token Shopify no longer honours, that refresh fails and the library throws a
+500 — Shopify retries, then DELETES the subscription after 8 failures. 0.1.13 moved
+`app/uninstalled` and the three GDPR topics off that path; 0.1.15 moves EVERY webhook route:
+
+- `app/routes/webhooks.domains.tsx`, `webhooks.app_subscriptions.update.tsx`,
+  `webhooks.app.scopes_update.tsx`, `webhooks.kb.products.tsx`, `webhooks.kb.orders.tsx` verify the
+  HMAC with `authenticateWebhookWithoutSession` and ack 200 at once; the Admin-API work (the domains
+  refresh, the re-train) already ran in the background through `unauthenticated.admin(shop)` with
+  its own error handling, and `app/scopes_update` records the new scope set on the offline session
+  row by its deterministic id (`offlineSessionId(shop)`, `app/lib/webhookAuth.ts`) without loading or
+  refreshing it.
+- `test/webhookAuth.test.ts` derives the route list from `app/routes/webhooks.*.tsx` (no webhook
+  route may import `authenticate.webhook`); `test/webhookRoutes.test.ts` drives every route's action
+  with HMAC-signed deliveries for a shop whose offline session is EXPIRED or MISSING: 200 on each
+  topic, 401 on a bad HMAC, and the session store is never read.
+- `scripts/webhook-probe.ts` (`npm run webhooks:probe`): the HMAC-signed synthetic delivery run from
+  the host — seeds `probe-expired-<ts>.myshopify.com` with an EXPIRED offline session in the app DB,
+  POSTs every topic to `127.0.0.1:<port>`, checks 200 / 401, deletes the synthetic rows; value-blind.
+- `scripts/offline-token-audit.ts` (`npm run tokens:audit`): read-only, value-blind counts of the
+  `Session` table — offline sessions, permanent (`expires IS NULL`), without a refresh token, expired
+  now — the check SETUP §3c asks for after `tokens:cycle`.
+- Live results + the expiring-offline-token audit: `docs/review/2026-10-02-webhooks-proof.md`.
+  Requirements matrix (every numbered App Store requirement with status + evidence):
+  `docs/review/requirements-matrix.md`.
+
+Server-side only; no Shopify app version is released by this change.
+
 ## 2026-10-02 — 0.1.14: Home holds the embed CTA and re-checks while the tenant is still provisioning (review 5.1.2, audit of the 2026-09-24 screencast 2)
 
 Reproduced on 2026-10-02 on a fresh install (`busymate-ai-review-test-6`, app 0.1.13): Home's first
