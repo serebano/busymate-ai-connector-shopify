@@ -12,11 +12,26 @@ import crypto from "node:crypto";
  * the `shop/redact` purge never run (the Dev Dashboard showed a 51.4 % webhook
  * failure rate).
  *
- * Neither handler needs the Admin API: they only need the verified shop, topic
- * and payload. This helper checks exactly what the library checks first (POST,
- * the HMAC over the raw body, the required headers) and never touches a session.
- * Other webhook routes keep `authenticate.webhook`, because they call the Admin API.
+ * No webhook handler needs the session at delivery time: each only needs the
+ * verified shop, topic and payload, and the Admin-API work some of them trigger
+ * (the domains refresh, a re-train) runs in the background through
+ * `unauthenticated.admin(shop)` with its own error handling. This helper checks
+ * exactly what the library checks first (POST, the HMAC over the raw body, the
+ * required headers) and never touches a session. Since 0.1.15 EVERY webhook
+ * route uses it (a delivery must be acked 2xx fast — Shopify retries a failing
+ * subscription and DELETES it after 8 failures); `test/webhookAuth.test.ts`
+ * derives the route list from `app/routes/webhooks.*.tsx` and refuses any
+ * `authenticate.webhook` there.
  */
+
+/**
+ * The library's offline session id for a shop (`api.session.getOfflineId`):
+ * `offline_<shop>`. Lets a webhook update the stored offline session row (e.g.
+ * its scope set) WITHOUT loading it through the refreshing path.
+ */
+export function offlineSessionId(shop: string): string {
+  return `offline_${shop}`;
+}
 
 export type SessionFreeWebhook = {
   shop: string;

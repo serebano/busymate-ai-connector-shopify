@@ -22,6 +22,8 @@
     "drift-check": "node scripts/drift-check.mjs",
     "listing:sync": "node scripts/sync-listing-from-db.mjs",
     "tokens:cycle": "tsx scripts/cycle-offline-tokens.ts",
+    "tokens:audit": "tsx scripts/offline-token-audit.ts",
+    "webhooks:probe": "tsx scripts/webhook-probe.ts",
     "kb:retrain": "tsx scripts/retrain-shops.ts",
     "tenants:reconcile": "tsx scripts/reconcile-tenants.ts",
     "prisma": "prisma",
