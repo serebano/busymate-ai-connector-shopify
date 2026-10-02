@@ -4,6 +4,14 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-10-02 — 0.1.16: store record read moves to the Busymate AI project
+
+Busymate AI moved to its own Supabase project (`api.busymate.ai`) at 2026-10-02 08:42 Chisinau. The
+listing read in `app/lib/storeListing.server.ts` still defaulted to the devtools host
+(`api.busymate.net/rest/v1`); the host env sets no `BUSYMATE_STORE_API_URL`, so it read a frozen copy
+of `store_apps` (seen at 14:24Z). The default URL and its public publishable key now name the Busymate
+AI project. `test/storeListing.test.ts` pins the host. Server-only, so no Shopify app version is needed.
+
 ## 2026-10-02 — 0.1.15: Home re-checks while the runtime settles; webhooks never 5xx on a dead session; webhook + token compliance proof; requirements matrix
 
 Owner order 2026-10-02 "make the Shopify connector 100% ready" (busymate-devtools#3995).

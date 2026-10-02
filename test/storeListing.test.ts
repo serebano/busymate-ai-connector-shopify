@@ -4,6 +4,7 @@ import {
   _resetStoreListingCache,
   getStoreListing,
   storePageUrl,
+  STORE_API_URL,
   STORE_APP_SLUG,
 } from "../app/lib/storeListing.server";
 
@@ -93,5 +94,19 @@ describe("storePageUrl", () => {
     expect(storePageUrl(ROW)).toBe(
       `https://busymate.ai/store/apps/${STORE_APP_SLUG}`
     );
+  });
+});
+
+// 2026-10-02 P3 cutover: store_apps moved to Busymate AI's own project. The default
+// read host must be api.busymate.ai — the devtools host (api.busymate.net) is retired.
+describe("store record host", () => {
+  it("defaults to the Busymate AI project, never the retired devtools host", async () => {
+    if (process.env.BUSYMATE_STORE_API_URL) return; // an explicit override is the operator's call
+    expect(STORE_API_URL).toBe("https://api.busymate.ai/rest/v1");
+    const f = fetchOk(ROW);
+    vi.stubGlobal("fetch", f);
+    await getStoreListing();
+    expect(String(f.mock.calls[0][0])).toMatch(/^https:\/\/api\.busymate\.ai\/rest\/v1\/store_apps\?/);
+    expect(String(f.mock.calls[0][0])).not.toContain("busymate.net");
   });
 });
