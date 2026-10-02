@@ -99,9 +99,20 @@ Details: `2026-10-02-webhooks-proof.md`.
 TLS (3.1.1): `store.busymate.ai` Let's Encrypt, valid 2026-08-28 → 2026-11-26; `busymate.ai` valid
 2026-09-24 → 2026-12-23; `/api/bmai/status` 200 over HTTP/2.
 
-## Left for the owner
+## Owner items — done on the owner's delegation ("U can do all yourself", 2026-10-02, via the boss)
 
-1. Confirm the protected-customer-data draft (it is submitted together with the listing).
-2. Optionally swap the four listing screenshots for the 2026-10-02 set (URLs above).
-3. Emergency developer contact (Partner Dashboard → Settings) — not readable from the submission form.
-4. Resubmit after 2026-10-08.
+1. **Protected customer data:** the draft is complete (Customer service + App functionality; Name, Phone, Address;
+   Email removed; 16/16 data-protection answers). Shopify has no separate submit for it — the page says the
+   request is reviewed when the App Store listing is submitted, so it goes in with the resubmission.
+2. **Emergency developer contact** (Partner Dashboard → Settings → Emergency developer contact information):
+   email `hi@busymate.ai`, phone `+37361122113` — saved 2026-10-02 (the org-level form has no name field).
+3. **Listing screenshots swapped:** the four desktop slots now carry the 2026-10-02 1600×900 set in order
+   Home (Live checklist) → Theme Editor (embed on, chat answering) → Storefront (shopper chat) → Billing
+   (App Pricing plans), each with a ≤ 64-char alt text; the three mobile screenshots stay. Saved and verified
+   after a reload. Recipe for next time: a Polaris DropZone that already holds an image is `disabled`
+   (drag-drop and `DOM.setFileInputFiles` are ignored) — Delete the slot, Add a new one, then
+   `DOM.setFileInputFiles` on the enabled input uploads immediately.
+4. **Resubmission** is only possible on/after 2026-10-08. A launchd waiter on the Mac mini
+   (`net.busymate.waiter.shopify-resubmit-20261008`, script `bm-lanes/boss-state/waiters/shopify-resubmit-2026-10-08.sh`)
+   posts the reminder to the team group at 10:00 Europe/Chisinau that day; the day-of reviewer run on a
+   brand-new store comes first, the submit only if it is all green.
