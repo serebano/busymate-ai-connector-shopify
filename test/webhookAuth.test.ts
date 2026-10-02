@@ -1,7 +1,8 @@
 import crypto from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { authenticateWebhookWithoutSession, verifyWebhookHmac, webhookTopicKey } from "../app/lib/webhookAuth";
+import { authenticateWebhookWithoutSession, offlineSessionId, verifyWebhookHmac, webhookTopicKey } from "../app/lib/webhookAuth";
 
 // busymate-devtools#3731: app/uninstalled and the GDPR compliance topics answered
 // 500 whenever the shop's offline token had expired, because the library's
@@ -97,11 +98,24 @@ describe("session-free webhook authentication (#3731)", () => {
     expect(verifyWebhookHmac(body, null, SECRET)).toBe(false);
   });
 
-  it("the uninstall and compliance routes never go through authenticate.webhook (the session-refreshing path)", () => {
-    for (const route of ["app/routes/webhooks.app.uninstalled.tsx", "app/routes/webhooks.compliance.tsx"]) {
-      const src = readFileSync(route, "utf8");
-      expect(src, route).toContain("authenticateWebhookWithoutSession(request)");
-      expect(src, route).not.toMatch(/authenticate\.webhook\(/);
+  it("offlineSessionId matches the library's offline session id convention (offline_<shop>)", () => {
+    expect(offlineSessionId(shop)).toBe(`offline_${shop}`);
+  });
+
+  // 0.1.15: EVERY webhook route (derived from the live route files, never a hand
+  // list) verifies the HMAC without the session-refreshing path — a delivery for a
+  // shop whose token can no longer be refreshed must still be acked 2xx, or
+  // Shopify deletes the subscription after 8 failures.
+  it("no webhook route goes through authenticate.webhook (the session-refreshing path)", () => {
+    const routesDir = join(__dirname, "..", "app", "routes");
+    const routes = readdirSync(routesDir).filter((f) => f.startsWith("webhooks.") && f.endsWith(".tsx"));
+    expect(routes.length).toBeGreaterThanOrEqual(7);
+    for (const file of routes) {
+      const src = readFileSync(join(routesDir, file), "utf8");
+      expect(src, file).toContain("authenticateWebhookWithoutSession(request)");
+      expect(src, file).not.toMatch(/authenticate\.webhook\(/);
+      // Nor the session-resolving exports of the app module (comments may name them; imports may not).
+      expect(src, file).not.toMatch(/import\s*\{[^}]*\b(authenticate|unauthenticated|sessionStorage)\b[^}]*\}\s*from\s*"\.\.\/shopify\.server"/);
     }
   });
 });

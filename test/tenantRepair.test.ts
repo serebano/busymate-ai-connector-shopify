@@ -129,7 +129,11 @@ describe("wiring (source pins)", () => {
   it("the domains webhook is subscribed and routed", () => {
     expect(toml).toMatch(/topics = \[ "domains\/create", "domains\/update", "domains\/destroy" \]\nuri = "https:\/\/store\.busymate\.ai\/webhooks\/domains"/);
     const route = readFileSync(join(root, "app/routes/webhooks.domains.tsx"), "utf8");
-    expect(route).toMatch(/authenticate\.webhook\(request\)/);
+    // 0.1.15: HMAC-verified WITHOUT the session-refreshing authenticate.webhook
+    // (a dead session must never turn a domain change into a 500 — Shopify would
+    // delete the subscription); the refresh itself resolves the token in the background.
+    expect(route).toMatch(/authenticateWebhookWithoutSession\(request\)/);
+    expect(route).not.toMatch(/authenticate\.webhook\(/);
     expect(route).toMatch(/void refreshStorefrontDomains\(shop\)/);
   });
 });

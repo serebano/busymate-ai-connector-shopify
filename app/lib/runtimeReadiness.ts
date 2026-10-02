@@ -41,12 +41,12 @@ export function runtimeReadiness(tenantId: string, result: McpResult): RuntimeRe
   const data = obj(result.data);
   if (!result.ok && isOrphanError(result.error)) return ORPHANED;
   if (!result.ok || data.ok !== true || obj(data.tenant).id !== tenantId) {
-    return { state: "unverified", detail: "We couldn't verify whether your assistant is live. Refresh to check again." };
+    return { state: "unverified", detail: "We couldn't verify whether your assistant is live. This page checks again by itself." };
   }
   const publication = obj(obj(data.publication).revision);
   const runtime = obj(data.runtime);
   const published = revision(publication.revision);
-  const unknown: RuntimeReadiness = { state: "unverified", detail: "We couldn't verify whether your assistant is live. Refresh to check again." };
+  const unknown: RuntimeReadiness = { state: "unverified", detail: "We couldn't verify whether your assistant is live. This page checks again by itself." };
   if (obj(data.tenant).status !== "active") return unknown;
   if (publication.status !== "published" || published === null || revision(runtime.desired_revision) === null) return unknown;
   if (!(runtime.applied_revision === null || runtime.applied_revision === 0 || revision(runtime.applied_revision) !== null)) return unknown;
@@ -57,7 +57,7 @@ export function runtimeReadiness(tenantId: string, result: McpResult): RuntimeRe
   }
   if ((runtime.state === "pending" || runtime.state === "applying") && runtime.desired_revision === published
     && (runtime.applied_revision === null || runtime.applied_revision === 0 || revision(runtime.applied_revision) !== null)) {
-    return { state: "pending", detail: "Your assistant is waiting to become active. Refresh to check again." };
+    return { state: "pending", detail: "Your assistant is waiting to become active. This page checks again by itself." };
   }
   return unknown;
 }

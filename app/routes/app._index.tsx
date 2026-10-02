@@ -88,7 +88,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   // — the first paint lands while afterAuth is still publishing — is ACTIVATING:
   // the CTA is held and Home re-checks by itself instead of offering a frame the
   // browser will refuse and sitting on "Provisioning" until a manual reload.
-  const { embedReady, activating } = homeActivation({ provisionState, published, runtime: runtime?.state ?? null, frameable });
+  // 0.1.15 (reinstall): `recheck` is separate from the hold — Home keeps
+  // re-checking while the runtime is not yet ready even when the CTA is already
+  // offered on the platform's frameable:true, so the "Activating" badge and the
+  // "Assistant provisioned" step never sit stale until a manual reload.
+  const { embedReady, activating, recheck } = homeActivation({ provisionState, published, runtime: runtime?.state ?? null, frameable });
   const steps = buildSetupChecklist({
     provisionState,
     connectorReady: live && Boolean(tenant?.connectorId) && !tenant?.provisionWarning,
@@ -127,6 +131,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     live,
     embedReady,
     activating,
+    recheck,
   };
 };
 
@@ -158,10 +163,11 @@ export default function Index() {
   const data = useLoaderData<typeof loader>();
   const retry = useFetcher<typeof action>();
   const done = data.steps.filter((s) => s.done).length;
-  // #3718 — while the CTA is held, re-check by itself: every 5 s for 5 minutes,
-  // then every 30 s for as long as it is still held (never a silent stop), and
-  // switch to the "taking longer" banner with Retry setup after 5 minutes.
-  const slow = useActivationRecheck(data.activating);
+  // #3718 — while the runtime is not yet ready (held CTA or not), re-check by
+  // itself: every 5 s for 5 minutes, then every 30 s for as long as it is still
+  // not ready (never a silent stop). The "taking longer" banner with Retry setup
+  // shows only while the CTA is HELD past 5 minutes (`activating && slow`).
+  const slow = useActivationRecheck(data.recheck);
   return (
     <Page>
       <TitleBar title="Busymate AI" />
