@@ -90,8 +90,8 @@ describe("useActivationRecheck inside a real react-router data router", () => {
   async function mountHome(activating: { value: boolean }) {
     const loads = { count: 0 };
     function Home() {
-      const data = useLoaderData() as { activating: boolean };
-      const slow = useActivationRecheck(data.activating);
+      const data = useLoaderData() as { recheck: boolean };
+      const slow = useActivationRecheck(data.recheck);
       return createElement("output", null, slow ? "slow" : "fast");
     }
     const router = createMemoryRouter([
@@ -101,7 +101,7 @@ describe("useActivationRecheck inside a real react-router data router", () => {
           loads.count += 1;
           const value = activating.value;
           await new Promise((resolve) => setTimeout(resolve, LOADER_MS));
-          return { activating: value };
+          return { recheck: value };
         },
         Component: Home,
         HydrateFallback: () => null,
