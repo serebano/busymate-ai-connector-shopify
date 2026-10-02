@@ -21,7 +21,8 @@ import prisma from "../db.server";
 import { shopToSlug } from "../lib/tenantSlug";
 import { callMcpTool, onAppInstalled, repairTenantInBackground } from "../bmai.server";
 import { readRuntimeReadiness } from "../lib/runtimeReadiness";
-import { embedCtaReady, readStorefrontFrameable } from "../lib/embedFrameable";
+import { readStorefrontFrameable } from "../lib/embedFrameable";
+import { homeActivation } from "../lib/homeActivation";
 import { useActivationRecheck } from "../lib/useActivationRecheck";
 import { publishedTenantRepair } from "../lib/tenantRepair";
 import { readTrainingState } from "../lib/retrain.server";
@@ -83,8 +84,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   // platform's frameability answer decides when it answered (a `true` enables it
   // even while the readiness read is unverified or still pending); only a
   // definite "not yet" holds it. Keep checking while it is held.
-  const embedReady = embedCtaReady(runtime?.state ?? null, frameable);
-  const activating = published && !embedReady && runtime?.state !== "error";
+  // Audit 2026-10-02 (reviewer screencast 2): a tenant that is not published yet
+  // — the first paint lands while afterAuth is still publishing — is ACTIVATING:
+  // the CTA is held and Home re-checks by itself instead of offering a frame the
+  // browser will refuse and sitting on "Provisioning" until a manual reload.
+  const { embedReady, activating } = homeActivation({ provisionState, published, runtime: runtime?.state ?? null, frameable });
   const steps = buildSetupChecklist({
     provisionState,
     connectorReady: live && Boolean(tenant?.connectorId) && !tenant?.provisionWarning,

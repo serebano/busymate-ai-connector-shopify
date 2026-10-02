@@ -4,6 +4,24 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-10-02 — 0.1.14: Home holds the embed CTA and re-checks while the tenant is still provisioning (review 5.1.2, audit of the 2026-09-24 screencast 2)
+
+Reproduced on 2026-10-02 on a fresh install (`busymate-ai-review-test-6`, app 0.1.13): Home's first
+paint landed ~5 s after the install while `afterAuth` was still publishing the tenant. The row still
+read `provisionState: "pending"`, so `published` was false and (a) the self re-check never started —
+Home sat on "0/4 done · Provisioning" until a manual reload — and (b) `embedCtaReady(null, null)`
+answered true, so "Turn on the storefront assistant" was ENABLED for a tenant that did not exist yet.
+That is the reviewer's second 2026-09-24 screencast frame for frame.
+
+- `app/lib/homeActivation.ts`: the ONE derivation of `embedReady` + `activating`. A tenant that is
+  not published yet (`pending`, `suspended` during a reinstall) is activating: the CTA is held and
+  Home re-checks by itself (5 s × 5 min, then 30 s with Retry setup) until it is published AND the
+  platform says the chat can be framed. A provisioning `error` holds the CTA without the spinner
+  (the "Provisioning needs attention" banner with Retry setup already covers it).
+- `app/routes/app._index.tsx` uses it; `test/homeActivation.test.ts` pins every arm.
+
+Server-side only; no Shopify app version is released by this change.
+
 ## 2026-09-25 — 0.1.13: uninstall and GDPR webhooks no longer answer 500 after the offline token expires (busymate-devtools#3731)
 
 Commit `50d3c6a` on `main`; host deployed 2026-09-25 03:53 UTC (SETUP §3b). No Shopify app

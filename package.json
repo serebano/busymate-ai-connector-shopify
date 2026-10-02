@@ -1,7 +1,7 @@
 {
   "name": "busymate-ai-shopify",
   "private": true,
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Busymate AI for Shopify — the official Shopify App Store app, and an open reference for connecting any platform to Busymate AI.",
   "license": "MIT",
   "type": "module",
