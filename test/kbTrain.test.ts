@@ -167,3 +167,38 @@ describe("createReingestScheduler — scope grants", () => {
     expect(runs).toEqual(["s.myshopify.com"]);
   });
 });
+
+describe("#52 — uninstall stops retraining; inactive shops are refused; errors are readable", () => {
+  it("cancel drops a pending re-train before it runs", async () => {
+    vi.useFakeTimers();
+    try {
+      const run = vi.fn(async () => undefined);
+      const s = createReingestScheduler({ run, delayMs: 1000 });
+      s.schedule("acme.myshopify.com", "shop");
+      expect(s.cancel("acme.myshopify.com")).toBe(true);
+      expect(s.cancel("acme.myshopify.com")).toBe(false);
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(run).not.toHaveBeenCalled();
+      expect(s.pending()).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a thrown Response persists as 'Shopify <status>', never '[object Response]'", async () => {
+    const { d, saved } = deps({ fetchSnapshot: async () => { throw new Response(null, { status: 401, statusText: "Unauthorized" }); } });
+    const out = await trainTenant(INPUT, d);
+    expect(out.error).toBe("Shopify 401 Unauthorized");
+    expect(saved[0]).toEqual({ kbError: "Shopify 401 Unauthorized" });
+  });
+
+  it("retrainRefusal refuses inactive and suspended shops", async () => {
+    vi.doMock("../app/db.server", () => ({ default: {} }));
+    vi.doMock("../app/bmai.server", () => ({ publishTenantRuntime: vi.fn() }));
+    const { retrainRefusal } = await import("../app/lib/ingest");
+    expect(retrainRefusal({ provisionState: "published", inactiveAt: new Date(), inactiveReason: "shop_not_found" })).toMatch(/inactive \(shop_not_found\)/);
+    expect(retrainRefusal({ provisionState: "suspended", inactiveAt: null })).toMatch(/uninstalled/);
+    expect(retrainRefusal({ provisionState: "published", inactiveAt: null })).toBeNull();
+    expect(retrainRefusal(null)).toBeNull();
+  });
+});

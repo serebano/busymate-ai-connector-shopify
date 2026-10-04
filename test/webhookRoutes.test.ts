@@ -39,6 +39,7 @@ const spies = vi.hoisted(() => ({
   onShopRedact: vi.fn(async () => undefined),
   refreshStorefrontDomains: vi.fn(async () => null),
   scheduleReingest: vi.fn(() => ({ scheduled: false, reason: "test" })),
+  cancelReingest: vi.fn(() => false),
   syncBillingState: vi.fn(async () => false),
 }));
 
@@ -61,7 +62,7 @@ vi.mock("../app/bmai.server", () => ({
   redactTenantCustomer: vi.fn(async () => ({ ok: false, error: "no tenant for shop" })),
   refreshStorefrontDomains: spies.refreshStorefrontDomains,
 }));
-vi.mock("../app/lib/ingest", () => ({ scheduleReingest: spies.scheduleReingest }));
+vi.mock("../app/lib/ingest", () => ({ scheduleReingest: spies.scheduleReingest, cancelReingest: spies.cancelReingest }));
 vi.mock("../app/lib/billingState.server", () => ({ syncBillingState: spies.syncBillingState }));
 
 function sign(body: string, secret = SECRET): string {
@@ -107,6 +108,7 @@ const DELIVERIES: Array<{ topic: string; file: string; path: string; payload: un
   { topic: "domains/update", file: "webhooks.domains.tsx", path: "/webhooks/domains", payload: { id: 1, host: "shop.example" } },
   { topic: "domains/destroy", file: "webhooks.domains.tsx", path: "/webhooks/domains", payload: { id: 1, host: "shop.example" } },
   { topic: "products/update", file: "webhooks.kb.products.tsx", path: "/webhooks/kb/products", payload: { id: 1, title: "Snowboard" } },
+  { topic: "shop/update", file: "webhooks.kb.shop.tsx", path: "/webhooks/kb/shop", payload: { id: 1, name: "Acme", domain: "acme.example" } },
   { topic: "orders/updated", file: "webhooks.kb.orders.tsx", path: "/webhooks/kb/orders", payload: { id: 1 } },
 ];
 
@@ -156,7 +158,15 @@ describe("webhook routes with an expired or missing offline session (0.1.15)", (
     }
     expect(spies.onAppUninstalled).toHaveBeenCalledWith(shop);
     expect(spies.onShopRedact).toHaveBeenCalledWith(shop);
+    expect(spies.cancelReingest, "app/uninstalled stops retraining (#52)").toHaveBeenCalledWith(shop);
     expect(spies.refreshStorefrontDomains).toHaveBeenCalledWith(shop);
+  });
+
+  it("shop/update queues a debounced re-train (#52)", async () => {
+    const d = DELIVERIES.find((x) => x.topic === "shop/update")!;
+    const route = await routeFor(d.file);
+    await route.action({ request: delivery(d.path, d.topic, d.payload), params: {}, context: {} });
+    expect(spies.scheduleReingest).toHaveBeenCalledWith(shop, "shop");
   });
 
   it("a bad HMAC never reaches an effect", async () => {

@@ -4,6 +4,28 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-10-04 — 0.1.17: store knowledge never goes stale (#52)
+
+Re-training only happened on install, `products/*`, a scope grant or a manual Re-train, so 11 of 13
+shops were older than 7 days and every platform republish for them failed the 168 h
+`knowledge-citations` launch preflight; a policy or page edit (no Shopify webhook exists for either)
+never reached the assistant.
+
+- **Event-driven:** `shop/update` now re-trains (debounced per shop, like `products/*`). Collections,
+  inventory and theme content are not part of the snapshot, so they are not subscribed.
+- **Backstop:** `scripts/kb-freshness.ts` on the systemd timer `busymate-ai-shopify-kb-freshness`
+  (every 6 h, jittered) re-trains active shops older than 72 h, spaced and capped per run; shops
+  Shopify answers 404 on admin + storefront are marked inactive and never retried; every run is a
+  `KbFreshnessRun` ledger row with counts. Idempotent (re-read before training, run lease).
+- **Uninstall:** `app/uninstalled` marks the shop inactive before the platform suspend and cancels any
+  queued re-train; `retrainNow` refuses inactive/suspended shops; a reinstall clears the marker.
+- **Monitoring:** `GET /api/kb/health` — 503 when an active shop is > 96 h old, never trained, or no
+  backstop run finished in 14 h; judged externally by busymate-ai's `v2-infra-deadman` (`shopify-kb`).
+- A thrown Shopify `Response` is now persisted as `Shopify <status>`, not `[object Response]`.
+
+Migration `20261004150000_kb_freshness` (additive). Needs a Shopify app version for the
+`shop/update` subscription.
+
 ## 2026-10-02 — 0.1.16: store record read moves to the Busymate AI project
 
 Busymate AI moved to its own Supabase project (`api.busymate.ai`) at 2026-10-02 08:42 Chisinau. The

@@ -79,7 +79,7 @@ sudo -u deploy git -c safe.directory=/opt/busymate-ai-shopify fetch origin
 sudo -u deploy git -c safe.directory=/opt/busymate-ai-shopify checkout <shipped sha>
 sudo -u deploy npm ci                        # devDependencies included: the build + the tsx runner need them
 sudo -u deploy npx prisma generate
-sudo -u deploy npx prisma migrate deploy     # additive migrations only (20260902120000_session_refresh_token, 20260902150000_shop_tenant_training); reads DATABASE_URL from the deploy-owned .env
+sudo -u deploy npx prisma migrate deploy     # additive migrations only (latest: 20261004150000_kb_freshness); reads DATABASE_URL from the deploy-owned .env
 sudo -u deploy npm run build                 # = NODE_ENV=production react-router build
 systemctl restart busymate-ai-shopify
 curl -s https://store.busymate.ai/api/bmai/status   # {"ok":true,...}
@@ -168,8 +168,8 @@ Env var NAMES the script needs: `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`,
 
 ## 3c-bis. Grounded knowledge (training) — what runs, what to check
 
-At install (and on every re-auth, reinstall, product webhook, or **Store connection →
-Re-train**) the app reads the store's products, shop policies and pages through the Admin
+At install (and on every re-auth, reinstall, product or shop/update webhook, the 72 h
+freshness backstop (§3c-quater), or **Store connection → Re-train**) the app reads the store's products, shop policies and pages through the Admin
 API and publishes them as `publish_tenant_runtime.knowledge_sources` (see
 `docs/PROVISIONING.md` step 7–8). The scope list therefore includes
 **`read_legal_policies`** (shop policies) — keep the host `SCOPES` env in sync with
@@ -187,6 +187,47 @@ change that needs every trained tenant re-projected):
 ```bash
 sudo bash -c 'set -a; . /etc/busymate-ai-shopify/env; set +a; cd /opt/busymate-ai-shopify && sudo -E -H -u deploy npm run kb:retrain -- <shop>.myshopify.com [...]'
 ```
+
+## 3c-quater. Knowledge freshness — webhooks, the 72 h backstop, the 96 h alarm (#52)
+
+The platform's `knowledge-citations` launch preflight refuses any publish whose knowledge is
+older than 168 h, and Shopify has **no webhook for shop policies or pages**. So training is:
+
+- **event-driven first** — `products/create|update|delete` and `shop/update` (shop name/settings)
+  queue a debounced per-shop re-train; `app/scopes_update` too. Collections, inventory and theme
+  content are not in the snapshot, so they are not subscribed.
+- **a backstop where no webhook exists** — the systemd timer
+  `busymate-ai-shopify-kb-freshness.timer` (every 6 h + ≤15 min jitter, units in `deploy/systemd/`)
+  runs `scripts/kb-freshness.ts`: every **active** shop (published, provisioned, `inactiveAt` NULL)
+  whose `kbTrainedAt` is ≥ 72 h old is probed anonymously and re-trained through `retrainNow`,
+  3 s + jitter apart, ≤ 30 per run. A shop Shopify answers **404 on both admin and storefront**
+  (a deleted store) is marked `inactiveAt`/`inactiveReason = shop_not_found` and never retried;
+  402/423/network errors only skip that run. Each run is a `KbFreshnessRun` row with its counts.
+- **uninstall hygiene** — `app/uninstalled` marks the shop `suspended` + `inactiveReason = uninstalled`
+  first, cancels any queued re-train, then suspends the tenant. A reinstall (afterAuth) clears it.
+- **monitoring** — `GET https://store.busymate.ai/api/kb/health` answers **503** when any active
+  shop's knowledge is > 96 h old or never trained, when no backstop run finished in 14 h (absence
+  of success), or when the table cannot be read; 200 only when green. Counts only in public; the
+  per-shop list needs the `x-billing-meter-secret` header. Judged from outside the box by the
+  busymate-ai `v2-infra-deadman` workflow's `shopify-kb` arm (GitHub issue + Telegram).
+
+Install / update the units (once per change to `deploy/systemd/`):
+
+```bash
+sudo install -m 0644 deploy/systemd/busymate-ai-shopify-kb-freshness.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now busymate-ai-shopify-kb-freshness.timer
+```
+
+Operate:
+
+```bash
+sudo systemctl start busymate-ai-shopify-kb-freshness.service      # one run now (journalctl -u … for the counts)
+sudo bash -c 'set -a; . /etc/busymate-ai-shopify/env; set +a; cd /opt/busymate-ai-shopify && sudo -E -H -u deploy npm run kb:freshness -- --report'    # per-shop age + verdict
+sudo bash -c 'set -a; . /etc/busymate-ai-shopify/env; set +a; cd /opt/busymate-ai-shopify && sudo -E -H -u deploy npm run kb:freshness -- --dry-run'   # what a run would do
+```
+
+Optional env: `KB_FRESHNESS_MAX_PER_RUN` (30), `KB_FRESHNESS_SPACING_MS` (3000),
+`KB_FRESHNESS_JITTER_MS` (2000), `KB_FRESHNESS_RETRAIN_AFTER_HOURS` (72).
 
 ## 3c-ter. Tenant reconcile sweep (#3718) — orphaned, stuck, or refused tenants
 

@@ -20,9 +20,22 @@ import { shopToSlug } from "./tenantSlug";
 
 export { buildKbSnapshot } from "./kbFetch";
 
+/** Why a shop must not be re-trained (uninstalled / deleted store), or null. */
+export function retrainRefusal(tenant: { provisionState?: string | null; inactiveAt?: Date | null; inactiveReason?: string | null } | null): string | null {
+  if (tenant?.inactiveAt) return `shop is inactive (${tenant.inactiveReason ?? "inactive"}) — not re-trained`;
+  if (tenant?.provisionState === "suspended") return "app is uninstalled (tenant suspended) — not re-trained";
+  return null;
+}
+
 /** Re-train the shop NOW: fetch → compress → publish → persist. Never throws for an ingest error. */
 export async function retrainNow(shop: string): Promise<TrainOutcome> {
   const tenant = await prisma.shopTenant.findUnique({ where: { shop } });
+  const refusal = retrainRefusal(tenant);
+  if (refusal) {
+    // Not persisted as kbError: an inactive shop is not a training failure.
+    const zero = { products: 0, policies: 0, pages: 0 };
+    return { ok: false, error: refusal, counts: zero, fetched: zero, totalChars: 0, truncated: false };
+  }
   const slug = tenant?.slug ?? shopToSlug(shop);
   return trainTenant(
     { shop, tenantId: tenant?.bmaiTenantId, ...runtimeOrigins(shop, slug, tenant?.customDomain) },
@@ -52,6 +65,10 @@ const scheduler = createReingestScheduler({
  * bursts). Returns immediately so the webhook can 200; the outcome is persisted on
  * ShopTenant (kbTrainedAt / kbError) and logged. Order webhooks never re-train.
  */
+export function cancelReingest(shop: string): boolean {
+  return scheduler.cancel(shop);
+}
+
 export function scheduleReingest(shop: string, reason: ReingestReason): { scheduled: boolean; reason?: string } {
   return scheduler.schedule(shop, reason);
 }
