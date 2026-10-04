@@ -22,6 +22,12 @@ never reached the assistant.
 - **Monitoring:** `GET /api/kb/health` — 503 when an active shop is > 96 h old, never trained, or no
   backstop run finished in 14 h; judged externally by busymate-ai's `v2-infra-deadman` (`shopify-kb`).
 - A thrown Shopify `Response` is now persisted as `Shopify <status>`, not `[object Response]`.
+- `npm run tenants:reconcile` never re-provisions an inactive (deleted-on-Shopify) store.
+
+Live 2026-10-04 (host `baa8471` + follow-up): first backstop run re-trained 2, marked the 5 deleted
+`app-review-*` stores inactive and surfaced 4 orphaned tenants (`tenant … not found`, live stores);
+`tenants:reconcile --apply` re-provisioned those 4 (trained in the same publish). `/api/kb/health`
+went 503 → 200 (8 active, 0 stale).
 
 Migration `20261004150000_kb_freshness` (additive). Needs a Shopify app version for the
 `shop/update` subscription.

@@ -32,6 +32,8 @@ export interface ReconcileRow {
   tenantUnreachableAt: Date | string | null;
   /** The stored storefront domains (comma-separated), as published. */
   customDomain?: string | null;
+  /** #52 — set for an uninstalled or deleted (Shopify 404) store: never touched. */
+  inactiveAt?: Date | string | null;
 }
 
 export type ReconcileVerdict =
@@ -43,6 +45,7 @@ export type ReconcileVerdict =
   | "not-frameable"
   | "failed-install"
   | "uninstalled"
+  | "inactive"
   | "unverified"
   | "not-published";
 
@@ -66,6 +69,7 @@ export function planReconcile(
   opts: { reprovisionUnverified?: boolean } = {},
 ): ReconcilePlan {
   if (row.provisionState === "suspended") return { verdict: "uninstalled", action: "none", reason: "the app is uninstalled — never touched" };
+  if (row.inactiveAt) return { verdict: "inactive", action: "none", reason: "the store is inactive (uninstalled or deleted on Shopify) — never touched" };
   if (row.provisionState === "error") return { verdict: "failed-install", action: "reprovision", reason: "the last provisioning run failed" };
   if (row.provisionState !== "published" || !row.bmaiTenantId) return { verdict: "not-published", action: "none", reason: `provisionState=${row.provisionState ?? "none"}` };
   const repair = publishedTenantRepair({

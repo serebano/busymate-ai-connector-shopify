@@ -66,6 +66,10 @@ describe("planReconcile (#3718)", () => {
     expect(planReconcile(row(), reads, { reprovisionUnverified: true })).toMatchObject({ verdict: "unverified", action: "reprovision" });
   });
 
+  it("an inactive (deleted-on-Shopify) shop is NEVER touched, whatever the reads say (#52)", () => {
+    expect(planReconcile(row({ inactiveAt: new Date(), tenantUnreachableAt: new Date() }), { readiness: { state: "error", detail: "" }, frameable: false })).toMatchObject({ verdict: "inactive", action: "none" });
+  });
+
   it("an uninstalled shop is NEVER touched, whatever the reads say", () => {
     expect(planReconcile(row({ provisionState: "suspended", tenantUnreachableAt: new Date() }), { readiness: { state: "error", detail: "" }, frameable: false })).toMatchObject({ verdict: "uninstalled", action: "none" });
   });

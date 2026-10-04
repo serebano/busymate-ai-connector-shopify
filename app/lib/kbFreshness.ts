@@ -157,7 +157,8 @@ export async function runBackstop(deps: BackstopDeps, opts: BackstopOptions = {}
 
   let attempts = 0;
   for (const [i, candidate] of due.entries()) {
-    const age = ageHours(candidate.kbTrainedAt, now0);
+    const raw = ageHours(candidate.kbTrainedAt, now0);
+    const age = raw === null ? null : Math.round(raw * 10) / 10;
     if (attempts >= maxPerRun) {
       summary.deferred++;
       summary.results.push({ shop: candidate.shop, result: "deferred", ageHours: age });
@@ -178,7 +179,7 @@ export async function runBackstop(deps: BackstopDeps, opts: BackstopOptions = {}
       if (!opts.dryRun) await deps.markInactive(candidate.shop, "shop_not_found");
       summary.inactivated++;
       summary.results.push({ shop: candidate.shop, result: "inactivated", ageHours: age });
-      log(`[kb-freshness] ${candidate.shop}: Shopify answers 404 (admin + storefront) — marked inactive, not retried`);
+      log(`[kb-freshness] ${candidate.shop}: Shopify answers 404 (admin + storefront) — ${opts.dryRun ? "would be marked" : "marked"} inactive, not retried`);
       continue;
     }
     if (reach === "unavailable" || reach === "unknown") {

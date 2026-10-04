@@ -36,7 +36,7 @@ async function main(): Promise<number> {
   const shops = args.filter((a) => !a.startsWith("--")).map((s) => s.trim().toLowerCase()).filter(Boolean);
   const rows = await prisma.shopTenant.findMany({
     where: shops.length ? { shop: { in: shops } } : {},
-    select: { shop: true, slug: true, provisionState: true, bmaiTenantId: true, tenantUnreachableAt: true, customDomain: true },
+    select: { shop: true, slug: true, provisionState: true, bmaiTenantId: true, tenantUnreachableAt: true, customDomain: true, inactiveAt: true },
     orderBy: { shop: "asc" },
   });
   let failed = 0;
