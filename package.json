@@ -1,7 +1,7 @@
 {
   "name": "busymate-ai-shopify",
   "private": true,
-  "version": "0.1.16",
+  "version": "0.1.17",
   "description": "Busymate AI for Shopify — the official Shopify App Store app, and an open reference for connecting any platform to Busymate AI.",
   "license": "MIT",
   "type": "module",
@@ -25,6 +25,7 @@
     "tokens:audit": "tsx scripts/offline-token-audit.ts",
     "webhooks:probe": "tsx scripts/webhook-probe.ts",
     "kb:retrain": "tsx scripts/retrain-shops.ts",
+    "kb:freshness": "tsx scripts/kb-freshness.ts",
     "tenants:reconcile": "tsx scripts/reconcile-tenants.ts",
     "prisma": "prisma",
     "setup": "prisma generate && prisma migrate deploy",

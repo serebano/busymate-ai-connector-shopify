@@ -90,6 +90,19 @@ export function isKnowledgeRejection(error: string | undefined | null): boolean 
   return /knowledge_sources/i.test(error ?? "");
 }
 
+/**
+ * A readable message for anything a fetch can throw. The Shopify library throws a
+ * bare `Response` (e.g. a refused token refresh); `String(response)` used to persist
+ * "[object Response]" as kbError, which says nothing to a merchant or an operator.
+ */
+export function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof Response !== "undefined" && err instanceof Response) {
+    return `Shopify ${err.status}${err.statusText ? ` ${err.statusText}` : ""}`;
+  }
+  return String(err);
+}
+
 function revisionOf(data: unknown): number | undefined {
   const r = (data as { revision?: unknown } | undefined)?.revision;
   return typeof r === "number" ? r : undefined;
@@ -107,7 +120,7 @@ export async function trainTenant(input: TrainInput, deps: TrainDeps): Promise<T
   try {
     snapshot = await deps.fetchSnapshot(shop);
   } catch (err) {
-    const message = (err instanceof Error ? err.message : String(err)).slice(0, 500);
+    const message = errorMessage(err).slice(0, 500);
     log(`[kb] snapshot failed for ${shop}: ${message}`);
     await deps.saveTraining(shop, { kbError: message });
     return { ok: false, error: message, counts: ZERO, fetched: ZERO, totalChars: 0, truncated: false };
@@ -128,14 +141,19 @@ export async function trainTenant(input: TrainInput, deps: TrainDeps): Promise<T
 
 // ---- Webhook re-ingest debounce ---------------------------------------------
 
-/** products: catalog webhooks · scopes: a scope grant (app/scopes_update) · orders: never re-trains. */
-export type ReingestReason = "products" | "scopes" | "orders";
+/**
+ * products: catalog webhooks · shop: shop/update · scopes: a scope grant
+ * (app/scopes_update) · orders: never re-trains.
+ */
+export type ReingestReason = "products" | "shop" | "scopes" | "orders";
 
 export interface ReingestScheduler {
   /** Queue a re-train for the shop after a quiet period; a burst coalesces into one run. */
   schedule: (shop: string, reason: ReingestReason) => { scheduled: boolean; reason?: string };
   /** Shops with a pending (not yet run) re-train. */
   pending: () => string[];
+  /** Drop a pending re-train (app/uninstalled: stop retraining). True when one was pending. */
+  cancel: (shop: string) => boolean;
 }
 
 /**
@@ -166,5 +184,12 @@ export function createReingestScheduler(opts: {
       return { scheduled: true };
     },
     pending: () => [...timers.keys()],
+    cancel(shop) {
+      const t = timers.get(shop);
+      if (!t) return false;
+      clearTimeout(t);
+      timers.delete(shop);
+      return true;
+    },
   };
 }

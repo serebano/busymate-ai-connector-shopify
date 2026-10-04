@@ -34,13 +34,14 @@ shopify.app.toml            app config: scopes, compliance_topics, webhooks, api
 app/shopify.server.ts       shopifyApp(): managed auth + sessionStorage + afterAuth hook
 app/bmai.server.ts          THE Busymate AI seam — MCP provision lifecycle + connector register + teardown
 app/routes/app*.tsx         embedded admin UI (Polaris/App Bridge)
-app/routes/webhooks.*.tsx   GDPR compliance (3) + app/uninstalled + scopes_update + KB freshness
+app/routes/webhooks.*.tsx   GDPR compliance (3) + app/uninstalled + scopes_update + KB freshness (products/*, shop/update)
+app/routes/api.kb.health.tsx  knowledge-freshness health (503 on a >96 h shop or a silent backstop)
 app/routes/mcp.$.tsx        the per-store Shopify Admin MCP connector transport
 app/routes/identity.tsx     App-Proxy-verified logged-in customer → ES256 launch JWT
 app/mcp/**                  connector: transport + auth (actor-token verify) + Admin GraphQL client + tools (real, 4 tiers)
-app/lib/**                  tenantSlug · identity(JWKS) · storefrontIdentity · provision (lifecycle) · kbSnapshot/kbTrain/kbFetch/ingest (grounded knowledge) · plans/partnerApi/appEvents/usageBilling/billingGate (App Pricing) · themeEmbed · mgmtArgs · fieldCipher
+app/lib/**                  tenantSlug · identity(JWKS) · storefrontIdentity · provision (lifecycle) · kbSnapshot/kbTrain/kbFetch/ingest/kbFreshness (grounded knowledge + the 72 h backstop) · plans/partnerApi/appEvents/usageBilling/billingGate (App Pricing) · themeEmbed · mgmtArgs · fieldCipher
 extensions/storefront-assistant/  theme app-embed block mounting the widget (×14 locales)
-prisma/schema.prisma        Session · ShopTenant · BillingState · LaunchKey
+prisma/schema.prisma        Session · ShopTenant · BillingState · LaunchKey · KbFreshnessRun …
 docs/                       ARCHITECTURE · PROVISIONING · EXTENDING · LISTING
 listing/                    localized-ready App Store copy (×14 plan)
 CHECKLIST.md                Built-for-Shopify compliance status
@@ -75,6 +76,11 @@ CHECKLIST.md                Built-for-Shopify compliance status
   products/policies/pages into ≤40 sources, ≤20,000 chars each, ≤40,000 total (policies →
   products → pages, whole items, "+N more" note). Training state lives on `ShopTenant.kb*`
   and is shown on Home / Store connection; ingest errors are persisted, never swallowed.
+- **Knowledge never goes stale silently (#52)** — webhooks first (products/*, shop/update,
+  scopes_update); Shopify has no policy/page webhook, so `scripts/kb-freshness.ts` (systemd timer,
+  6 h) re-trains active shops older than 72 h and marks 404 (deleted) shops inactive;
+  `/api/kb/health` is 503 when an active shop is > 96 h or the backstop stopped finishing. Never
+  loosen the platform's 168 h preflight — the fix is fresh data. SETUP §3c-quater.
 - **Public naming** — merchant- and customer-facing copy says **"Busymate AI"** / **"your mate"**,
   never internal codenames. Enforced by `test/naming.test.ts`.
 - **Embedded-frame contract** — nothing may paint the root "500" document inside the admin

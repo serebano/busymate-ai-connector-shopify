@@ -71,6 +71,13 @@ model ShopTenant {
   kbTruncated     Boolean?
   kbProductsTotal Int?
   kbPagesTotal    Int?
+  /// Set when the shop must no longer be re-trained (#52): `uninstalled`
+  /// (app/uninstalled) or `shop_not_found` (the knowledge-freshness backstop saw
+  /// Shopify answer 404 on both admin and storefront — a deleted store). Cleared
+  /// on the next afterAuth (a reinstall). Inactive shops are excluded from the
+  /// backstop and from the freshness health check.
+  inactiveAt      DateTime? @db.Timestamptz
+  inactiveReason  String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -149,4 +156,27 @@ model MeterDelivery {
   billing     BillingState @relation(fields: [shop], references: [shop], onDelete: Cascade)
   @@unique([shop, payloadHash])
   // Partial unique pending-shop index is maintained in the SQL migration.
+}
+
+/// One row per knowledge-freshness backstop run (#52, scripts/kb-freshness.ts):
+/// the run log with counts, the in-flight lease (finishedAt NULL), and the
+/// evidence-of-success the health check demands (`/api/kb/health` is RED when no
+/// run has FINISHED recently — the absence of success is the alarm).
+model KbFreshnessRun {
+  id          String    @id @default(cuid())
+  trigger     String    @default("timer")
+  startedAt   DateTime  @default(now()) @db.Timestamptz
+  finishedAt  DateTime? @db.Timestamptz
+  ok          Boolean?
+  considered  Int?
+  active      Int?
+  due         Int?
+  trained     Int?
+  failed      Int?
+  inactivated Int?
+  skipped     Int?
+  deferred    Int?
+  detail      Json?
+
+  @@index([finishedAt])
 }

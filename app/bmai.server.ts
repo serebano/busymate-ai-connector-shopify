@@ -317,6 +317,11 @@ const liveCheckDeps = {
  * before.
  */
 export async function onAfterAuth(session: Session): Promise<void> {
+  // A completed auth means the shop is installed and reachable again: clear an
+  // inactive marker (#52 — reinstall after uninstall, or a store that came back).
+  await prisma.shopTenant
+    .updateMany({ where: { shop: session.shop, inactiveAt: { not: null } }, data: { inactiveAt: null, inactiveReason: null } })
+    .catch(() => null);
   let row: {
     provisionState?: string | null;
     bmaiTenantId?: string | null;
@@ -367,14 +372,16 @@ export async function refreshStorefrontDomains(shop: string): Promise<RepairDeci
 /** app/uninstalled → suspend/teardown the tenant (never hard-delete on uninstall). */
 export async function onAppUninstalled(shop: string): Promise<void> {
   const row = await prisma.shopTenant.findUnique({ where: { shop } });
+  // Mark the shop suspended + INACTIVE first (#52): retraining stops even when the
+  // platform suspend below fails, and the freshness backstop/health skip it.
+  await prisma.shopTenant.updateMany({
+    where: { shop },
+    data: { provisionState: "suspended", inactiveAt: new Date(), inactiveReason: "uninstalled" },
+  });
+  await prisma.session.deleteMany({ where: { shop } });
   if (row?.bmaiTenantId) {
     await callMcpTool("suspend_tenant", { ...proofArgs(shopProof(shop)), confirm: true });
   }
-  await prisma.shopTenant.updateMany({
-    where: { shop },
-    data: { provisionState: "suspended" },
-  });
-  await prisma.session.deleteMany({ where: { shop } });
 }
 
 /** shop/redact (GDPR, 48h after uninstall) → full tenant teardown + data purge. */

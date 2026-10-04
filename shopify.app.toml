@@ -82,6 +82,15 @@ uri = "https://store.busymate.ai/webhooks/domains"
 topics = [ "products/create", "products/update", "products/delete" ]
 uri = "https://store.busymate.ai/webhooks/kb/products"
 
+# shop/update (#52): the shop name/settings are in the knowledge snapshot. No scope needed.
+# Shopify has NO webhook topic for shop policies or pages (checked against the 2026-07
+# WebhookSubscriptionTopic list), and the snapshot reads neither collections, inventory
+# nor theme content — so policies and pages are bounded by the 72 h freshness backstop
+# (scripts/kb-freshness.ts, systemd timer deploy/systemd/busymate-ai-shopify-kb-freshness.*).
+[[webhooks.subscriptions]]
+topics = [ "shop/update" ]
+uri = "https://store.busymate.ai/webhooks/kb/shop"
+
 # Orders/fulfillments carry PROTECTED CUSTOMER DATA — Shopify blocks subscribing
 # until the app is granted Protected Customer Data access (Partners → API access,
 # review-gated). Re-enable this block once approved; the handler is already live at
