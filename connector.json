@@ -6,7 +6,7 @@
   "category": "commerce",
   "icon": "shopify",
   "status": "beta",
-  "statusEvidence": "Beta: the Busymate AI Shopify app is installable; App Store listing under review (busymate-ai-connector-shopify).",
+  "statusEvidence": "#3295 — the app is built and its loop works for a store that has it; the Shopify App Store listing is still in review.",
   "featured": true,
   "order": 9,
   "configKeys": [],
