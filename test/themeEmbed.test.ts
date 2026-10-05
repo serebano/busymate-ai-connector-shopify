@@ -4,6 +4,7 @@ import {
   STOREFRONT_ASSISTANT_EXTENSION_UUID,
   buildSetupChecklist,
   detectStorefrontEmbed,
+  embedSetupPresentation,
   storefrontLoadsOurEmbed,
   themeEditorActivateUrl,
   themeEditorAppEmbedsUrl,
@@ -135,6 +136,31 @@ describe("buildSetupChecklist (Home)", () => {
   });
 });
 
+describe("Home embed instructions", () => {
+  it("does not tell merchants the embed is on when the storefront status is unknown", () => {
+    const copy = embedSetupPresentation("unknown");
+    expect(copy.heading).toBe("Check storefront assistant status");
+    expect(copy.detail).toMatch(/can't confirm/i);
+    expect(copy.detail).toMatch(/unconfirmed/i);
+    expect(copy.detail).not.toMatch(/already switched on|is loading on your storefront/i);
+    expect(copy.button).toBe("Check in App embeds");
+    expect(copy.activationLink).toBe(false);
+  });
+
+  it("offers activation only for a confirmed-off embed and review for a confirmed-on embed", () => {
+    expect(embedSetupPresentation("off")).toMatchObject({
+      heading: "Turn on the storefront assistant",
+      button: "Turn on the storefront assistant",
+      activationLink: true,
+    });
+    expect(embedSetupPresentation("on")).toMatchObject({
+      heading: "Storefront assistant is on",
+      button: "Review in App embeds",
+      activationLink: false,
+    });
+  });
+});
+
 /**
  * #3718 — Shopify review 5.1.2 (2026-09-24): Home said "Not on yet" while the
  * embed WAS on, because detection matched a stale hard-coded CDN UUID
@@ -172,4 +198,3 @@ describe("detectStorefrontEmbed matches the asset + this store's slug, never a C
     expect(storefrontLoadsOurEmbed(page, "")).toBe(false);
   });
 });
-

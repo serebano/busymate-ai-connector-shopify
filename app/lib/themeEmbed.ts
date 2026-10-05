@@ -43,6 +43,32 @@ export function themeEditorAppEmbedsUrl(shop: string): string {
 
 export type EmbedStatus = "on" | "off" | "unknown";
 
+/** Home instructions must reflect what the scope-free storefront check knows. */
+export function embedSetupPresentation(status: EmbedStatus) {
+  if (status === "on") {
+    return {
+      heading: "Storefront assistant is on",
+      detail: "The assistant is loading on your storefront. Open App embeds to review it; click Save if you make a change.",
+      button: "Review in App embeds",
+      activationLink: false,
+    };
+  }
+  if (status === "off") {
+    return {
+      heading: "Turn on the storefront assistant",
+      detail: "The storefront check did not find the assistant. Open the theme editor, switch on the app embed, and click Save.",
+      button: "Turn on the storefront assistant",
+      activationLink: true,
+    };
+  }
+  return {
+    heading: "Check storefront assistant status",
+    detail: "We can't confirm the embed from this storefront. It may be password-protected or unavailable. Open App embeds to check its state; save only if you change it. Home will show the status as unconfirmed until the storefront can be checked.",
+    button: "Check in App embeds",
+    activationLink: false,
+  };
+}
+
 /**
  * Read the storefront home page and look for OUR app embed's script tag: the
  * extension asset `…/assets/assistant.js` carrying THIS store's `data-slug`.
