@@ -36,10 +36,10 @@ import { AppRouteBoundary } from "../components/AppRouteError";
 export const clientAction = failClosedClientAction;
 export const ErrorBoundary = AppRouteBoundary;
 import {
-  APP_EMBED_LABEL,
   EMBED_STEPS,
   buildSetupChecklist,
   detectStorefrontEmbed,
+  embedSetupPresentation,
   themeEditorActivateUrl,
   themeEditorAppEmbedsUrl,
   trainingSummary,
@@ -124,7 +124,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     embed,
     steps,
     embedSteps: EMBED_STEPS,
-    embedLabel: APP_EMBED_LABEL,
     activateUrl: themeEditorActivateUrl(shop),
     appEmbedsUrl: themeEditorAppEmbedsUrl(shop),
     planName: planFor(access.planId).name,
@@ -161,6 +160,7 @@ function stateBadge(state: string) {
 
 export default function Index() {
   const data = useLoaderData<typeof loader>();
+  const embedSetup = embedSetupPresentation(data.embed);
   const retry = useFetcher<typeof action>();
   const done = data.steps.filter((s) => s.done).length;
   // #3718 — while the runtime is not yet ready (held CTA or not), re-check by
@@ -244,13 +244,12 @@ export default function Index() {
               <BlockStack gap="300">
                 <InlineGrid columns="1fr auto" alignItems="center">
                   <Text as="h2" variant="headingMd">
-                    Turn on the storefront assistant
+                    {embedSetup.heading}
                   </Text>
                   {data.embed === "on" ? <Badge tone="success">On</Badge> : data.embed === "off" ? <Badge tone="attention">Off</Badge> : null}
                 </InlineGrid>
                 <Text as="p" tone="subdued">
-                  The assistant is a theme app embed. Click the button to open your theme editor with{" "}
-                  <strong>{data.embedLabel}</strong> already switched on, then click <strong>Save</strong>.
+                  {embedSetup.detail}
                 </Text>
                 {data.activating && !slow ? (
                   <Banner tone="info" title="Your assistant is being activated">
@@ -277,8 +276,13 @@ export default function Index() {
                   </Banner>
                 ) : null}
                 <InlineStack gap="300">
-                  <Button variant="primary" url={data.embedReady ? data.activateUrl : undefined} target="_top" disabled={!data.embedReady}>
-                    Turn on the storefront assistant
+                  <Button
+                    variant="primary"
+                    url={data.embedReady ? (embedSetup.activationLink ? data.activateUrl : data.appEmbedsUrl) : undefined}
+                    target="_top"
+                    disabled={!data.embedReady}
+                  >
+                    {embedSetup.button}
                   </Button>
                   <Button url={data.embedReady ? data.appEmbedsUrl : undefined} target="_top" disabled={!data.embedReady}>
                     Open App embeds
