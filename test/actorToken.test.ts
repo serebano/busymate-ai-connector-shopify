@@ -268,13 +268,16 @@ it("MCP transport preserves customer identity and signed confirmation gates befo
   const adminForShop = vi.fn(async () => ({}));
   vi.doMock("../app/mcp/auth", () => ({ resolveCaller: (request: Request) => resolveCaller(request, deps()) }));
   vi.doMock("../app/mcp/shopifyAdmin", () => ({ adminForShop }));
-  vi.doMock("../app/mcp/tools/registry", () => ({
-    TOOLS: [], publicToolNames: () => [],
-    toolByName: (name: string) => ({ tier: name === "fixture_public" ? "public" : "write", confirm: name !== "fixture_public", handler }),
-  }));
+  vi.doMock("../app/mcp/tools/registry", async () => {
+    const registry = await vi.importActual<typeof import("../app/mcp/tools/registry")>("../app/mcp/tools/registry");
+    return { ...registry, toolByName: (name: string) => {
+      const tool = registry.toolByName(name);
+      return tool ? { ...tool, handler } : undefined;
+    } };
+  });
   try {
     const { handleMcpRequest } = await import("../app/mcp/route");
-    const call = (confirmed: boolean, actor_kind = "identified", name = "fixture_write") => handleMcpRequest(new Request(`${AUD}/mcp`, {
+    const call = (confirmed: boolean, actor_kind = "identified", name = "apply_discount") => handleMcpRequest(new Request(`${AUD}/mcp`, {
       method: "POST",
       headers: { authorization: `Bearer ${mint({ payload: { confirmed, actor_kind, sub: actor_kind === "anonymous" ? "anonymous:sess_1" : "cust_1" } })}`, "content-type": "application/json", "x-bmai-confirmed": "1" },
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: {} } }),
@@ -283,21 +286,28 @@ it("MCP transport preserves customer identity and signed confirmation gates befo
     expect(denied.result.structuredContent.requiresConfirm).toBe(true);
     expect(adminForShop).not.toHaveBeenCalled();
     expect(handler).not.toHaveBeenCalled();
-    const anonymousDenied = await (await call(true, "anonymous")).json();
-    expect(anonymousDenied.result.isError).toBe(true);
-    expect(anonymousDenied.result.content[0].text).toContain("sign in");
-    expect(adminForShop).not.toHaveBeenCalled();
-    expect(handler).not.toHaveBeenCalled();
+    for (const name of ["get_order_status", "apply_discount"]) {
+      const anonymousDenied = await (await call(true, "anonymous", name)).json();
+      expect(anonymousDenied.result.isError).toBe(true);
+      expect(anonymousDenied.result.content[0].text).toContain("sign in");
+      expect(adminForShop).not.toHaveBeenCalled();
+      expect(handler).not.toHaveBeenCalled();
+    }
     const permitted = await (await call(true)).json();
     expect(permitted.result.content[0].text).toBe("fixture completed");
     expect(adminForShop).toHaveBeenCalledTimes(1);
     expect(handler).toHaveBeenCalledTimes(1);
     expect(handler.mock.calls[0][1]).toMatchObject({ shop: SHOP, customerId: "cust_1", confirmed: true });
-    const anonymousPublic = await (await call(false, "anonymous", "fixture_public")).json();
-    expect(anonymousPublic.result.content[0].text).toBe("fixture completed");
+    const identifiedRead = await (await call(false, "identified", "get_order_status")).json();
+    expect(identifiedRead.result.content[0].text).toBe("fixture completed");
     expect(adminForShop).toHaveBeenCalledTimes(2);
     expect(handler).toHaveBeenCalledTimes(2);
-    expect(handler.mock.calls[1][1]).toMatchObject({ shop: SHOP, customerId: null, confirmed: false });
+    expect(handler.mock.calls[1][1]).toMatchObject({ shop: SHOP, customerId: "cust_1", confirmed: false });
+    const anonymousPublic = await (await call(false, "anonymous", "search_products")).json();
+    expect(anonymousPublic.result.content[0].text).toBe("fixture completed");
+    expect(adminForShop).toHaveBeenCalledTimes(3);
+    expect(handler).toHaveBeenCalledTimes(3);
+    expect(handler.mock.calls[2][1]).toMatchObject({ shop: SHOP, customerId: null, confirmed: false });
   } finally {
     vi.doUnmock("../app/mcp/auth");
     vi.doUnmock("../app/mcp/shopifyAdmin");
