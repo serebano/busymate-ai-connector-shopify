@@ -16,7 +16,8 @@ import crypto from "node:crypto";
  * transparently passes through any value NOT bearing that prefix — so legacy
  * plaintext rows (written before encryption was enabled) still read correctly, and
  * a re-write upgrades them in place. A missing key in dev/CI is a documented no-op
- * passthrough (the credential-free test/build path); production sets the key.
+ * passthrough (the credential-free test/build path); production writes refuse a missing
+ * or invalid key. Importing the module for a build does not require a key.
  */
 const PREFIX = "enc:v1:";
 const IV_LEN = 12;
@@ -32,9 +33,9 @@ export function encryptionKey(env: NodeJS.ProcessEnv = process.env): Buffer | nu
   if (raw) {
     try {
       if (/^[0-9a-fA-F]{64}$/.test(raw)) key = Buffer.from(raw, "hex");
-      else {
+      else if (/^[A-Za-z0-9+/]{43}=$/.test(raw)) {
         const b = Buffer.from(raw, "base64");
-        if (b.length === 32) key = b;
+        if (b.length === 32 && b.toString("base64") === raw) key = b;
       }
     } catch {
       key = null;
@@ -54,9 +55,12 @@ export function resetFieldCipherCache(): void {
   cachedKey = undefined;
 }
 
-/** Encrypt a plaintext field. No key configured ⇒ returns the plaintext unchanged. */
+/** Encrypt a field; production refuses missing/invalid keys before a plaintext write. */
 export function encryptField(plaintext: string, env: NodeJS.ProcessEnv = process.env): string {
   const key = encryptionKey(env);
+  if (!key && env.NODE_ENV === "production") {
+    throw new Error("A valid APP_ENCRYPTION_KEY is required to write sensitive fields in production");
+  }
   if (!key || plaintext == null || plaintext === "") return plaintext;
   if (plaintext.startsWith(PREFIX)) return plaintext; // already encrypted (idempotent)
   const iv = crypto.randomBytes(IV_LEN);

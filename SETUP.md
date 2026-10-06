@@ -366,7 +366,7 @@ derived-per-connector master and is no longer read by the verifier.
 Credential + PII columns (`Session.accessToken` + `email`, `BmaiCredential.refreshToken`)
 are AES-256-GCM encrypted at the app layer (`app/lib/fieldCipher.ts`). Set a 32-byte
 key on the host — `openssl rand -base64 32` — as `APP_ENCRYPTION_KEY`. Value-blind;
-never logged. UNSET ⇒ those columns are stored plaintext (a documented dev/CI no-op);
+never logged. UNSET or malformed ⇒ sensitive writes are refused in production. Outside production, an unset key permits the credential-free dev/CI path;
 SET it in production so the PCD at-rest attestation is true. Legacy plaintext rows
 read fine and upgrade to ciphertext on the next write. Retention windows + the full
 data map: `docs/DATA-RETENTION.md`.

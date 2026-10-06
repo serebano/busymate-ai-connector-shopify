@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { resolveCaller, type ResolveCallerDeps } from "../app/mcp/auth";
 import { verifyActorToken } from "../app/mcp/actorToken";
 
@@ -88,8 +88,25 @@ describe("actor-token verification (resolveCaller)", () => {
     expect(caller!.actor).toBe("bmai");
   });
 
-  it("carries the x-bmai-confirmed acknowledgement", async () => {
-    const caller = await resolveCaller(req(mint(), { "x-bmai-confirmed": "1" }), deps());
+  it.each([undefined, false, "1", 1])("unsigned confirmation cannot promote signed claim %s", async (confirmed) => {
+    for (const headerCallerAllowed of [false, true]) {
+      const caller = await resolveCaller(
+        req(mint({ payload: { confirmed } }), { "x-bmai-confirmed": "1" }),
+        deps({ headerCallerAllowed }),
+      );
+      expect(caller?.actor).toBe("bmai");
+      expect(caller?.confirmed).toBe(false);
+    }
+  });
+
+  it("signed confirmation stays authoritative when an unsigned header contradicts it", async () => {
+    const caller = await resolveCaller(req(mint({ payload: { confirmed: true } }), { "x-bmai-confirmed": "0" }), deps());
+    expect(caller?.confirmed).toBe(true);
+  });
+
+  it("explicit dev header callers keep their separate confirmation behavior", async () => {
+    const caller = await resolveCaller(req(null, { "x-bmai-shop": SHOP, "x-bmai-confirmed": "1" }), deps({ headerCallerAllowed: true }));
+    expect(caller?.actor).toBe("header");
     expect(caller?.confirmed).toBe(true);
   });
 
@@ -225,4 +242,37 @@ describe("#2132 signed confirmed claim", () => {
     const caller = await resolveCaller(req(mint({ payload: { confirmed: false } })), deps());
     expect(caller?.confirmed).toBe(false);
   });
+});
+
+
+it("MCP transport refuses unsigned confirmation before any Admin API or tool side effect", async () => {
+  const handler = vi.fn(async (_args: Record<string, unknown>, _ctx: unknown) => ({ content: [{ type: "text", text: "fixture completed" }] }));
+  const adminForShop = vi.fn(async () => ({}));
+  vi.doMock("../app/mcp/auth", () => ({ resolveCaller: (request: Request) => resolveCaller(request, deps()) }));
+  vi.doMock("../app/mcp/shopifyAdmin", () => ({ adminForShop }));
+  vi.doMock("../app/mcp/tools/registry", () => ({
+    TOOLS: [], publicToolNames: () => [],
+    toolByName: () => ({ tier: "write", confirm: true, handler }),
+  }));
+  try {
+    const { handleMcpRequest } = await import("../app/mcp/route");
+    const call = (confirmed: boolean) => handleMcpRequest(new Request(`${AUD}/mcp`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${mint({ payload: { confirmed } })}`, "content-type": "application/json", "x-bmai-confirmed": "1" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "fixture_write", arguments: {} } }),
+    }));
+    const denied = await (await call(false)).json();
+    expect(denied.result.structuredContent.requiresConfirm).toBe(true);
+    expect(adminForShop).not.toHaveBeenCalled();
+    expect(handler).not.toHaveBeenCalled();
+    const permitted = await (await call(true)).json();
+    expect(permitted.result.content[0].text).toBe("fixture completed");
+    expect(adminForShop).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler.mock.calls[0][1]).toMatchObject({ shop: SHOP, customerId: "cust_1", confirmed: true });
+  } finally {
+    vi.doUnmock("../app/mcp/auth");
+    vi.doUnmock("../app/mcp/shopifyAdmin");
+    vi.doUnmock("../app/mcp/tools/registry");
+  }
 });
