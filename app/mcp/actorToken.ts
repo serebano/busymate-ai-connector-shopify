@@ -51,6 +51,8 @@ export interface ActorTokenPeek {
 /** The verified subject + session identity carried by a valid actor token. */
 export interface ActorClaims {
   sub: string;
+  /** Signed visitor class; a nonempty subject is not proof of customer identity. */
+  actorKind: "anonymous" | "identified";
   supportSessionId: string;
   jti: string;
   tenantId: string;
@@ -190,11 +192,12 @@ export function verifyActorToken(token: string, opts: VerifyActorTokenOptions): 
   if (!timingSafeEqualStr(expected, signaturePart)) return null;
 
   // Claim pins (mirror the canonical verifyBmaiActorToken).
-  const { sub, support_session_id: supportSessionId, jti, iss, aud, iat, nbf, exp } = payload;
+  const { sub, actor_kind: actorKind, support_session_id: supportSessionId, jti, iss, aud, iat, nbf, exp } = payload;
   if (
     iss !== issuer ||
     aud !== audience ||
     !nonEmptyString(sub) ||
+    (actorKind !== "anonymous" && actorKind !== "identified") ||
     !nonEmptyString(supportSessionId) ||
     !nonEmptyString(jti) ||
     typeof iat !== "number" ||
@@ -208,5 +211,5 @@ export function verifyActorToken(token: string, opts: VerifyActorTokenOptions): 
     return null;
   }
 
-  return { sub, supportSessionId, jti, tenantId, connectorId, confirmed: payload.confirmed === true };
+  return { sub, actorKind, supportSessionId, jti, tenantId, connectorId, confirmed: payload.confirmed === true };
 }
