@@ -80,10 +80,22 @@ sudo -u deploy git -c safe.directory=/opt/busymate-ai-shopify checkout <shipped 
 sudo -u deploy npm ci                        # devDependencies included: the build + the tsx runner need them
 sudo -u deploy npx prisma generate
 sudo -u deploy npx prisma migrate deploy     # additive migrations only (latest: 20261004150000_kb_freshness); reads DATABASE_URL from the deploy-owned .env
-sudo -u deploy npm run build                 # = NODE_ENV=production react-router build
+sudo -u deploy env BMAI_APP_BUILD_REVISION=<shipped sha> npm run build
 systemctl restart busymate-ai-shopify
-curl -s https://store.busymate.ai/api/bmai/status   # {"ok":true,...}
+curl -fsS https://store.busymate.ai/api/bmai/status # ok:true AND revision equals the full shipped SHA
 ```
+
+The tag/manual `deploy.yml` app-server job now runs this sequence via
+`scripts/deploy-app-host.sh`. It requires `DEPLOY_HOST` (the authorized root SSH
+destination), `DEPLOY_SSH_KEY`, and pinned `DEPLOY_KNOWN_HOSTS` repository secrets;
+missing access is a failed release, never a successful no-op. Provision those values
+only through the existing owner window. The remote script refuses dirty checkouts,
+serializes host releases, checks that the exact commit belongs to protected-main
+history, prints the previous rollback SHA, and verifies the live service's compiled
+revision. It does not automatically roll back migrations. A main merge alone remains
+**not deployed**; host release and Shopify extension/config release remain separate.
+The status revision is null for builds without a valid full build SHA, and these
+builds cannot pass deployment verification. No secret value is returned by the probe.
 
 `npm run build` / `npm start` pin `NODE_ENV=production` (the systemd unit sets it too)
 for the app's own env-gated behaviour (`BMAI_ALLOW_HEADER_CALLER` off, no Prisma

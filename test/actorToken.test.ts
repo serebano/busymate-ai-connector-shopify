@@ -42,6 +42,7 @@ function mint(opts: MintOpts = {}): string {
     iss: "https://busymate.ai",
     aud: AUD,
     sub: "cust_1",
+    actor_kind: "identified",
     tenant_id: TENANT,
     connector_id: CONNECTOR,
     support_session_id: "sess_1",
@@ -87,6 +88,23 @@ describe("actor-token verification (resolveCaller)", () => {
     expect(caller!.confirmed).toBe(false);
     expect(caller!.actor).toBe("bmai");
   });
+
+  it("keeps a signed anonymous subject anonymous even with unsigned identity headers", async () => {
+    const caller = await resolveCaller(req(mint({ payload: {
+      actor_kind: "anonymous", sub: "anonymous:sess_1", confirmed: true,
+    } }), { "x-bmai-customer-id": "cust_1", "x-bmai-confirmed": "1" }), deps());
+    expect(caller).toMatchObject({ shop: SHOP, customerId: null, confirmed: true, actor: "bmai" });
+  });
+
+  it.each([undefined, null, "", "operator", "admin", 1, true])(
+    "refuses missing or unsupported signed actor kind %s without header fallback", async (actor_kind) => {
+      const token = mint({ payload: { actor_kind } });
+      expect(verifyActorToken(token, { master: MASTER, audience: AUD, now: NOW })).toBeNull();
+      for (const headerCallerAllowed of [false, true]) {
+        expect(await resolveCaller(req(token, { "x-bmai-shop": SHOP }), deps({ headerCallerAllowed }))).toBeNull();
+      }
+    },
+  );
 
   it.each([undefined, false, "1", 1])("unsigned confirmation cannot promote signed claim %s", async (confirmed) => {
     for (const headerCallerAllowed of [false, true]) {
@@ -245,31 +263,51 @@ describe("#2132 signed confirmed claim", () => {
 });
 
 
-it("MCP transport refuses unsigned confirmation before any Admin API or tool side effect", async () => {
+it("MCP transport preserves customer identity and signed confirmation gates before side effects", async () => {
   const handler = vi.fn(async (_args: Record<string, unknown>, _ctx: unknown) => ({ content: [{ type: "text", text: "fixture completed" }] }));
   const adminForShop = vi.fn(async () => ({}));
   vi.doMock("../app/mcp/auth", () => ({ resolveCaller: (request: Request) => resolveCaller(request, deps()) }));
   vi.doMock("../app/mcp/shopifyAdmin", () => ({ adminForShop }));
-  vi.doMock("../app/mcp/tools/registry", () => ({
-    TOOLS: [], publicToolNames: () => [],
-    toolByName: () => ({ tier: "write", confirm: true, handler }),
-  }));
+  vi.doMock("../app/mcp/tools/registry", async () => {
+    const registry = await vi.importActual<typeof import("../app/mcp/tools/registry")>("../app/mcp/tools/registry");
+    return { ...registry, toolByName: (name: string) => {
+      const tool = registry.toolByName(name);
+      return tool ? { ...tool, handler } : undefined;
+    } };
+  });
   try {
     const { handleMcpRequest } = await import("../app/mcp/route");
-    const call = (confirmed: boolean) => handleMcpRequest(new Request(`${AUD}/mcp`, {
+    const call = (confirmed: boolean, actor_kind = "identified", name = "apply_discount") => handleMcpRequest(new Request(`${AUD}/mcp`, {
       method: "POST",
-      headers: { authorization: `Bearer ${mint({ payload: { confirmed } })}`, "content-type": "application/json", "x-bmai-confirmed": "1" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "fixture_write", arguments: {} } }),
+      headers: { authorization: `Bearer ${mint({ payload: { confirmed, actor_kind, sub: actor_kind === "anonymous" ? "anonymous:sess_1" : "cust_1" } })}`, "content-type": "application/json", "x-bmai-confirmed": "1" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: {} } }),
     }));
     const denied = await (await call(false)).json();
     expect(denied.result.structuredContent.requiresConfirm).toBe(true);
     expect(adminForShop).not.toHaveBeenCalled();
     expect(handler).not.toHaveBeenCalled();
+    for (const name of ["get_order_status", "apply_discount"]) {
+      const anonymousDenied = await (await call(true, "anonymous", name)).json();
+      expect(anonymousDenied.result.isError).toBe(true);
+      expect(anonymousDenied.result.content[0].text).toContain("sign in");
+      expect(adminForShop).not.toHaveBeenCalled();
+      expect(handler).not.toHaveBeenCalled();
+    }
     const permitted = await (await call(true)).json();
     expect(permitted.result.content[0].text).toBe("fixture completed");
     expect(adminForShop).toHaveBeenCalledTimes(1);
     expect(handler).toHaveBeenCalledTimes(1);
     expect(handler.mock.calls[0][1]).toMatchObject({ shop: SHOP, customerId: "cust_1", confirmed: true });
+    const identifiedRead = await (await call(false, "identified", "get_order_status")).json();
+    expect(identifiedRead.result.content[0].text).toBe("fixture completed");
+    expect(adminForShop).toHaveBeenCalledTimes(2);
+    expect(handler).toHaveBeenCalledTimes(2);
+    expect(handler.mock.calls[1][1]).toMatchObject({ shop: SHOP, customerId: "cust_1", confirmed: false });
+    const anonymousPublic = await (await call(false, "anonymous", "search_products")).json();
+    expect(anonymousPublic.result.content[0].text).toBe("fixture completed");
+    expect(adminForShop).toHaveBeenCalledTimes(3);
+    expect(handler).toHaveBeenCalledTimes(3);
+    expect(handler.mock.calls[2][1]).toMatchObject({ shop: SHOP, customerId: null, confirmed: false });
   } finally {
     vi.doUnmock("../app/mcp/auth");
     vi.doUnmock("../app/mcp/shopifyAdmin");

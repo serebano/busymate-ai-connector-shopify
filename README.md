@@ -148,7 +148,8 @@ platform ports** built on the pattern above. Please read:
   public issue for security).
 
 Every change ships a test (`test/**`, `npm test`), and merchant-facing copy must say
-**"Busymate AI"** / **"your mate"** — enforced by `test/naming.test.ts`.
+**"Busymate AI"** / **"your mate"**, never the retired codenames "bro"/"eve"/"bmai" —
+enforced by `test/naming.test.ts`.
 
 ## Status & production notes
 
