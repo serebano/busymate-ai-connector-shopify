@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 /**
  * PUBLIC-NAMING ENFORCEMENT (HARD owner rule).
  *
- * Merchant- and customer-facing copy must say "Busymate AI" and "bro" — NEVER the
+ * Merchant- and customer-facing copy must say "Busymate AI" and "your mate" — NEVER the
  * internal codenames "bmai" or "eve". Internal architecture is documented with the
  * codenames in CODE COMMENTS (allowed); this test scans only the surfaces a
  * merchant or shopper actually reads:
@@ -61,7 +61,7 @@ function stripLiquid(src: string): string {
 
 function assertClean(label: string, text: string) {
   const m = text.match(FORBIDDEN);
-  expect(m, `${label} leaks the codename "${m?.[0]}" — say "Busymate AI"/"bro" instead`).toBeNull();
+  expect(m, `${label} leaks the codename "${m?.[0]}" — say "Busymate AI"/"your mate" instead`).toBeNull();
 }
 
 describe("public naming (no codenames in merchant-facing copy)", () => {
