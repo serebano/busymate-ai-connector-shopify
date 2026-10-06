@@ -14,8 +14,8 @@ import { decryptField, encryptField } from "./fieldCipher";
  *
  * Every reader goes through this decorator: the library's token-exchange and
  * refresh paths, and `app/mcp/shopifyAdmin.ts` via `unauthenticated.admin(shop)`.
- * With no `APP_ENCRYPTION_KEY` configured the field cipher is a transparent no-op,
- * so this is safe on the credential-free dev/CI path.
+ * With no `APP_ENCRYPTION_KEY` configured the field cipher is a transparent no-op
+ * only outside production. Production refuses sensitive writes before inner storage.
  */
 
 type SessionLike = Session & {

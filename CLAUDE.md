@@ -66,7 +66,7 @@ CHECKLIST.md                Built-for-Shopify compliance status
 - **Encryption at rest** — credential/PII columns (`Session.accessToken` + `email`,
   `BmaiCredential.refreshToken`) are AES-256-GCM encrypted via `app/lib/fieldCipher.ts`
   + the `EncryptedSessionStorage` decorator; `APP_ENCRYPTION_KEY` in the host env
-  (unset ⇒ dev no-op). See `docs/DATA-RETENTION.md`.
+  (unset ⇒ dev no-op; production sensitive writes require a valid key). See `docs/DATA-RETENTION.md`.
 - **Mgmt-call shape is shared** — `set_tenant_branding` / `publish_tenant_runtime` args
   are built ONLY by `app/lib/mgmtArgs.ts` (proof-of-shop + `confirm:true`), so
   provisioning, the settings save and KB re-train can't drift out of the shape the

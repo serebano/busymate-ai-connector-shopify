@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { Session } from "@shopify/shopify-api";
 import type { SessionStorage } from "@shopify/shopify-app-session-storage";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { encryptedSessionStorage } from "../app/lib/encryptedSessionStorage";
 import { isEncrypted, resetFieldCipherCache } from "../app/lib/fieldCipher";
 
@@ -131,5 +131,25 @@ describe("encryptedSessionStorage without a key (documented dev/CI no-op)", () =
     const row = inner.rows.get("offline_acme.myshopify.com")!;
     expect(row.refreshToken).toBe(REFRESH);
     expect(row.accessToken).toBe(ACCESS);
+  });
+});
+
+
+describe("production storage refuses unencrypted sensitive writes", () => {
+  it.each([undefined, "invalid-fixture-key"])("never calls inner storage when the production key is unavailable: case %#", (key) => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("APP_ENCRYPTION_KEY", key);
+    resetFieldCipherCache();
+    try {
+      const inner = memoryStorage();
+      const store = vi.spyOn(inner, "storeSession");
+      const storage = encryptedSessionStorage(inner);
+      expect(() => storage.storeSession(offlineSession())).toThrow("valid APP_ENCRYPTION_KEY");
+      expect(store).not.toHaveBeenCalled();
+      expect(inner.rows.size).toBe(0);
+    } finally {
+      vi.unstubAllEnvs();
+      resetFieldCipherCache();
+    }
   });
 });

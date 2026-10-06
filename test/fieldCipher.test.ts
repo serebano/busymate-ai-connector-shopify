@@ -70,6 +70,20 @@ describe("field cipher (AES-256-GCM at rest)", () => {
     expect(encryptionActive({ APP_ENCRYPTION_KEY: "too-short" } as NodeJS.ProcessEnv)).toBe(false);
   });
 
+  it.each([undefined, "", "too-short", KEY + "!"])("refuses production writes with a missing or malformed key: case %#", (key) => {
+    const env = { NODE_ENV: "production", APP_ENCRYPTION_KEY: key } as NodeJS.ProcessEnv;
+    expect(encryptionActive(env)).toBe(false);
+    expect(() => encryptField("synthetic-sensitive-value", env)).toThrow("valid APP_ENCRYPTION_KEY");
+  });
+
+  it("encrypts production writes with a valid key and preserves legacy reads", () => {
+    const env = { ...withKey, NODE_ENV: "production" } as NodeJS.ProcessEnv;
+    const encrypted = encryptField("production-fixture", env);
+    expect(isEncrypted(encrypted)).toBe(true);
+    expect(decryptField(encrypted, env)).toBe("production-fixture");
+    expect(decryptField("legacy-row", { NODE_ENV: "production" })).toBe("legacy-row");
+  });
+
   it("encrypting an already-encrypted value is idempotent (no double-wrap)", () => {
     const once = encryptField("x", withKey);
     const twice = encryptField(once, withKey);
