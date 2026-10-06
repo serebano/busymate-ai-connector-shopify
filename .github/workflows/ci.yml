@@ -27,6 +27,11 @@ jobs:
         continue-on-error: true
         run: npm run drift-check
       - run: npm run build
+      - name: Delivery boundary
+        if: ${{ github.ref == 'refs/heads/main' }}
+        run: |
+          echo "Validated commit $GITHUB_SHA; this main merge did not deploy the app host or Shopify extension/config." >> "$GITHUB_STEP_SUMMARY"
+          echo 'Host delivery requires a version tag or an authorized manual deploy; verify its exact live revision.' >> "$GITHUB_STEP_SUMMARY"
 
   ops-migration-script:
     # No npm/node dependency — pure bash + coreutils, so this runs even if the

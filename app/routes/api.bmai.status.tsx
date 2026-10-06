@@ -1,10 +1,11 @@
 import { masterSecretUsable } from "../mcp/actorToken";
 import { connectorAudience } from "../lib/connector";
 import { launchIdentityConfigured } from "../lib/identity";
+import { APP_BUILD_REVISION } from "../lib/buildRevision";
 
 /**
  * `/api/bmai/status` — an UNAUTHENTICATED health/capability probe for the bmai
- * connector integration. Returns BOOLEANS only, never a secret value: whether
+ * connector integration. Returns public revision/capability metadata, never a secret value: whether
  * this host CAN verify Busymate AI's actor tokens and mint identified-launch JWTs, plus
  * the audience it pins. Used to confirm a deploy provisioned the secrets before
  * Busymate AI starts delegating.
@@ -13,6 +14,7 @@ import { launchIdentityConfigured } from "../lib/identity";
 export const loader = async () => {
   return Response.json({
     ok: true,
+    revision: APP_BUILD_REVISION,
     // true iff BMAI_SUPPORT_ACTOR_MASTER is present and ≥32 bytes → the app can
     // derive per-(tenant,connector) secrets and verify actor tokens.
     actorVerifier: masterSecretUsable(process.env.BMAI_SUPPORT_ACTOR_MASTER),
