@@ -72,3 +72,20 @@ identity separately from the local checks.
 Initial local evidence (2026-10-06): the four compatibility tests pass; the
 production npm audit reports zero advisories across 261 production dependencies.
 The full application checks and protected CI must still pass before release.
+
+Backlog integration for `busymate-ai-src#1388` preserves the original candidate
+and merges protected connector main `6b323d46fd0ec0f691ee8083e9481ab77a62642f`.
+Seven additional consumer-resolved controls cover query/form compatibility,
+both qs advisory inputs, ordinary route patterns, and three bounded hostile
+brace patterns. They resolve qs through Express and brace-expansion through
+the installed route-generator/minimatch graph. The exact same controls against
+the previous installed 6.15.3/2.1.4 graph fail five cases and pass two; the
+refreshed graph passes all seven. Child processes have a 128 MB heap and a
+three-second watchdog so a vulnerable parser cannot stall the test worker.
+
+Current focused evidence is 37/37 across dependency compatibility, parsing,
+request logging and embed status. The 2026-10-06 production audit again reports
+zero advisories across 261 production dependencies, and the production tree
+resolves without npm errors. Full app checks, Prisma CLI validation, protected
+CI and installed-host readback remain separate required acceptance. No theme,
+database schema, merchant setting, credential or billing data was changed.
