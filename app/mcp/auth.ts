@@ -112,7 +112,7 @@ export async function resolveCaller(
         // actor token (`confirmed: true`), not via a header — before this, every
         // confirm-gated write (cancel_order, create_refund, …) answered
         // "Confirmation required" even after the customer approved it in chat.
-        confirmed: claims.confirmed || request.headers.get("x-bmai-confirmed") === "1",
+        confirmed: claims.confirmed,
         actor: "bmai",
       };
     }
