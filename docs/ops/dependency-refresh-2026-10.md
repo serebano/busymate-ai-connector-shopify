@@ -84,7 +84,11 @@ refreshed graph passes all seven. Child processes have a 128 MB heap and a
 three-second watchdog so a vulnerable parser cannot stall the test worker.
 
 Current focused evidence is 37/37 across dependency compatibility, parsing,
-request logging and embed status. The 2026-10-06 production audit again reports
+request logging and embed status. The full suite initially passed 782/783:
+the old package contract banned all overrides, including the newly tested
+consumer-scoped patch. It now permits exactly that patch and still pins the
+same Shopify library set. The final full suite passes 783/783 with no skipped
+tests. The 2026-10-06 production audit again reports
 zero advisories across 261 production dependencies, and the production tree
 resolves without npm errors. Full app checks, Prisma CLI validation, protected
 CI and installed-host readback remain separate required acceptance. No theme,
