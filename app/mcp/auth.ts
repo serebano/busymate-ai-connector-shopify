@@ -107,7 +107,8 @@ export async function resolveCaller(
       }
       return {
         shop,
-        customerId: claims.sub,
+        // Anonymous tokens have a synthetic nonempty sub, not a customer ID.
+        customerId: claims.actorKind === "identified" ? claims.sub : null,
         // #2132: the platform signals a released confirm gate INSIDE the signed
         // actor token (`confirmed: true`), not via a header — before this, every
         // confirm-gated write (cancel_order, create_refund, …) answered

@@ -55,6 +55,14 @@ MULTI-TENANT, so it verifies as follows:
    `iat`/`nbf`/`exp` window, and the ≤5-minute TTL. The tenant/connector are pinned
    by the SIGNATURE (the derivation), not a bare claim, so a token signed for one
    connector can never authenticate another.
+4. **Verify visitor class** — signed `actor_kind` must be `anonymous` or `identified`.
+   Only `identified` maps `sub` to `customerId`. An anonymous token retains its
+   verified shop binding but has no customer identity and can invoke only public
+   tools. Missing or unknown kinds are refused, including when legacy headers are
+   enabled. The core producer always signs this claim.
+5. **Verify confirmation** — only signed `confirmed: true` releases a confirmed
+   call. Unsigned headers cannot promote it. Anonymous visitors remain blocked
+   from customer/write tools even if their token carries confirmation.
 
 FAIL-CLOSED: an unset/short master, a bad signature, any failed pin, or an unknown
 `(tenant,connector)` ⇒ the caller is `null` and `tools/call` is refused. A token that
