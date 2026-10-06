@@ -38,11 +38,13 @@ describe("app/shopify.server.ts", () => {
 });
 
 describe("package.json", () => {
-  it("pins the consistent Shopify library set and drops the shopify-api override", () => {
+  it("pins the consistent Shopify library set and permits only the scoped Prisma config patch", () => {
     expect(pkg.dependencies["@shopify/shopify-app-react-router"]).toBe("2.1.0");
     expect(pkg.dependencies["@shopify/shopify-app-session-storage-prisma"]).toBe("10.0.1");
     expect(pkg.dependencies["@shopify/shopify-api"]).toBe("14.0.1");
-    expect(pkg.overrides).toBeUndefined();
+    // Keep Shopify's own graph native; #1388's independently tested config
+    // merger is the sole approved exception, restricted to its exact consumer.
+    expect(pkg.overrides).toEqual({ "@prisma/config@6.19.3": { "deepmerge-ts": "8.0.2" } });
   });
 
   it("requires Node ≥22 (the library floor) and builds in production mode", () => {
