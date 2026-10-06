@@ -71,5 +71,10 @@
   ],
   "trustedDependencies": [
     "@shopify/plugin-cloudflare"
-  ]
+  ],
+  "overrides": {
+    "@prisma/config@6.19.3": {
+      "deepmerge-ts": "8.0.2"
+    }
+  }
 }
