@@ -1,106 +1,158 @@
-# Durable webhook retrain design
+# Durable webhook retrain — implementation and rollout
 
-Status: prepared boundary only. `reingestQueue.ts` is not imported by the active
-webhook routes. The current process-local scheduler is still in production.
-No migration, database write, worker activation or configuration change has been
-performed as part of this design.
+Source implementation for the app-owned queue; **not deployed or activated**.
+Production DDL and worker activation require the final owner window described
+below. Local proofs do not establish production delivery or exactly-once effects.
 
-## Current contracts and reuse
+## Behavior and ownership
 
-Authenticated products/shop/scopes routes call `scheduleReingest` and return 2xx
-before the Map/setTimeout scheduler performs work. A restart loses that timer.
-The 6-hour freshness timer eventually retries stores older than 72 hours, which
-does not preserve the meaning of an acknowledged webhook.
+Previously, products/shop/scopes routes acknowledged a Map/setTimeout timer. A
+restart could lose that request. They now await authenticated, bound enqueue in
+the app's own PostgreSQL database before returning 2xx. Persistence failure
+propagates instead of reporting queued success. Orders remain a no-op.
 
-`ShopTenant` supplies installed/inactive state and training outcomes.
-`KbFreshnessRun` is a fleet-run history and health ledger, not an event queue.
-`MeterDelivery` is an unwired billing outbox with a BillingState foreign key,
-immutable billing payload and billing-specific reconciliation; do not reuse its
-rows or loosen those invariants. Reuse its transaction/nonce compare-and-set
-pattern, the existing app database, `retrainNow`/`trainTenant`, webhook HMAC
-helper, and the existing systemd deployment conventions.
+`ShopTenant` supplies installation, inactive state and training outcomes.
+`KbFreshnessRun` remains the fleet backstop ledger. The billing-only
+`MeterDelivery` table and its immutable payload are untouched. Dedicated
+`KbReingestQueue`, `KbReingestReceipt` and aggregate `KbReingestWorkerState`
+tables preserve the separate ownership and acceptance meanings.
 
-## Proposed persistence
+Receipt identity `(shop, webhookId)` deduplicates deliveries. No webhook payload,
+customer/product content or credentials enter the queue. A new receipt advances
+requested generation; a duplicate neither advances it nor postpones execution.
+The quiet period is 20 seconds with a two-minute maximum burst deferral.
+Missing ShopTenant binding refuses enqueue (non-2xx, sender can retry); an
+existing unprovisioned binding retains pending work until published. Inactive
+shops are deliberately skipped. Queue rows and receipts cascade on tenant purge.
 
-A dedicated `KbReingestQueue` row per shop should hold requested/completed
-monotonic generations, due time, attempt count, last classified failure,
-lease token, claimed generation and lease expiry. A separate
-`KbReingestReceipt` unique `(shop, webhookId)` records duplicate deliveries
-without storing raw webhook payload, credentials or product/customer content.
-Retain receipts for a documented horizon exceeding the verified Shopify retry
-window; a later duplicate can safely request a redundant retrain, not overwrite
-newer pending work. Receipt retention and queue history need bounded cleanup.
+Atomic SQL functions use database time, row locks and conditional token/generation
+updates. A claim uses `FOR UPDATE SKIP LOCKED`; only one current lease can own a
+shop. Completion clears only its claimed generation, preserving newer arrivals.
+Expired/wrong tokens cannot renew, complete, release or postpone another lease.
+Claims pin the tenant ID too: a changed binding invalidates ownership.
 
-The live adapter must implement the `DurableReingestStore` contracts against
-PostgreSQL with its clock and transactional row locks. No read-then-write lease
-without a conditional UPDATE. The enqueue transaction must lock/check ShopTenant
-active state, deduplicate the receipt, then advance requested generation for a
-new event. COMMIT must precede 2xx. Database errors must return non-2xx so the
-sender can retry. No memory-only fallback.
+Webhook enqueue and cancellation have two-second lock/four-second statement
+limits inside a bounded transaction. A lock/database failure prevents success
+acknowledgement. Uninstall marks inactive and cancels generations atomically;
+shop-not-found backstop handling also cancels pending jobs. GDPR deletion purges
+the queue and receipt records. Successful retraining updates its training state
+under the same tenant-first lock order, with lease ownership rechecked.
 
-A burst extends the quiet-period due time, bounded by a maximum deferral so a
-busy store cannot starve forever. A duplicate receipt does not advance generation
-or postpone due time. Missing/unprovisioned shops need an explicit durable
-pending disposition rather than silently dropping an authenticated early event.
-Inactive/suspended stores are a deliberate refusal.
+## Worker, retry and cancellation
 
-## Worker and failure semantics
+`kb-reingest.ts` is a persistent owning systemd service. A dedicated authenticated
+`pg` connection LISTENs on the app database; enqueue emits an empty NOTIFY only
+on commit. The notification contains no shop or payload. Every notification and
+every successful initial subscription/rejoin triggers an authoritative queue read.
+Wakes coalesce while a drain runs; one local drain executes at a time. It drains
+at most four jobs per batch and stops taking new work after four minutes per batch.
 
-- A bounded worker claims due rows with `FOR UPDATE SKIP LOCKED` and excludes
-  inactive shops and unexpired leases. Persist a fresh random token and the
-  claimed generation. Concurrency remains bounded per host and per shop.
-- Renew leases only when the exact token/generation is still unexpired. An
-  expired worker never revives its old token. Failed renewal aborts subsequent
-  work; verify ownership and active-shop state again immediately before publish.
-- Complete with exact token/generation CAS and DB-clock expiry checks. Mark only
-  the claimed generation complete. An event arriving during a run leaves a new
-  pending generation; stale completion/retry must not erase or postpone it.
-- Persist retry classification and exponential delay (5 seconds, capped at
-  30 minutes). Do not discard a job after a fixed retry count. Repeated failures
-  become an operator-visible alert. Authentication/inactive failures require
-  distinct handling from temporary transport/rate-limit failures.
-- Uninstall must durably mark inactive and invalidate/cancel pending work in one
-  transaction, before acknowledgement. Reinstall invalidates old leases and
-  establishes a new generation. GDPR shop-redact deletes this app-owned queue
-  and receipts with the store's data.
-- Restart recovery comes from scanning durable due/expired rows, never from
-  process timers. The worker must run independently of incoming web traffic.
-  Keep the existing freshness timer as a backstop, coordinated through the same
-  per-shop training exclusion rather than racing a webhook worker.
+The 20-second quiet period (two-minute maximum burst deferral) is intentional
+catalog coalescing, not a zero-latency promise. An exact due-time timer handles
+that delay and persisted retries; a maximum 30-second fallback rereads durable
+state even during listener reconnects. The listener reconnects with bounded
+backoff and never treats a notification as proof of a queued or completed job.
+`pg` uses the existing app DATABASE_URL, including its TLS parameters; deployment
+must verify it is a direct/session connection compatible with LISTEN, not a
+transaction pooler. No separate credentials or platform database are used.
+The listener status is recorded value-blind; queue health refuses green while
+it is disconnected even if the fallback still drains work.
+Each attempt runs in a fresh owned child process with a 120-second deadline.
+Lease renewal runs every 30 seconds; the lease lasts five minutes. Failed renewal
+aborts that child. Cancellation sends SIGTERM, then SIGKILL to that same owned
+child after two seconds if necessary, and waits for its exit before retry.
+No historical or unrelated process is signalled.
 
-The remote publish remains **at least once**. Local lease ownership cannot prove
-exactly-once remote effects after a response is lost or a process pauses during
-an in-flight request. Before activation, verify the platform's replace-by-key
-training behavior and establish a publish idempotency/revision-fencing strategy
-or document the remaining replay/stale-publish constraint. Every external call
-needs a bounded timeout/abort path; abandoning a Promise alone is not cancellation.
+The child verifies lease/active binding before fetching and immediately before
+publishing. Retry persists a classified failure with exponential delay from five
+seconds to 30 minutes; a job is never silently discarded after a retry count.
+A crashed parent/host leaves an expiring lease that another worker can claim.
+Manual retrain and the freshness backstop also use this queue/lease path, so they
+cannot race a webhook attempt for the same shop. Installation's existing initial
+publish remains part of provisioning; queue claims require a published binding.
 
-## Source integration still required
+The external publish is **at least once**: a response lost after a successful
+publish can cause a repeat. The existing replace-by-key knowledge operation is
+reused. A local nonce cannot fence an already accepted remote request, so this
+change does not promise exactly-once publication or exclusion of every remote
+in-flight replay. Child termination prevents subsequent local work but does not
+undo a remote operation already accepted. No new publisher or direct platform
+DB path is introduced.
 
-1. Add reviewed schema/migration and Prisma adapter, with an isolated PostgreSQL
-   suite proving real transaction contention, duplicate delivery, rollback,
-   restart, lease expiry, stale token, in-flight generations and cancellation.
-2. Change all authenticated KB/scopes webhook callers to await durable enqueue
-   and carry verified webhookId. Preserve order no-op. Update async scope and
-   uninstall callers and prove enqueue failure cannot produce 2xx.
-3. Add a bounded worker entrypoint and owning systemd unit/timer. Bind training
-   cancellation/lease checking through the existing train/publish seam. Do not
-   introduce a second knowledge publisher or reuse a billing producer.
-4. Expose aggregate queue health (oldest pending age, expired leases, retry/failure
-   counts and last completed worker run); an empty/stale heartbeat is not green.
-5. Normal app checks plus isolated database and restart/process-boundary proof.
-   Interface/fake-port tests alone do not demonstrate durability.
+Receipts older than 30 days are removed in batches of at most 1,000 per worker
+run. A later duplicate can request another refresh, never erase newer work.
+Pending queue rows remain until completion/cancellation or tenant purge.
+`/api/kb/queue-health` exposes aggregate counts only and returns 503 for database
+failure, missing/stale worker completion, a disconnected listener, failed pending work, expired leases,
+or requests pending longer than ten minutes. Existing freshness health remains
+separate; a healthy queue does not prove the 72-hour backstop ran.
 
-## Required owner rollout window
+## Required local and protected acceptance
 
-Before production mutations, the captain must review the exact migration,
-backup/recovery instructions, measured table/index cost, compatible code order,
-worker resource budget and rollback steps. Apply an additive migration first,
-verify schema provenance without customer-row scans, deploy reviewed code, then
-activate the worker with an explicit owner window. Use a synthetic local queue
-for restart tests; no production webhook fixtures or merchant writes without
-separate authorization. Capture actual migration/deployed source and aggregate
-health evidence. Rollback may disable the worker and restore prior code while
-retaining queued rows; never drop acknowledged work to make rollback appear clean.
+- `npm ci`, `npx prisma generate`, typecheck, lint, all Vitest tests and production
+  build against the final reviewed source. Full checks remain subject to the
+  coordinator's resource admission; no bypass.
+- `npm run test:reingest-sql`: exact committed migration functions in a new
+  socket-only local PostgreSQL cluster, with a whitelisted environment and only
+  synthetic rows. Includes receipt/restart, claim contention, duplicate receipt
+  race, stale/expired nonce, tenant rebinding, newer generations, retries, cancellation
+  and rollback. The real production pg listener sees committed notifications, no
+  rolled-back notification, and reconnects/re-reads after a real database restart.
+- Owning tests cover await-before-ack and refusal on persistence failure, public
+  order no-op, worker renewal/timeout, actual owned-child termination/restart and
+  aggregate health refusal. Interface/fake-port tests alone are not SQL proof.
+- CI installs local PostgreSQL binaries and runs the same SQL fixture in the
+  existing build-test job. No production URL or fixture is used.
 
-The current commit deliberately changes none of those production surfaces.
+## Concrete owner rollout window — approval required before execution
+
+The captain must review this exact migration and final source/CI first:
+`prisma/migrations/20261006053000_kb_reingest_queue/migration.sql`.
+This is additive: three new empty tables, indexes, functions and one worker-state
+row. It does not rewrite existing tenant rows. During the approved window:
+
+1. Record the current host source SHA, successful service status and a recoverable
+   database backup using the existing owning backup procedure. Retain the prior
+   built artifact and dependency lockfile. Do not print DATABASE_URL or keys.
+2. On `/opt/busymate-ai-shopify`, fetch the protected landed source and verify its
+   ancestry. Inspect `npx prisma migrate status` through the existing protected
+   app environment. **Hold if any pending migration other than the reviewed queue
+   migration exists.** No blanket deploy of unknown schema changes.
+3. Apply that verified pending set with the owning environment and deploy user:
+   `npx prisma migrate deploy`. Record migration checksum/status. Verify table and
+   function existence through bounded catalog reads, not merchant-row discovery.
+4. Run the ordinary host rollout's `npm ci`, `npx prisma generate`, `npm run build`
+   and application service restart on the same exact source. The app now commits
+   queue requests; queued work can safely wait while the worker is installed.
+5. Verify the existing DATABASE_URL is a direct/session PostgreSQL connection
+   suitable for LISTEN, without printing it. Hold if it uses transaction pooling.
+   Install the committed service into `/etc/systemd/system`, run
+   `systemctl daemon-reload`, then
+   `systemctl enable --now busymate-ai-shopify-kb-reingest.service`.
+   EnvironmentFile stays `/etc/busymate-ai-shopify/env`; no new credentials/config
+   values are required. The service uses KillMode=control-group, a 130-second
+   stop ceiling and automatic restart. The active attempt has a 120-second bound;
+   shutdown takes no further claims. Do not weaken the existing freshness timer.
+6. Verify the service definition matches the committed file, its LISTEN session
+   connected and an authoritative drain completed, `/api/bmai/status` succeeds and `/api/kb/queue-health` returns
+   actual healthy aggregate evidence. No synthetic production webhook or merchant
+   mutation is authorized by this runbook. Real delivery proof must use an
+   explicitly authorized existing event/window and report its evidence separately.
+
+Rollback: stop/disable only the new worker service, restore the previous source,
+lockfile and built artifact using the ordinary app rollback, and restart the app.
+**Retain all queue/receipt tables and pending work.** The old code can run with
+additive tables present, but its new acknowledgements again have the old
+process-local limitation; document that degraded state. Drain/reconcile retained
+work with the reviewed worker after recovery. Never drop acknowledged rows or
+reverse the migration just to make rollback look clean.
+
+## Source validation record (not production acceptance)
+
+The exact migration passes an isolated PostgreSQL restart/contention/rebind/purge
+fixture, including the real production LISTEN client. Owning route, worker,
+process, wake and health tests are run without production credentials. Full
+Prisma generation, typecheck, lint, all tests and build still require the
+coordinator's resource slot before this branch may be proposed as ready to ship.
+
+The LISTEN client behavior follows the upstream [node-postgres Client API](https://node-postgres.com/apis/client).

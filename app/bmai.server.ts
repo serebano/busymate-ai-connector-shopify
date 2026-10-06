@@ -386,6 +386,8 @@ export async function onAppUninstalled(shop: string): Promise<void> {
 
 /** shop/redact (GDPR, 48h after uninstall) → full tenant teardown + data purge. */
 export async function onShopRedact(shop: string): Promise<void> {
+  const { purgeReingest } = await import("./lib/reingestStore.server");
+  await purgeReingest(shop);
   const row = await prisma.shopTenant.findUnique({ where: { shop } });
   if (row?.bmaiTenantId) {
     await callMcpTool("delete_tenant", { ...proofArgs(shopProof(shop)), confirm: true });

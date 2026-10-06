@@ -38,8 +38,8 @@ const spies = vi.hoisted(() => ({
   onAppUninstalled: vi.fn(async () => undefined),
   onShopRedact: vi.fn(async () => undefined),
   refreshStorefrontDomains: vi.fn(async () => null),
-  scheduleReingest: vi.fn(() => ({ scheduled: false, reason: "test" })),
-  cancelReingest: vi.fn(() => false),
+  scheduleReingest: vi.fn(async () => ({ scheduled: false, reason: "test" })),
+  cancelReingest: vi.fn(async () => undefined),
   syncBillingState: vi.fn(async () => false),
 }));
 
@@ -147,7 +147,7 @@ describe("webhook routes with an expired or missing offline session (0.1.15)", (
       where: { id: `offline_${shop}`, shop, isOnline: false },
       data: { scope: "read_products,read_legal_policies" },
     });
-    expect(spies.scheduleReingest).toHaveBeenCalledWith(shop, "scopes");
+    expect(spies.scheduleReingest).toHaveBeenCalledWith(shop, "scopes", "2a4b6c8d-0000-4000-8000-000000000001");
   });
 
   it("app/uninstalled and shop/redact still run their teardown; domains/* refreshes in the background", async () => {
@@ -166,7 +166,14 @@ describe("webhook routes with an expired or missing offline session (0.1.15)", (
     const d = DELIVERIES.find((x) => x.topic === "shop/update")!;
     const route = await routeFor(d.file);
     await route.action({ request: delivery(d.path, d.topic, d.payload), params: {}, context: {} });
-    expect(spies.scheduleReingest).toHaveBeenCalledWith(shop, "shop");
+    expect(spies.scheduleReingest).toHaveBeenCalledWith(shop, "shop", "2a4b6c8d-0000-4000-8000-000000000001");
+  });
+
+  it.each(["products/update", "shop/update", "app/scopes_update"])("%s refuses acknowledgement when durable enqueue fails", async (topic) => {
+    const d = DELIVERIES.find((x) => x.topic === topic)!;
+    const route = await routeFor(d.file);
+    spies.scheduleReingest.mockRejectedValueOnce(new Error("synthetic queue unavailable"));
+    await expect(route.action({ request: delivery(d.path, d.topic, d.payload), params: {}, context: {} })).rejects.toThrow("queue unavailable");
   });
 
   it("a bad HMAC never reaches an effect", async () => {

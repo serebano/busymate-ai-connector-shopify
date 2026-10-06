@@ -18,6 +18,10 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint --if-present
       - run: npm test
+      - name: Install local PostgreSQL fixture binaries
+        run: sudo apt-get update && sudo apt-get install -y postgresql
+      - name: Durable reingest exact-SQL concurrency and restart proof
+        run: npm run test:reingest-sql
       # Advisory: compare the LIVE canonical store record (busymate.ai) against
       # this repo's derived listing artifacts (busymate-devtools#2036). Real
       # drift exits 1; an unreachable endpoint exits 2 (UNVERIFIED, not a pass).

@@ -20,7 +20,7 @@ function deps() {
       updateSessionScope: async (id: string, scope: string) => {
         updates.push({ id, scope });
       },
-      scheduleReingest: (shop: string, reason: "scopes") => {
+      scheduleReingest: async (shop: string, reason: "scopes") => {
         scheduled.push({ shop, reason });
         return { scheduled: true };
       },
@@ -32,7 +32,7 @@ describe("handleScopesUpdate", () => {
   it("records the new scope set on the session AND queues a re-train", async () => {
     const d = deps();
     const out = await handleScopesUpdate(
-      { shop: "s.myshopify.com", sessionId: "offline_s.myshopify.com", current: ["read_products", "read_legal_policies"] },
+      { shop: "s.myshopify.com", webhookId: "synthetic-scope-event", sessionId: "offline_s.myshopify.com", current: ["read_products", "read_legal_policies"] },
       d.deps,
     );
     expect(out.scope).toBe("read_products,read_legal_policies");
@@ -43,14 +43,14 @@ describe("handleScopesUpdate", () => {
   });
   it("still queues a re-train when the webhook carries no session", async () => {
     const d = deps();
-    const out = await handleScopesUpdate({ shop: "s.myshopify.com", sessionId: null, current: ["read_products"] }, d.deps);
+    const out = await handleScopesUpdate({ shop: "s.myshopify.com", webhookId: "synthetic-scope-event", sessionId: null, current: ["read_products"] }, d.deps);
     expect(out.sessionUpdated).toBe(false);
     expect(d.updates).toEqual([]);
     expect(d.scheduled).toHaveLength(1);
   });
   it("ignores a malformed payload (no scope written) but never skips the re-train", async () => {
     const d = deps();
-    const out = await handleScopesUpdate({ shop: "s.myshopify.com", sessionId: "x", current: "nope" }, d.deps);
+    const out = await handleScopesUpdate({ shop: "s.myshopify.com", webhookId: "synthetic-scope-event", sessionId: "x", current: "nope" }, d.deps);
     expect(out.scope).toBeNull();
     expect(out.sessionUpdated).toBe(false);
     expect(d.updates).toEqual([]);

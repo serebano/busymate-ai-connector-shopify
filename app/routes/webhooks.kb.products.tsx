@@ -9,8 +9,8 @@ import { authenticateWebhookWithoutSession } from "../lib/webhookAuth";
 // HMAC only, no offline-session load (0.1.15): the re-train resolves and refreshes
 // the token itself (unauthenticated.admin) after this delivery has been acked.
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { shop, topic } = await authenticateWebhookWithoutSession(request);
-  const r = scheduleReingest(shop, "products");
+  const { shop, topic, webhookId } = await authenticateWebhookWithoutSession(request);
+  const r = await scheduleReingest(shop, "products", webhookId);
   console.log(`[kb] ${topic} for ${shop} → re-train ${r.scheduled ? "queued" : `skipped: ${r.reason}`}`);
   return new Response();
 };

@@ -77,7 +77,9 @@ CHECKLIST.md                Built-for-Shopify compliance status
   products → pages, whole items, "+N more" note). Training state lives on `ShopTenant.kb*`
   and is shown on Home / Store connection; ingest errors are persisted, never swallowed.
 - **Knowledge never goes stale silently (#52)** — webhooks first (products/*, shop/update,
-  scopes_update); Shopify has no policy/page webhook, so `scripts/kb-freshness.ts` (systemd timer,
+  scopes_update), committed to the app-owned durable queue before acknowledgement. A separate
+  knowledge worker retries leased jobs after restart; see `docs/ops/durable-retrain-design-2026-10.md`.
+  Shopify has no policy/page webhook, so `scripts/kb-freshness.ts` (systemd timer,
   6 h) re-trains active shops older than 72 h and marks 404 (deleted) shops inactive;
   `/api/kb/health` is 503 when an active shop is > 96 h or the backstop stopped finishing. Never
   loosen the platform's 168 h preflight — the fix is fresh data. SETUP §3c-quater.

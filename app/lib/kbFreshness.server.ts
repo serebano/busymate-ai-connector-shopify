@@ -44,7 +44,7 @@ export async function listFreshnessRows(): Promise<FreshnessRow[]> {
 }
 
 export async function markShopInactive(shop: string, reason: string): Promise<void> {
-  await prisma.shopTenant.updateMany({ where: { shop, inactiveAt: null }, data: { inactiveAt: new Date(), inactiveReason: reason } });
+  await prisma.$executeRaw`SELECT kb_reingest_cancel(${shop},${reason})`;
 }
 
 export interface LedgeredRun {

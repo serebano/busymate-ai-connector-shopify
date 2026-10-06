@@ -1,7 +1,7 @@
 /**
- * Prepared durable retrain boundary; not wired into ingest or webhook routes yet.
- * Persistence must satisfy the atomic contracts below before activation. An
- * in-memory implementation is suitable only for tests, never acknowledgement.
+ * Durable retrain boundary. The PostgreSQL adapter owns atomic persistence;
+ * webhook routes await its commit before acknowledgement. An in-memory
+ * implementation is suitable only for tests, never production acknowledgement.
  */
 import type { ReingestReason } from "./kbTrain";
 

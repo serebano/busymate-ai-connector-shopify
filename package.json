@@ -29,7 +29,9 @@
     "tenants:reconcile": "tsx scripts/reconcile-tenants.ts",
     "prisma": "prisma",
     "setup": "prisma generate && prisma migrate deploy",
-    "db:migrate": "prisma migrate deploy"
+    "db:migrate": "prisma migrate deploy",
+    "kb:reingest": "tsx scripts/kb-reingest.ts",
+    "test:reingest-sql": "node --test scripts/__tests__/reingest-sql.test.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.19.0",
@@ -44,6 +46,7 @@
     "isbot": "^5.1.0",
     "jose": "^5.9.6",
     "morgan": "^1.12.1",
+    "pg": "8.23.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router": "^7.1.1"
@@ -53,6 +56,7 @@
     "@react-router/dev": "^7.1.1",
     "@shopify/api-codegen-preset": "^1.1.1",
     "@types/node": "^22.10.5",
+    "@types/pg": "8.23.1",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "esbuild": "^0.25.12",

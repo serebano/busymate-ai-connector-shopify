@@ -139,57 +139,10 @@ export async function trainTenant(input: TrainInput, deps: TrainDeps): Promise<T
   return { ok: true, counts: build.counts, fetched: build.fetched, totalChars: build.totalChars, truncated: build.truncated, revision: revisionOf(res.data) };
 }
 
-// ---- Webhook re-ingest debounce ---------------------------------------------
+// Webhook reasons shared with the durable queue.
 
 /**
  * products: catalog webhooks · shop: shop/update · scopes: a scope grant
  * (app/scopes_update) · orders: never re-trains.
  */
 export type ReingestReason = "products" | "shop" | "scopes" | "orders";
-
-export interface ReingestScheduler {
-  /** Queue a re-train for the shop after a quiet period; a burst coalesces into one run. */
-  schedule: (shop: string, reason: ReingestReason) => { scheduled: boolean; reason?: string };
-  /** Shops with a pending (not yet run) re-train. */
-  pending: () => string[];
-  /** Drop a pending re-train (app/uninstalled: stop retraining). True when one was pending. */
-  cancel: (shop: string) => boolean;
-}
-
-/**
- * Per-shop trailing debounce. Product webhooks arrive in bursts (a bulk edit =
- * hundreds); one re-train after the burst is enough. Orders are NOT knowledge —
- * they are read live through the connector — so an order webhook never re-trains.
- * In-memory by design: a lost timer is healed by the next product change or a
- * manual re-train.
- */
-export function createReingestScheduler(opts: {
-  run: (shop: string) => Promise<unknown>;
-  delayMs?: number;
-  onError?: (shop: string, err: unknown) => void;
-}): ReingestScheduler {
-  const delayMs = opts.delayMs ?? 20_000;
-  const timers = new Map<string, ReturnType<typeof setTimeout>>();
-  return {
-    schedule(shop, reason) {
-      if (reason === "orders") return { scheduled: false, reason: "orders are read live through the store connection; they are not knowledge" };
-      const prev = timers.get(shop);
-      if (prev) clearTimeout(prev);
-      const t = setTimeout(() => {
-        timers.delete(shop);
-        opts.run(shop).catch((err) => opts.onError?.(shop, err));
-      }, delayMs);
-      (t as { unref?: () => void }).unref?.();
-      timers.set(shop, t);
-      return { scheduled: true };
-    },
-    pending: () => [...timers.keys()],
-    cancel(shop) {
-      const t = timers.get(shop);
-      if (!t) return false;
-      clearTimeout(t);
-      timers.delete(shop);
-      return true;
-    },
-  };
-}

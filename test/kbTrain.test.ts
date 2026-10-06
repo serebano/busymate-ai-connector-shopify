@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createReingestScheduler, isKnowledgeRejection, trainTenant, type TrainDeps } from "../app/lib/kbTrain";
+import { isKnowledgeRejection, trainTenant, type TrainDeps } from "../app/lib/kbTrain";
 import type { KbSnapshot } from "../app/lib/kbSnapshot";
 
 /**
@@ -111,80 +111,7 @@ describe("isKnowledgeRejection", () => {
   });
 });
 
-describe("createReingestScheduler (webhook debounce)", () => {
-  it("coalesces a burst of product webhooks for one shop into ONE re-train after the quiet period", async () => {
-    vi.useFakeTimers();
-    try {
-      const run = vi.fn(async (_shop: string) => {});
-      const s = createReingestScheduler({ run, delayMs: 1000 });
-      s.schedule("a.myshopify.com", "products");
-      s.schedule("a.myshopify.com", "products");
-      s.schedule("b.myshopify.com", "products");
-      expect(run).not.toHaveBeenCalled();
-      await vi.advanceTimersByTimeAsync(1100);
-      expect(run).toHaveBeenCalledTimes(2);
-      expect(run.mock.calls.map((c) => c[0]).sort()).toEqual(["a.myshopify.com", "b.myshopify.com"]);
-      expect(s.pending()).toEqual([]);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("order webhooks do not re-train (orders are read live through the connector)", () => {
-    const run = vi.fn(async () => {});
-    const s = createReingestScheduler({ run, delayMs: 10 });
-    const r = s.schedule("a.myshopify.com", "orders");
-    expect(r.scheduled).toBe(false);
-    expect(s.pending()).toEqual([]);
-  });
-
-  it("a failing run is reported through onError, never thrown out of the timer", async () => {
-    vi.useFakeTimers();
-    try {
-      const onError = vi.fn();
-      const s = createReingestScheduler({
-        run: async () => {
-          throw new Error("ingest exploded");
-        },
-        delayMs: 10,
-        onError,
-      });
-      s.schedule("a.myshopify.com", "products");
-      await vi.advanceTimersByTimeAsync(50);
-      expect(onError).toHaveBeenCalledWith("a.myshopify.com", expect.objectContaining({ message: "ingest exploded" }));
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-});
-
-describe("createReingestScheduler — scope grants", () => {
-  it("a scopes_update re-trains like a product change (new scopes = newly readable knowledge)", async () => {
-    const runs: string[] = [];
-    const s = createReingestScheduler({ run: async (shop) => { runs.push(shop); }, delayMs: 5 });
-    expect(s.schedule("s.myshopify.com", "scopes")).toEqual({ scheduled: true });
-    await new Promise((r) => setTimeout(r, 30));
-    expect(runs).toEqual(["s.myshopify.com"]);
-  });
-});
-
 describe("#52 — uninstall stops retraining; inactive shops are refused; errors are readable", () => {
-  it("cancel drops a pending re-train before it runs", async () => {
-    vi.useFakeTimers();
-    try {
-      const run = vi.fn(async () => undefined);
-      const s = createReingestScheduler({ run, delayMs: 1000 });
-      s.schedule("acme.myshopify.com", "shop");
-      expect(s.cancel("acme.myshopify.com")).toBe(true);
-      expect(s.cancel("acme.myshopify.com")).toBe(false);
-      await vi.advanceTimersByTimeAsync(5000);
-      expect(run).not.toHaveBeenCalled();
-      expect(s.pending()).toEqual([]);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
   it("a thrown Response persists as 'Shopify <status>', never '[object Response]'", async () => {
     const { d, saved } = deps({ fetchSnapshot: async () => { throw new Response(null, { status: 401, statusText: "Unauthorized" }); } });
     const out = await trainTenant(INPUT, d);
