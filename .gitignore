@@ -27,3 +27,6 @@ extensions/*/dist
 .vscode/*
 !.vscode/extensions.json
 .idea
+
+# Shopify CLI config written by `shopify app deploy --config production` runs (public client_id only)
+shopify.app.production.toml

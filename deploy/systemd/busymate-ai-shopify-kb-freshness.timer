@@ -1,0 +1,14 @@
+[Unit]
+# Every 6 h (offset from the hourly meter) + up to 15 min jitter: a shop is
+# re-trained by ~78 h worst case, inside the 96 h alert and the platform's 168 h
+# knowledge-citations window.
+Description=Every 6h Busymate AI for Shopify knowledge freshness backstop
+
+[Timer]
+OnCalendar=*-*-* 00,06,12,18:37:00
+RandomizedDelaySec=900
+Persistent=true
+Unit=busymate-ai-shopify-kb-freshness.service
+
+[Install]
+WantedBy=timers.target

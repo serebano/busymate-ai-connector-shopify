@@ -1,3 +1,6 @@
+// #3718 P1 — redact credentials (id_token / hmac / session / code …) from the
+// host's access log before the first request is served.
+import "./lib/requestLogRedaction.server";
 import { PassThrough } from "stream";
 import { renderToPipeableStream } from "react-dom/server";
 import { ServerRouter } from "react-router";

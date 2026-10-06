@@ -37,7 +37,7 @@ the `provision_partner_tenant` tool verifies it.
 
 Reused verbatim across platforms. See `app/lib/provision.ts::runProvisionLifecycle`.
 
-### c. Register a support connector (so bro can act)
+### c. Register a support connector (so your mate can act)
 
 Your platform's tools (look up an order, issue a refund, cancel a subscription…) are
 exposed as a **connector**: an MCP JSON-RPC endpoint you host, registered with
@@ -75,7 +75,7 @@ script however that platform allows (a plugin, a snippet, a layout partial).
 
 ### e. Identified launch (know your visitor)
 
-So bro can scope answers and actions to a real account, the app proves the visitor's
+So your mate can scope answers and actions to a real account, the app proves the visitor's
 identity with a short-lived **ES256 JWT**: the private key signs a launch token; the
 public half is served at `/.well-known/jwks.json` and registered as the tenant's visitor
 identity provider.

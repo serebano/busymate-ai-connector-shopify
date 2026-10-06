@@ -10,7 +10,7 @@
  *
  * Needs the app env (SHOPIFY_API_KEY/SECRET, SHOPIFY_APP_URL, DATABASE_URL,
  * APP_ENCRYPTION_KEY, BMAI_MGMT_* / BMAI_PARTNER_PROOF_SECRET) — on the host,
- * source /etc/bmai-shopify-app/env as root and `sudo -E -H -u deploy` (SETUP §3c).
+ * source /etc/busymate-ai-shopify/env as root and `sudo -E -H -u deploy` (SETUP §3c).
  * Prints counts / revision only; exits 1 if any shop failed (value-blind).
  */
 import { retrainNow } from "../app/lib/ingest";

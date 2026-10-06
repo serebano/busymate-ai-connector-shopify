@@ -130,7 +130,7 @@ export function renderLegalHtml(md, title) {
 <header class="brand"><span class="dot">💬</span><b>Busymate AI for Shopify</b></header>
 <nav class="legal">${nav}</nav>
 ${markdownToHtml(md)}
-<footer>© ${new Date().getUTCFullYear()} Busymate AI · <a href="https://busymate.ai">busymate.ai</a> · Support: <a href="mailto:mr.serebano@gmail.com">mr.serebano@gmail.com</a></footer>
+<footer>© ${new Date().getUTCFullYear()} Busymate AI · <a href="https://busymate.ai">busymate.ai</a> · Support: <a href="mailto:hi@busymate.ai">hi@busymate.ai</a></footer>
 </div></body></html>
 `;
 }

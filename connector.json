@@ -1,0 +1,17 @@
+{
+  "$schema": "https://github.com/serebano/busymate-ai-connector-kit/blob/v0.4.0/src/manifest.ts",
+  "schema": 1,
+  "id": "shopify",
+  "label": "Shopify",
+  "category": "commerce",
+  "icon": "shopify",
+  "status": "beta",
+  "statusEvidence": "#3295 — the app is built and its loop works for a store that has it; the Shopify App Store listing is still in review.",
+  "featured": true,
+  "order": 9,
+  "configKeys": [],
+  "docs": "/docs/guides/shopify",
+  "surfaces": [
+    "app"
+  ]
+}

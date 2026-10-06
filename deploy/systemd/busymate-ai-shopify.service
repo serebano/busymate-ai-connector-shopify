@@ -10,13 +10,13 @@ Wants=network-online.target
 Type=simple
 User=deploy
 Group=deploy
-WorkingDirectory=/opt/bmai-shopify-app
+WorkingDirectory=/opt/busymate-ai-shopify
 # react-router-serve; binds 127.0.0.1 only (nginx is the public edge).
 Environment=NODE_ENV=production
 Environment=PORT=3970
 Environment=HOST=127.0.0.1
 # Secrets + DATABASE_URL + Shopify keys live here (mode 0600 root:deploy).
-EnvironmentFile=/etc/bmai-shopify-app/env
+EnvironmentFile=/etc/busymate-ai-shopify/env
 ExecStart=/usr/bin/node node_modules/@react-router/serve/dist/cli.js ./build/server/index.js
 Restart=always
 RestartSec=3

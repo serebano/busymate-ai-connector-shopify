@@ -67,10 +67,29 @@ uri = "https://store.busymate.ai/webhooks/app/scopes_update"
 topics = [ "app_subscriptions/update" ]
 uri = "https://store.busymate.ai/webhooks/app_subscriptions/update"
 
+# --- Storefront domains (#3718, review 5.1.2) ---
+# The chat frame's frame-ancestors must name every storefront domain a shopper can
+# load. A custom domain connected or changed after install re-reads the store's
+# domains and repairs the tenant's allowlist (app/routes/webhooks.domains.tsx).
+# These topics need no access scope. Takes effect on `shopify app deploy`; until
+# then the same check runs on every afterAuth and in `npm run tenants:reconcile`.
+[[webhooks.subscriptions]]
+topics = [ "domains/create", "domains/update", "domains/destroy" ]
+uri = "https://store.busymate.ai/webhooks/domains"
+
 # --- KB-freshness webhooks (re-ingest the tenant KB snapshot on change) ---
 [[webhooks.subscriptions]]
 topics = [ "products/create", "products/update", "products/delete" ]
 uri = "https://store.busymate.ai/webhooks/kb/products"
+
+# shop/update (#52): the shop name/settings are in the knowledge snapshot. No scope needed.
+# Shopify has NO webhook topic for shop policies or pages (checked against the 2026-07
+# WebhookSubscriptionTopic list), and the snapshot reads neither collections, inventory
+# nor theme content — so policies and pages are bounded by the 72 h freshness backstop
+# (scripts/kb-freshness.ts, systemd timer deploy/systemd/busymate-ai-shopify-kb-freshness.*).
+[[webhooks.subscriptions]]
+topics = [ "shop/update" ]
+uri = "https://store.busymate.ai/webhooks/kb/shop"
 
 # Orders/fulfillments carry PROTECTED CUSTOMER DATA — Shopify blocks subscribing
 # until the app is granted Protected Customer Data access (Partners → API access,

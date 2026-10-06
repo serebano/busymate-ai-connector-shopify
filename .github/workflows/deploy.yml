@@ -39,4 +39,4 @@ jobs:
       # deploy/nginx for reference unit + vhost). Left as a no-op echo by default.
       - name: SSH deploy (placeholder — wire up your own DEPLOY_HOST / DEPLOY_SSH_KEY)
         run: |
-          echo 'TODO: ssh $DEPLOY_HOST "cd bmai-shopify-app && git pull --ff-only && npm ci && npm run build && npx prisma migrate deploy && sudo systemctl restart bmai-shopify-app && systemctl is-active bmai-shopify-app"'
+          echo 'TODO: ssh $DEPLOY_HOST "cd busymate-ai-shopify && git pull --ff-only && npm ci && npm run build && npx prisma migrate deploy && sudo systemctl restart busymate-ai-shopify && systemctl is-active busymate-ai-shopify"'

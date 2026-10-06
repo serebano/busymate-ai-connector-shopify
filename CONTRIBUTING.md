@@ -47,7 +47,7 @@ CI (`.github/workflows/ci.yml`) runs exactly these on every push and PR.
   Keep `app/bmai.server.ts` the single seam; never add a direct DB/storage write to the
   Busymate AI control plane.
 - **Public naming.** Merchant- and customer-facing copy must say **"Busymate AI"** /
-  **"bro"** — never internal codenames. This is enforced by `test/naming.test.ts`.
+  **"your mate"** — never internal codenames. This is enforced by `test/naming.test.ts`.
 - **i18n.** User-facing strings live in the extension locales / listing, not hardcoded
   English.
 - **Small, single-responsibility files.** Prefer extracting a shared helper over

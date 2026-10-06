@@ -5,12 +5,18 @@ import { renderLegalHtml, LEGAL_PAGES } from "../scripts/lib/render-legal.mjs";
 
 /**
  * Legal pages (App Store 4.x support/privacy + the PCD "DPA with merchants"
- * answer). busymate.ai has NO MX record, so privacy@/support@busymate.ai are
- * undeliverable — every published contact must be the listing support email.
+ * answer). Every published contact must be the OFFICIAL, role-based support
+ * mailbox on the product's own domain — never a person's personal mailbox.
+ *
+ * This test used to pin the owner's personal Gmail and BAN every @busymate.ai
+ * address, because busymate.ai had no MX record at the time. It has one now
+ * (`mail.busymate.ai`, with SPF), and `hi@busymate.ai` is the platform's
+ * ledgered contact channel (busymate.ai/.well-known/security.txt names it), so
+ * the guard is inverted: the personal address is what must never be published.
  * A merchant Terms/DPA page must exist and be linked from the privacy policy.
  */
 const ROOT = process.cwd();
-const SUPPORT_EMAIL = "mr.serebano@gmail.com";
+const SUPPORT_EMAIL = "hi@busymate.ai";
 const read = (rel: string) => readFileSync(join(ROOT, rel), "utf8");
 
 describe("legal docs contact + coverage", () => {
@@ -18,9 +24,9 @@ describe("legal docs contact + coverage", () => {
   const faq = read("docs/legal/faq.md");
   const terms = read("docs/legal/terms.md");
 
-  it("no undeliverable @busymate.ai mailbox is published anywhere", () => {
+  it("no personal mailbox is published anywhere", () => {
     for (const [name, text] of [["privacy", privacy], ["faq", faq], ["terms", terms]]) {
-      expect(text, name).not.toMatch(/[a-z0-9._-]+@busymate\.ai/i);
+      expect(text, name).not.toMatch(/[a-z0-9._-]+@(gmail|googlemail|outlook|hotmail|yahoo|icloud|proton(mail)?)\.[a-z.]+/i);
     }
   });
 

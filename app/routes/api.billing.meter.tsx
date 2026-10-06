@@ -10,7 +10,7 @@ import { BILLING_METER_HEADER, BILLING_METER_SECRET_ENV, meterRequestAuthorized 
  *
  * Scheduled by a host timer, e.g. systemd (secret read from the env file, never argv):
  *   ExecStart=/bin/sh -c 'curl -fsS -X POST -H "x-billing-meter-secret: $$BILLING_METER_SECRET" http://127.0.0.1:3970/api/billing/meter'
- *   EnvironmentFile=/etc/bmai-shopify-app/env
+ *   EnvironmentFile=/etc/busymate-ai-shopify/env
  * (`?shop=<store>.myshopify.com` meters one shop.)
  *
  * AUTH: see app/lib/meterAuth.server.ts — fail-closed (503 when unconfigured,

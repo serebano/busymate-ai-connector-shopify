@@ -78,7 +78,7 @@ directory `install_url` points at the live App Store page.
 - [ ] 3–6 desktop screenshots (1600×900) + 3 mobile — each a different view, browser chrome cropped
 - [ ] Setup screencast (3–8 min, English; install → onboarding → embed → storefront flow), mp4/H.264
 - [ ] Demo store (`busymate-ai-demo-store.myshopify.com`) + test customer/order in the testing instructions
-- [ ] Billing step in the testing instructions (busymate-devtools#2132 review risk D). Shopify's
+- [ ] Billing step in the testing instructions (review risk D). Shopify's
   "Manage apps → Billing" shows **"No plan selected"** until a plan is chosen — under Shopify App
   Pricing even the $0 Free plan is a subscription contract that only exists once selected (Partner
   API `activeSubscription` is `null` and there are no `SUBSCRIPTION_*` events on a fresh install;

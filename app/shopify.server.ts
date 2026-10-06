@@ -6,7 +6,7 @@ import {
 } from "@shopify/shopify-app-react-router/server";
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import prisma from "./db.server";
-import { onAppInstalled, onAppUninstalled } from "./bmai.server";
+import { onAfterAuth, onAppUninstalled } from "./bmai.server";
 import { observeAdminAuthentication } from "./lib/routeDiagnostics";
 import { encryptedSessionStorage } from "./lib/encryptedSessionStorage";
 
@@ -38,7 +38,9 @@ const shopify = shopifyApp({
   },
   hooks: {
     // afterAuth = the install/re-auth convergence point. Runs the bmai MCP
-    // provision lifecycle (idempotent). See bmai.server.ts::onAppInstalled.
+    // provision lifecycle only when the tenant is not already live (#3718: an
+    // expiring offline token re-exchanges every ~1 h, and each re-run used to
+    // publish a new revision). See bmai.server.ts::onAfterAuth.
     //
     // afterAuth MUST NOT throw: it runs AFTER the session is persisted, inside the
     // Shopify token-exchange strategy, which converts ANY afterAuth throw into a
@@ -52,7 +54,7 @@ const shopify = shopifyApp({
     // per-install registerWebhooks call here (it was redundant and only logged a
     // 403 per install).
     afterAuth: async ({ session }) => {
-      await onAppInstalled(session);
+      await onAfterAuth(session);
     },
   },
 });

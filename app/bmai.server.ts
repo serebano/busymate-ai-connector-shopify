@@ -24,15 +24,19 @@ import type { Session } from "@shopify/shopify-app-react-router/server";
 import prisma from "./db.server";
 import { shopToSlug } from "./lib/tenantSlug";
 import { connectorEndpoint } from "./lib/connector";
-import { provisionOnInstall, type ProvisionDeps } from "./lib/provision";
+import { authNeedsProvision, provisionOnInstall, type ProvisionDeps } from "./lib/provision";
 import { buildPartnerProof, proofArgs } from "./lib/partnerProof";
 import { createTokenProvider, type TokenStore } from "./lib/bmaiToken";
 import { decryptField, encryptField } from "./lib/fieldCipher";
 import { masterSecretUsable } from "./mcp/actorToken";
 import { brandingArgs, publishArgs, type Branding, type PublishOptions } from "./lib/mgmtArgs";
 import { buildKnowledgeForShop } from "./lib/kbFetch";
+import { fetchStorefrontHosts } from "./lib/storefrontDomains";
+import { adminForShop } from "./mcp/shopifyAdmin";
 import { launchIdentityRegistration } from "./lib/identity";
 import { resolveBusymateAiMcpUrl } from "./lib/bmaiSurface";
+import { readRuntimeReadiness } from "./lib/runtimeReadiness";
+import { checkPublishedTenant, createRepairGate, publishedTenantRepair, type RepairDecision } from "./lib/tenantRepair";
 
 // One product, one protocol surface. Partner proof-of-shop lifecycle and tenant
 // management are both Busymate AI operations and therefore use busymate.ai/mcp.
@@ -190,6 +194,10 @@ function liveProvisionDeps(): ProvisionDeps {
     // Train on the store in the same publish (Admin GraphQL through the refreshing
     // offline session). A failure is recorded as kbError, never blocks going live.
     buildKnowledge: buildKnowledgeForShop,
+    // #3718 — the store's real storefront domains (primary + others) join the
+    // embed-origin allowlist, so a shopper on a custom domain is never refused.
+    // Soft: a failed read keeps the previously stored domains.
+    storefrontHosts: async (shop) => fetchStorefrontHosts(await adminForShop(shop)),
     // Register this host's launch-JWT issuer as the tenant's visitor identity
     // provider (#2132 FAIL A) — only when the signing key exists (== /api/bmai/status
     // launchIdentity), so a provider is never registered for tokens we cannot mint.
@@ -262,17 +270,118 @@ export async function publishTenantRuntime(
   return callMcpTool("publish_tenant_runtime", publishArgs(shopProof(shop), tenantId, opts));
 }
 
+/**
+ * Re-run the idempotent provisioning lifecycle for a shop WITHOUT an admin
+ * request (the reconcile sweep, #3718). Admin reads go through the stored,
+ * refreshing offline session (`adminForShop`). Never throws.
+ */
+export async function reprovisionShop(shop: string) {
+  return provisionOnInstall({ shop }, liveProvisionDeps());
+}
+
+/**
+ * #3718 — a PUBLISHED tenant is repaired (the idempotent lifecycle, in the
+ * background) only for a definite reason: the platform no longer resolves it,
+ * or the store has a storefront domain its allowlist lacks. Gated per shop so a
+ * persistent answer never becomes a re-publish on every admin open, webhook or
+ * Home poll. See app/lib/tenantRepair.ts.
+ */
+const repairGate = createRepairGate({ cooldownMs: 10 * 60_000 });
+
+export function repairTenantInBackground(shop: string, decision: RepairDecision): boolean {
+  if (!repairGate.tryStart(shop)) return false;
+  console.log(`[bmai] repair ${shop}: ${decision.reason} — ${decision.detail}`);
+  void reprovisionShop(shop)
+    .then(
+      (out) => console.log(`[bmai] repair ${shop} (${decision.reason}): ${out.ok ? `ok tenant=${out.tenantId}` : `failed: ${out.error ?? "unknown"}`}`),
+      (err) => console.error(`[bmai] repair ${shop} (${decision.reason}) threw: ${err instanceof Error ? err.message : String(err)}`),
+    )
+    .finally(() => repairGate.finish(shop));
+  return true;
+}
+
+const liveCheckDeps = {
+  readReadiness: (tenantId: string) => readRuntimeReadiness(tenantId, callMcpTool),
+  readFreshHosts: async (shop: string) => fetchStorefrontHosts(await adminForShop(shop)),
+  repair: (shop: string, decision: RepairDecision) => { repairTenantInBackground(shop, decision); },
+};
+
+/**
+ * The afterAuth hook's entry point (#3718): provision only when the tenant is
+ * not already live — see `authNeedsProvision`. An expiring offline token's
+ * re-exchange (every admin open after ~1 h) no longer re-publishes a live
+ * tenant; instead a live row is CHECKED in the background (orphaned tenant,
+ * storefront domains added since the last publish) and repaired only on a
+ * definite answer. NEVER THROWS and never delays the admin load: an unreadable
+ * row falls through to the idempotent, never-throwing lifecycle, exactly as
+ * before.
+ */
+export async function onAfterAuth(session: Session): Promise<void> {
+  // A completed auth means the shop is installed and reachable again: clear an
+  // inactive marker (#52 — reinstall after uninstall, or a store that came back).
+  await prisma.shopTenant
+    .updateMany({ where: { shop: session.shop, inactiveAt: { not: null } }, data: { inactiveAt: null, inactiveReason: null } })
+    .catch(() => null);
+  let row: {
+    provisionState?: string | null;
+    bmaiTenantId?: string | null;
+    tenantUnreachableAt?: Date | null;
+    customDomain?: string | null;
+  } | null = null;
+  try {
+    row = await prisma.shopTenant.findUnique({
+      where: { shop: session.shop },
+      select: { provisionState: true, bmaiTenantId: true, tenantUnreachableAt: true, customDomain: true },
+    });
+  } catch {
+    row = null;
+  }
+  if (!authNeedsProvision(row)) {
+    console.log(`[bmai] afterAuth ${session.shop}: tenant already live (${row?.bmaiTenantId}) — checking, no re-publish`);
+    void checkPublishedTenant(
+      { shop: session.shop, bmaiTenantId: row!.bmaiTenantId!, customDomain: row?.customDomain, tenantUnreachableAt: row?.tenantUnreachableAt },
+      liveCheckDeps,
+    ).catch(() => null);
+    return;
+  }
+  await onAppInstalled(session);
+}
+
+/**
+ * `domains/create|update|destroy` (#3718): re-read the store's storefront
+ * domains and repair the tenant when one is missing from its published
+ * allowlist. Background, gated, never throws.
+ */
+export async function refreshStorefrontDomains(shop: string): Promise<RepairDecision | null> {
+  try {
+    const row = await prisma.shopTenant.findUnique({
+      where: { shop },
+      select: { provisionState: true, bmaiTenantId: true, customDomain: true },
+    });
+    if (row?.provisionState !== "published" || !row.bmaiTenantId) return null;
+    const fresh = await fetchStorefrontHosts(await adminForShop(shop));
+    const decision = publishedTenantRepair({ readiness: null, storedDomains: row.customDomain, freshHosts: fresh });
+    if (decision) repairTenantInBackground(shop, decision);
+    return decision;
+  } catch (err) {
+    console.error(`[bmai] domains refresh ${shop}: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
+
 /** app/uninstalled → suspend/teardown the tenant (never hard-delete on uninstall). */
 export async function onAppUninstalled(shop: string): Promise<void> {
   const row = await prisma.shopTenant.findUnique({ where: { shop } });
+  // Mark the shop suspended + INACTIVE first (#52): retraining stops even when the
+  // platform suspend below fails, and the freshness backstop/health skip it.
+  await prisma.shopTenant.updateMany({
+    where: { shop },
+    data: { provisionState: "suspended", inactiveAt: new Date(), inactiveReason: "uninstalled" },
+  });
+  await prisma.session.deleteMany({ where: { shop } });
   if (row?.bmaiTenantId) {
     await callMcpTool("suspend_tenant", { ...proofArgs(shopProof(shop)), confirm: true });
   }
-  await prisma.shopTenant.updateMany({
-    where: { shop },
-    data: { provisionState: "suspended" },
-  });
-  await prisma.session.deleteMany({ where: { shop } });
 }
 
 /** shop/redact (GDPR, 48h after uninstall) → full tenant teardown + data purge. */

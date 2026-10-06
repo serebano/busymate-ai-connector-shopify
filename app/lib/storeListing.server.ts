@@ -19,11 +19,13 @@ export type StoreListing = {
 
 export const STORE_APP_SLUG = "busymate-ai-shopify";
 
-const STORE_API_URL =
-  process.env.BUSYMATE_STORE_API_URL || "https://api.busymate.net/rest/v1";
+// Busymate AI's own Supabase project (api.busymate.ai) since the 2026-10-02 cutover;
+// the devtools project (api.busymate.net) no longer owns store_apps.
+export const STORE_API_URL =
+  process.env.BUSYMATE_STORE_API_URL || "https://api.busymate.ai/rest/v1";
 const STORE_API_KEY =
   process.env.BUSYMATE_STORE_API_KEY ||
-  "sb_publishable_2YznQoTuNKXLmOAMj-b65w_iulNzXIX";
+  "sb_publishable_a_TcL2APiE7lF1lRe1NvOQ_ZLM30m8C";
 
 // Fail-open fallback: a SNAPSHOT of the record's live values (sourced from
 // store_apps 2026-09-02, app 1d27d3df-1703-4ed2-80a5-523f3028d54d) — used only

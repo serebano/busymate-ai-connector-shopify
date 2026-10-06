@@ -21,7 +21,7 @@
  *   PROVISIONER_EMAIL (default bmai-shopify-provisioner@svc.example.com — set your own)
  *   OUT               (default ./bmai-cred.env — chmod 0600)
  *
- * Output file lines (append to the app host env, e.g. /etc/bmai-shopify-app/env):
+ * Output file lines (append to the app host env, e.g. /etc/busymate-ai-shopify/env):
  *   <VAR_PREFIX>_CLIENT_ID=...
  *   <VAR_PREFIX>_REFRESH_TOKEN=...
  *

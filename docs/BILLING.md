@@ -1,6 +1,6 @@
-# Billing — AI-resolution metering (#19 / devtools #2835)
+# Billing — AI-resolution metering (#19)
 
-App issue #19 / devtools #2835 closed the LAST gap the 2026-09-11 review found:
+App issue #19 closed the LAST gap the 2026-09-11 review found:
 `usageBilling.ts` used to read `get_tenant_usage` as if it returned a
 `{ resolutions, cursor }` pair; that tool actually returns tenant entity counts,
 so usage was permanently unreadable and every batch held forever. This doc

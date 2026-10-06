@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { runtimeReadiness, readRuntimeReadiness } from "../app/lib/runtimeReadiness";
+import { isOrphanError, runtimeReadiness, readRuntimeReadiness } from "../app/lib/runtimeReadiness";
 
 const ready = () => ({ ok: true, data: {
   ok: true, tenant: { id: "tenant", status: "active" }, publication: { revision: { revision: 3, status: "published" } },
@@ -45,6 +45,25 @@ describe("published runtime evidence", () => {
     expect((await readRuntimeReadiness("tenant", call)).state).toBe("unverified");
     expect((await readRuntimeReadiness("tenant", call)).state).toBe("ready");
     expect(call).toHaveBeenCalledWith("get_tenant_integration", { tenant_id: "tenant" });
+  });
+  // #3718 review defect 2 — the platform's own "this tenant is gone" answers are
+  // a first-class ORPHANED state (repaired with no flag); anything else stays
+  // unverified and never triggers a repair.
+  it.each([
+    "tenant integration administration denied",
+    "get_tenant_integration failed: tenant integration administration denied",
+    "tenant integration unavailable",
+    "tenant_management_denied",
+    "launch denied: tenant_not_found",
+  ])("an orphan answer is ORPHANED: %s", (error) => {
+    expect(runtimeReadiness("tenant", { ok: false, error }).state).toBe("orphaned");
+  });
+  it("a timeout, a 5xx or a missing credential is NOT an orphan", () => {
+    for (const error of ["The operation was aborted due to timeout", "mcp error", "HTTP 502", "no refresh token", "denied", undefined]) {
+      expect(runtimeReadiness("tenant", { ok: false, error }).state).toBe("unverified");
+    }
+    expect(isOrphanError("tenant integration administration denied")).toBe(true);
+    expect(isOrphanError("permission denied for relation")).toBe(false);
   });
   it("surfaces transport failure without throwing an admin error", async () => {
     expect((await readRuntimeReadiness("tenant", async () => { throw new Error("network"); })).state).toBe("unverified");

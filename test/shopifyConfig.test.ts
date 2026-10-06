@@ -31,7 +31,9 @@ describe("app/shopify.server.ts", () => {
   it("afterAuth no longer re-registers toml-declared webhooks per install", () => {
     const afterAuth = server.match(/afterAuth:[\s\S]*?\n\s{4}\},/)?.[0] ?? "";
     expect(afterAuth).not.toMatch(/registerWebhooks\(/);
-    expect(afterAuth).toMatch(/onAppInstalled\(session\)/);
+    // #3718 — the hook goes through the idempotency guard, never the raw lifecycle.
+    expect(afterAuth).toMatch(/onAfterAuth\(session\)/);
+    expect(afterAuth).not.toMatch(/onAppInstalled\(session\)/);
   });
 });
 

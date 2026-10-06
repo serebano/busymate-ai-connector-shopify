@@ -27,3 +27,12 @@ jobs:
         continue-on-error: true
         run: npm run drift-check
       - run: npm run build
+
+  ops-migration-script:
+    # No npm/node dependency — pure bash + coreutils, so this runs even if the
+    # app build/test leg above is broken or skipped.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: migrate-rename.sh self-test (syntax + stubbed dry-run)
+        run: bash scripts/ops/test-migrate-rename.sh

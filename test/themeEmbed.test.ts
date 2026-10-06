@@ -4,6 +4,8 @@ import {
   STOREFRONT_ASSISTANT_EXTENSION_UUID,
   buildSetupChecklist,
   detectStorefrontEmbed,
+  embedSetupPresentation,
+  storefrontLoadsOurEmbed,
   themeEditorActivateUrl,
   themeEditorAppEmbedsUrl,
 } from "../app/lib/themeEmbed";
@@ -42,7 +44,7 @@ describe("detectStorefrontEmbed (no read_themes scope — reads the public store
     async () => new Response(body, { status, headers: { "content-type": "text/html" } });
 
   it("reports 'on' when the storefront loads the extension asset", async () => {
-    const page = `<html><script src="https://cdn.shopify.com/extensions/${STOREFRONT_ASSISTANT_EXTENSION_UUID}/busymate-ai-4/assets/assistant.js"></script></html>`;
+    const page = `<html><script src="https://cdn.shopify.com/extensions/${STOREFRONT_ASSISTANT_EXTENSION_UUID}/busymate-ai-4/assets/assistant.js" data-shop="acme.myshopify.com" data-slug="shop-acme" defer></script></html>`;
     expect(await detectStorefrontEmbed("acme.myshopify.com", html(page))).toBe("on");
   });
   it("reports 'off' on a public storefront that does not load it", async () => {
@@ -131,5 +133,68 @@ describe("buildSetupChecklist (Home)", () => {
     expect(trained).toMatchObject({ done: false, failed: true });
     expect(trained.detail).toMatch(/Shopify Admin 403/);
     expect(trained.detail).toMatch(/[Rr]e-train/);
+  });
+});
+
+describe("Home embed instructions", () => {
+  it("does not tell merchants the embed is on when the storefront status is unknown", () => {
+    const copy = embedSetupPresentation("unknown");
+    expect(copy.heading).toBe("Check storefront assistant status");
+    expect(copy.detail).toMatch(/can't confirm/i);
+    expect(copy.detail).toMatch(/unconfirmed/i);
+    expect(copy.detail).not.toMatch(/already switched on|is loading on your storefront/i);
+    expect(copy.button).toBe("Check in App embeds");
+    expect(copy.activationLink).toBe(false);
+  });
+
+  it("offers activation only for a confirmed-off embed and review for a confirmed-on embed", () => {
+    expect(embedSetupPresentation("off")).toMatchObject({
+      heading: "Turn on the storefront assistant",
+      button: "Turn on the storefront assistant",
+      activationLink: true,
+    });
+    expect(embedSetupPresentation("on")).toMatchObject({
+      heading: "Storefront assistant is on",
+      button: "Review in App embeds",
+      activationLink: false,
+    });
+  });
+});
+
+/**
+ * #3718 — Shopify review 5.1.2 (2026-09-24): Home said "Not on yet" while the
+ * embed WAS on, because detection matched a stale hard-coded CDN UUID
+ * (`01a04ae4…`) and the live extension serves from `01a061be-…`.
+ */
+describe("detectStorefrontEmbed matches the asset + this store's slug, never a CDN UUID (#3718)", () => {
+  const html = (body: string) => async () => new Response(body, { status: 200, headers: { "content-type": "text/html" } });
+  const tag = (uuid: string, slug: string) =>
+    `<script src="https://cdn.shopify.com/extensions/${uuid}/busymate-ai-5/assets/assistant.js" data-shop="x" data-slug="${slug}" data-origin="https://busymate.ai" defer></script>`;
+
+  it("the LIVE extension UUID (01a061be-…) reads 'on'", async () => {
+    const page = `<html><body>${tag("01a061be-71c0-7659-afb4-b5e0d5ef3c3e", "shop-acme")}</body></html>`;
+    expect(await detectStorefrontEmbed("acme.myshopify.com", html(page))).toBe("on");
+  });
+
+  it("ANY future extension registration still reads 'on' — the UUID is not the identity", async () => {
+    const page = `<html><body>${tag("99999999-0000-4000-8000-000000000000", "shop-acme")}</body></html>`;
+    expect(await detectStorefrontEmbed("acme.myshopify.com", html(page))).toBe("on");
+  });
+
+  it("another store's slug, or another app's assistant.js, is NOT ours", async () => {
+    expect(await detectStorefrontEmbed("acme.myshopify.com", html(`<html>${tag("01a061be", "shop-other")}</html>`))).toBe("off");
+    const foreign = `<html><script src="https://cdn.shopify.com/extensions/abc/other-app-1/assets/assistant.js"></script></html>`;
+    expect(await detectStorefrontEmbed("acme.myshopify.com", html(foreign))).toBe("off");
+  });
+
+  it("an explicit slug (the tenant's stored slug) is honoured", async () => {
+    const page = `<html>${tag("01a061be", "shop-custom-slug")}</html>`;
+    expect(await detectStorefrontEmbed("acme.myshopify.com", html(page), "shop-custom-slug")).toBe("on");
+  });
+
+  it("storefrontLoadsOurEmbed ignores a slug that only appears outside the script tag", () => {
+    const page = `<html><p>data-slug="shop-acme"</p><script src="https://cdn.shopify.com/extensions/u/v/assets/assistant.js"></script></html>`;
+    expect(storefrontLoadsOurEmbed(page, "shop-acme")).toBe(false);
+    expect(storefrontLoadsOurEmbed(page, "")).toBe(false);
   });
 });

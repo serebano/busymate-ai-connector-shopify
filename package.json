@@ -1,7 +1,7 @@
 {
   "name": "busymate-ai-shopify",
   "private": true,
-  "version": "0.1.11",
+  "version": "0.1.17",
   "description": "Busymate AI for Shopify — the official Shopify App Store app, and an open reference for connecting any platform to Busymate AI.",
   "license": "MIT",
   "type": "module",
@@ -22,7 +22,11 @@
     "drift-check": "node scripts/drift-check.mjs",
     "listing:sync": "node scripts/sync-listing-from-db.mjs",
     "tokens:cycle": "tsx scripts/cycle-offline-tokens.ts",
+    "tokens:audit": "tsx scripts/offline-token-audit.ts",
+    "webhooks:probe": "tsx scripts/webhook-probe.ts",
     "kb:retrain": "tsx scripts/retrain-shops.ts",
+    "kb:freshness": "tsx scripts/kb-freshness.ts",
+    "tenants:reconcile": "tsx scripts/reconcile-tenants.ts",
     "prisma": "prisma",
     "setup": "prisma generate && prisma migrate deploy",
     "db:migrate": "prisma migrate deploy"
@@ -39,6 +43,7 @@
     "@shopify/shopify-app-session-storage-prisma": "10.0.1",
     "isbot": "^5.1.0",
     "jose": "^5.9.6",
+    "morgan": "^1.12.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router": "^7.1.1"
@@ -52,6 +57,7 @@
     "@types/react-dom": "^18.3.5",
     "esbuild": "^0.25.12",
     "eslint": "^9.17.0",
+    "happy-dom": "^20.14.5",
     "prisma": "^6.19.0",
     "tsx": "^4.23.13",
     "typescript": "^5.7.3",

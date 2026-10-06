@@ -5,8 +5,8 @@
  * checklist Home renders, and a scope-free embed detector.
  *
  * Activation uses SHOPIFY_API_KEY (the app client_id), not a CDN asset UUID.
- * Shopify deprecated extension UUID activation links. The CDN UUID below is
- * ONLY for public storefront asset detection, never app activation.
+ * Shopify deprecated extension UUID activation links. Detection matches the
+ * extension asset + this store's slug, never a CDN UUID (#3718).
  * https://shopify.dev/docs/apps/build/online-store/theme-app-extensions/configuration
  *
  * LEAST PRIVILEGE: no `read_themes` scope. Embed status is detected from the
@@ -14,16 +14,18 @@
  * protected dev store or any non-200 is "unknown" — never a false "off".
  */
 import { formatServerTime } from "./formatTime";
+import { shopToSlug } from "./tenantSlug";
 
-export const STOREFRONT_ASSISTANT_EXTENSION_UUID = "01a04ae4-bf97-7e8d-b8a4-a9c4cd3b4854";
+/**
+ * The storefront-assistant extension's CDN UUID as of 2026-09-24 (the live
+ * `busymate-ai-5` version). Informational only — embed detection matches the
+ * asset + this store's slug (see `detectStorefrontEmbed`), never this value.
+ */
+export const STOREFRONT_ASSISTANT_EXTENSION_UUID = "01a061be-71c0-7659-afb4-b5e0d5ef3c3e";
 /** blocks/assistant.liquid → the block handle in `activateAppId=<uuid>/<block>`. */
 export const STOREFRONT_ASSISTANT_BLOCK = "assistant";
 /** The app embed's name as listed in Theme editor → App embeds (schema `name`). */
 export const APP_EMBED_LABEL = "Busymate AI assistant";
-
-export function extensionUuid(env: NodeJS.ProcessEnv = process.env): string {
-  return (env.STOREFRONT_ASSISTANT_EXTENSION_UUID ?? "").trim() || STOREFRONT_ASSISTANT_EXTENSION_UUID;
-}
 
 /** Theme editor with the app embed pre-activated (merchant still clicks Save). */
 export function themeEditorActivateUrl(shop: string, opts: { apiKey?: string; block?: string } = {}): string {
@@ -41,15 +43,49 @@ export function themeEditorAppEmbedsUrl(shop: string): string {
 
 export type EmbedStatus = "on" | "off" | "unknown";
 
+/** Home instructions must reflect what the scope-free storefront check knows. */
+export function embedSetupPresentation(status: EmbedStatus) {
+  if (status === "on") {
+    return {
+      heading: "Storefront assistant is on",
+      detail: "The assistant is loading on your storefront. Open App embeds to review it; click Save if you make a change.",
+      button: "Review in App embeds",
+      activationLink: false,
+    };
+  }
+  if (status === "off") {
+    return {
+      heading: "Turn on the storefront assistant",
+      detail: "The storefront check did not find the assistant. Open the theme editor, switch on the app embed, and click Save.",
+      button: "Turn on the storefront assistant",
+      activationLink: true,
+    };
+  }
+  return {
+    heading: "Check storefront assistant status",
+    detail: "We can't confirm the embed from this storefront. It may be password-protected or unavailable. Open App embeds to check its state; save only if you change it. Home will show the status as unconfirmed until the storefront can be checked.",
+    button: "Check in App embeds",
+    activationLink: false,
+  };
+}
+
 /**
- * Read the storefront home page and look for the extension asset. Uses no
- * Admin scope. `unknown` when the store is password-protected, errors, or is
- * not 200 — the UI then shows the written steps instead of a false "off".
+ * Read the storefront home page and look for OUR app embed's script tag: the
+ * extension asset `…/assets/assistant.js` carrying THIS store's `data-slug`.
+ * Uses no Admin scope. `unknown` when the store is password-protected, errors,
+ * or is not 200 — the UI then shows the written steps instead of a false "off".
+ *
+ * #3718 (Shopify review 5.1.2, 2026-09-24): this used to match a hard-coded
+ * extension CDN UUID (`01a04ae4…`), but the live extension serves from
+ * `01a061be-…`, so Home said "Not on yet" on a storefront where the embed WAS
+ * on. The CDN UUID changes with the extension registration; the asset name and
+ * the slug the block renders do not. Matched on the tag itself so an unrelated
+ * `assistant.js` from another app can never read as ours.
  */
 export async function detectStorefrontEmbed(
   shop: string,
   doFetch: (url: string, init?: RequestInit) => Promise<Response> = fetch,
-  uuid: string = extensionUuid(),
+  slug: string = shopToSlug(shop),
 ): Promise<EmbedStatus> {
   try {
     const res = await doFetch(`https://${shop}/`, {
@@ -60,10 +96,20 @@ export async function detectStorefrontEmbed(
     if (res.status !== 200) return "unknown";
     const html = await res.text();
     if (/action="\/password"|\/password\b/.test(html) && !html.includes("cdn.shopify.com/extensions/")) return "unknown";
-    return html.includes(`cdn.shopify.com/extensions/${uuid}/`) ? "on" : "off";
+    return storefrontLoadsOurEmbed(html, slug) ? "on" : "off";
   } catch {
     return "unknown";
   }
+}
+
+/** True when `html` carries a `<script …/assets/assistant.js … data-slug="<slug>">` tag. */
+export function storefrontLoadsOurEmbed(html: string, slug: string): boolean {
+  if (!slug) return false;
+  for (const tag of html.match(/<script\b[^>]*>/gi) ?? []) {
+    if (!/\bsrc="[^"]*\/extensions\/[^"]*\/assets\/assistant\.js(?:\?[^"]*)?"/i.test(tag)) continue;
+    if (tag.includes(`data-slug="${slug}"`)) return true;
+  }
+  return false;
 }
 
 // ---- Home setup checklist ---------------------------------------------------
@@ -160,7 +206,7 @@ export function buildSetupChecklist(s: SetupInput): SetupStep[] {
           ? "The \"Ask us\" launcher is live on your storefront."
           : s.embed === "off"
             ? "Not on yet — the launcher is not loading on your storefront."
-            : "Enable the app embed in your theme editor (we can't confirm it on a password-protected store).",
+            : "Switch the app embed on in your theme editor and click Save — it only stays on once saved (we can't confirm it on a password-protected store).",
       done: s.embed === "on",
       failed: false,
     },

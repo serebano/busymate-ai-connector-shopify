@@ -1,5 +1,10 @@
 # App Store review — resolution record
 
+> **Current (2026-09-25):** the review was suspended until 2026-10-08 on 5.1.2 ("refused to
+> connect" in the Theme Editor). Causes, fixes, verification steps and the full requirement
+> checklist: [`2026-10-resubmission-5.1.2.md`](2026-10-resubmission-5.1.2.md). Resubmission
+> is held for the owner.
+
 **Historical record of the August review fixes, not current release certification.**
 The September 11 review and September 12 verification found additional provisioning,
 theme-preview, runtime-projection and resolution-metering gaps. Those findings supersede

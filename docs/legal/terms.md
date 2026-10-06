@@ -17,13 +17,13 @@ These terms ("Terms") govern the **Busymate AI for Shopify** app ("the App") tha
 **Data Processing Addendum** ("DPA") that applies whenever we process personal data of
 your shoppers on your behalf.
 
-Contact for anything in these Terms: **mr.serebano@gmail.com**.
+Contact for anything in these Terms: **hi@busymate.ai**.
 
 ## Part A — Terms of Service
 
 ### 1. The service
 
-The App adds **bro**, an AI support assistant, to your Shopify storefront. bro answers
+The App adds **your mate**, an AI support assistant, to your Shopify storefront. Your mate answers
 shopper questions from your own products, pages and policies, looks up a signed-in
 shopper's own orders, and — only with the shopper's confirmation and inside the limits
 you set — can update a shipping address, start a return, cancel an unfulfilled order or
@@ -79,7 +79,7 @@ customers.
 ### 7. Availability and support
 
 We aim to keep the service available at all times but do not guarantee uninterrupted
-operation. Support is available at **mr.serebano@gmail.com**; we respond to merchant
+operation. Support is available at **hi@busymate.ai**; we respond to merchant
 requests within two business days.
 
 ### 8. Termination

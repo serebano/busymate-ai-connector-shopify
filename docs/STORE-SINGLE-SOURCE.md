@@ -3,7 +3,7 @@
 This app's listing content — name, tagline, description, features, **pricing plans**, media,
 category, locales — lives in **one canonical record** in the Busymate control plane
 (`public.store_apps` + children), not in this repo and not hand-maintained per surface. Everything
-here **derives** from it. Program: busymate-devtools#2036.
+here **derives** from it. Program: the internal platform tracker.
 
 ## Read it: the shared public endpoint
 

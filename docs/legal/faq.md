@@ -7,7 +7,7 @@
 # Busymate AI for Shopify — FAQ
 
 ## What does the app do?
-It adds **bro**, an AI support assistant, to your storefront. bro answers only from
+It adds **your mate**, an AI support assistant, to your storefront. Your mate answers only from
 your own products, pages and policies — grounded and source-cited, and it says so when it
 isn't sure — handles order-status questions, and can process returns, refunds and
 cancellations with your confirmation. It replies in your shoppers' languages and hands
@@ -74,4 +74,4 @@ Turkish, Arabic (RTL), Simplified Chinese, Hindi, Japanese and Korean — auto-d
 The storefront launcher label is translated for each of them.
 
 ## How do I get help?
-Email **mr.serebano@gmail.com** (we respond within two business days).
+Email **hi@busymate.ai** (we respond within two business days).

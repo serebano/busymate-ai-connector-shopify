@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   runProvisionLifecycle,
+  authNeedsProvision,
   provisionOnInstall,
   publishedRuntimeGaps,
   CONNECTOR_POLICIES,
@@ -546,6 +547,9 @@ describe("lifecycle — grounded knowledge + reinstall", () => {
     expect(seen["publish_tenant_runtime"]).toMatchObject({ tenant_id: "t_old", confirm: true });
     expect(seen["publish_tenant_runtime"].knowledge_sources).toEqual(KNOWLEDGE.sources);
     expect(states.at(-1)).toMatchObject({ provisionState: "published", bmaiTenantId: "t_old", provisionError: null, kbProducts: 1 });
+    // #3718 — a successful publish clears the meter's unreachable mark, so a
+    // repaired tenant is not re-repaired every 10 min until the hourly meter run.
+    expect(states.at(-1)).toHaveProperty("tenantUnreachableAt", null);
   });
 
   it("#2132 C — REINSTALL / re-run of an EXISTING tenant NEVER re-seeds the default branding (the merchant's saved names survive)", async () => {
@@ -565,7 +569,7 @@ describe("lifecycle — grounded knowledge + reinstall", () => {
     expect((await runProvisionLifecycle(session, again.deps)).calls).not.toContain("set_tenant_branding");
   });
 
-  it("#2132 C — a NEW tenant is seeded with the default branding (productName = shop, assistant 'bro')", async () => {
+  it("#2132 C — a NEW tenant is seeded with the default branding (productName = shop, assistant 'your mate')", async () => {
     const seen: Record<string, Record<string, unknown>> = {};
     const call = vi.fn(async (name: string, args?: Record<string, unknown>) => {
       seen[name] = args ?? {};
@@ -575,7 +579,7 @@ describe("lifecycle — grounded knowledge + reinstall", () => {
     const { deps } = makeDeps(call as unknown as ProvisionDeps["call"]);
     const out = await runProvisionLifecycle(session, deps);
     expect(out.calls).toContain("set_tenant_branding");
-    expect(seen["set_tenant_branding"]).toMatchObject({ branding: { productName: session.shop, assistantName: "bro" }, confirm: true });
+    expect(seen["set_tenant_branding"]).toMatchObject({ branding: { productName: session.shop, assistantName: "your mate" }, confirm: true });
   });
 
   it("without a buildKnowledge dep (ops verify script) the lifecycle publishes with no knowledge and records no training", async () => {
@@ -727,5 +731,37 @@ describe("lifecycle — visitor identity provider (#2132)", () => {
     expect(publishedRuntimeGaps(undefined, { connectorId: null, identityProviderId: "p_1" })).toMatch(/customer sign-in/);
     expect(publishedRuntimeGaps({ connector_ids: ["c_1"], identity_provider_ids: ["p_1"] }, { connectorId: "c_1", identityProviderId: "p_1" })).toBeNull();
     expect(publishedRuntimeGaps({}, { connectorId: null, identityProviderId: null })).toBeNull();
+  });
+});
+
+/**
+ * #3718 — afterAuth runs on every token exchange (expiring offline tokens
+ * re-exchange about once an hour). It must provision only a tenant that is NOT
+ * already live: every re-run used to publish a new revision, reopening the
+ * publish-to-apply window and feeding the platform's reinstall deadlock.
+ */
+describe("authNeedsProvision — afterAuth idempotency (#3718)", () => {
+  it("a published, reachable tenant is NOT re-provisioned on a token re-exchange", () => {
+    expect(authNeedsProvision({ provisionState: "published", bmaiTenantId: "t-1", tenantUnreachableAt: null })).toBe(false);
+  });
+
+  it("a fresh install (no row) provisions", () => {
+    expect(authNeedsProvision(null)).toBe(true);
+    expect(authNeedsProvision(undefined)).toBe(true);
+  });
+
+  it("a reinstall (suspended by app/uninstalled) provisions — the reactivation must publish", () => {
+    expect(authNeedsProvision({ provisionState: "suspended", bmaiTenantId: "t-1" })).toBe(true);
+  });
+
+  it("an errored or half-provisioned row provisions", () => {
+    for (const provisionState of ["error", "provisioning", "pending", null]) {
+      expect(authNeedsProvision({ provisionState, bmaiTenantId: "t-1" }), String(provisionState)).toBe(true);
+    }
+    expect(authNeedsProvision({ provisionState: "published", bmaiTenantId: null })).toBe(true);
+  });
+
+  it("an ORPHANED published row (the platform no longer resolves its tenant) self-heals", () => {
+    expect(authNeedsProvision({ provisionState: "published", bmaiTenantId: "t-gone", tenantUnreachableAt: new Date() })).toBe(true);
   });
 });

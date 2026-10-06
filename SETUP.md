@@ -24,7 +24,7 @@ account and credentials only you can create. This file is the exact checklist to
   handlers wired to MCP effects; HMAC verified by `authenticate.webhook`; a shop
   with no tenant is a 200 no-op ("nothing held"), a real MCP failure still 500s.
 - **Billing** — Managed-Pricing check + redirect; widget never disabled at cap.
-- **Public naming** — merchant copy says "Busymate AI" / "bro"; enforced by
+- **Public naming** — merchant copy says "Busymate AI" / "your mate"; enforced by
   `test/naming.test.ts`.
 
 ---
@@ -69,19 +69,19 @@ crash) and the admin shows a retry button.
 
 ## 3b. Host deploy runbook (production build + migrations)
 
-The host (`busymate-v2-lon1`, dir `/opt/bmai-shopify-app`, owner `deploy`, systemd
-`bmai-shopify-app` → `react-router-serve` on 127.0.0.1:3970, env file
-`/etc/bmai-shopify-app/env`) runs a git clone of `origin`. Every deploy is:
+The host (`busymate-v2-lon1`, dir `/opt/busymate-ai-shopify`, owner `deploy`, systemd
+`busymate-ai-shopify` → `react-router-serve` on 127.0.0.1:3970, env file
+`/etc/busymate-ai-shopify/env`) runs a git clone of `origin`. Every deploy is:
 
 ```bash
-cd /opt/bmai-shopify-app
-sudo -u deploy git -c safe.directory=/opt/bmai-shopify-app fetch origin
-sudo -u deploy git -c safe.directory=/opt/bmai-shopify-app checkout <shipped sha>
+cd /opt/busymate-ai-shopify
+sudo -u deploy git -c safe.directory=/opt/busymate-ai-shopify fetch origin
+sudo -u deploy git -c safe.directory=/opt/busymate-ai-shopify checkout <shipped sha>
 sudo -u deploy npm ci                        # devDependencies included: the build + the tsx runner need them
 sudo -u deploy npx prisma generate
-sudo -u deploy npx prisma migrate deploy     # additive migrations only (20260902120000_session_refresh_token, 20260902150000_shop_tenant_training); reads DATABASE_URL from the deploy-owned .env
+sudo -u deploy npx prisma migrate deploy     # additive migrations only (latest: 20261004150000_kb_freshness); reads DATABASE_URL from the deploy-owned .env
 sudo -u deploy npm run build                 # = NODE_ENV=production react-router build
-systemctl restart bmai-shopify-app
+systemctl restart busymate-ai-shopify
 curl -s https://store.busymate.ai/api/bmai/status   # {"ok":true,...}
 ```
 
@@ -96,6 +96,32 @@ not a mis-set env. Its one user-visible effect — the framework's default error
 with developer hints on any unknown route — is removed by the branded root
 `ErrorBoundary` (`app/root.tsx` + `app/lib/routeError.ts`), and `/favicon.ico` +
 `/robots.txt` are now real files under `public/`.
+
+## 3e. Releasing an app version (`shopify app deploy`) without the interactive login 🔒
+
+The theme extension + `shopify.app.toml` config reach Shopify only through an **app version**.
+Since 2026-05 the non-interactive credential is the Dev Dashboard **App automation token**
+(Settings → App automation token → Rotate; 1/3/6 months; the value is shown once). The Shopify CLI
+reads it from `SHOPIFY_APP_AUTOMATION_TOKEN`. The token lives in the Vault under that name
+(`SHOPIFY_APP_AUTOMATION_TOKEN`, rotated 2026-10-02, 6 months) — never in a file, never on argv.
+
+- `shopify.app.production.toml` = `shopify.app.toml` with the real (public) `client_id`; it is
+  gitignored. `--config production` selects it.
+- Run through a value-blind wrapper that resolves the Vault secret and hands it to the CLI via the
+  environment only (the busymate-devtools helpers `scripts/lib/bootstrap-pair.mjs` +
+  `scripts/lib/app-secret.mjs`); print status, never the token:
+
+```bash
+# from the app checkout; the CLI 4.x has no --force (CI=1 makes it non-interactive)
+SHOPIFY_APP_AUTOMATION_TOKEN=<from the Vault, via env> \
+  npx shopify app deploy --config production --allow-updates \
+    --message "<version>: <what the extension/config change is>" \
+    --source-control-url "https://github.com/serebano/busymate-ai-connector-shopify/commit/<sha>"
+```
+
+`busymate-ai-6` (2026-10-02) was released this way. `app versions list --config production` is the
+read-only check. The GitHub `deploy.yml` workflow expects the same value as the
+`SHOPIFY_APP_AUTOMATION_TOKEN` repository secret.
 
 ## 3c. Expiring offline access tokens — one-off cycling of pre-upgrade sessions 🔒
 
@@ -118,9 +144,9 @@ never echo a value:
 ```bash
 # The env file is root-owned 0600 (deploy cannot read it): source it as root and
 # hand it to `deploy` through the ENVIRONMENT (sudo -E), never argv or a copy.
-cd /opt/bmai-shopify-app
-sudo bash -c 'set -a; . /etc/bmai-shopify-app/env; set +a; sudo -E -H -u deploy npm run tokens:cycle -- --dry-run'   # lists candidate shops
-sudo bash -c 'set -a; . /etc/bmai-shopify-app/env; set +a; sudo -E -H -u deploy npm run tokens:cycle'                # exchanges + stores
+cd /opt/busymate-ai-shopify
+sudo bash -c 'set -a; . /etc/busymate-ai-shopify/env; set +a; sudo -E -H -u deploy npm run tokens:cycle -- --dry-run'   # lists candidate shops
+sudo bash -c 'set -a; . /etc/busymate-ai-shopify/env; set +a; sudo -E -H -u deploy npm run tokens:cycle'                # exchanges + stores
 ```
 
 Done on the host 2026-09-02 (build `0447ff3`): 2 scanned, 2 cycled, 0 failed — both
@@ -142,8 +168,8 @@ Env var NAMES the script needs: `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`,
 
 ## 3c-bis. Grounded knowledge (training) — what runs, what to check
 
-At install (and on every re-auth, reinstall, product webhook, or **Store connection →
-Re-train**) the app reads the store's products, shop policies and pages through the Admin
+At install (and on every re-auth, reinstall, product or shop/update webhook, the 72 h
+freshness backstop (§3c-quater), or **Store connection → Re-train**) the app reads the store's products, shop policies and pages through the Admin
 API and publishes them as `publish_tenant_runtime.knowledge_sources` (see
 `docs/PROVISIONING.md` step 7–8). The scope list therefore includes
 **`read_legal_policies`** (shop policies) — keep the host `SCOPES` env in sync with
@@ -159,8 +185,77 @@ Re-train from the shell (same path as the merchant's button — e.g. after a pla
 change that needs every trained tenant re-projected):
 
 ```bash
-sudo bash -c 'set -a; . /etc/bmai-shopify-app/env; set +a; cd /opt/bmai-shopify-app && sudo -E -H -u deploy npm run kb:retrain -- <shop>.myshopify.com [...]'
+sudo bash -c 'set -a; . /etc/busymate-ai-shopify/env; set +a; cd /opt/busymate-ai-shopify && sudo -E -H -u deploy npm run kb:retrain -- <shop>.myshopify.com [...]'
 ```
+
+## 3c-quater. Knowledge freshness — webhooks, the 72 h backstop, the 96 h alarm (#52)
+
+The platform's `knowledge-citations` launch preflight refuses any publish whose knowledge is
+older than 168 h, and Shopify has **no webhook for shop policies or pages**. So training is:
+
+- **event-driven first** — `products/create|update|delete` and `shop/update` (shop name/settings)
+  queue a debounced per-shop re-train; `app/scopes_update` too. Collections, inventory and theme
+  content are not in the snapshot, so they are not subscribed.
+- **a backstop where no webhook exists** — the systemd timer
+  `busymate-ai-shopify-kb-freshness.timer` (every 6 h + ≤15 min jitter, units in `deploy/systemd/`)
+  runs `scripts/kb-freshness.ts`: every **active** shop (published, provisioned, `inactiveAt` NULL)
+  whose `kbTrainedAt` is ≥ 72 h old is probed anonymously and re-trained through `retrainNow`,
+  3 s + jitter apart, ≤ 30 per run. A shop Shopify answers **404 on both admin and storefront**
+  (a deleted store) is marked `inactiveAt`/`inactiveReason = shop_not_found` and never retried;
+  402/423/network errors only skip that run. Each run is a `KbFreshnessRun` row with its counts.
+- **uninstall hygiene** — `app/uninstalled` marks the shop `suspended` + `inactiveReason = uninstalled`
+  first, cancels any queued re-train, then suspends the tenant. A reinstall (afterAuth) clears it.
+- **monitoring** — `GET https://store.busymate.ai/api/kb/health` answers **503** when any active
+  shop's knowledge is > 96 h old or never trained, when no backstop run finished in 14 h (absence
+  of success), or when the table cannot be read; 200 only when green. Counts only in public; the
+  per-shop list needs the `x-billing-meter-secret` header. Judged from outside the box by the
+  busymate-ai `v2-infra-deadman` workflow's `shopify-kb` arm (GitHub issue + Telegram).
+
+Install / update the units (once per change to `deploy/systemd/`):
+
+```bash
+sudo install -m 0644 deploy/systemd/busymate-ai-shopify-kb-freshness.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now busymate-ai-shopify-kb-freshness.timer
+```
+
+Operate:
+
+```bash
+sudo systemctl start busymate-ai-shopify-kb-freshness.service      # one run now (journalctl -u … for the counts)
+sudo bash -c 'set -a; . /etc/busymate-ai-shopify/env; set +a; cd /opt/busymate-ai-shopify && sudo -E -H -u deploy npm run kb:freshness -- --report'    # per-shop age + verdict
+sudo bash -c 'set -a; . /etc/busymate-ai-shopify/env; set +a; cd /opt/busymate-ai-shopify && sudo -E -H -u deploy npm run kb:freshness -- --dry-run'   # what a run would do
+```
+
+Optional env: `KB_FRESHNESS_MAX_PER_RUN` (30), `KB_FRESHNESS_SPACING_MS` (3000),
+`KB_FRESHNESS_JITTER_MS` (2000), `KB_FRESHNESS_RETRAIN_AFTER_HOURS` (72).
+
+## 3c-ter. Tenant reconcile sweep (#3718) — orphaned, stuck, or refused tenants
+
+A row can say `published` while the storefront chat cannot open: the platform no longer
+resolves its tenant (orphaned — `get_tenant_integration` answers "administration denied" /
+"unavailable", or the meter set `tenantUnreachableAt`), the published revision failed to
+activate (stuck), the store has a storefront domain the published allowlist lacks
+(domains-missing), or the platform refuses the Online Store / a custom domain / the Theme
+Editor chain. The sweep classifies every installed shop from the reads Home and afterAuth use
+(MCP runtime readiness, the store's domains via the Admin API, and the public
+`https://busymate.ai/api/embed-status` frameability answer) and re-runs the idempotent
+provisioning lifecycle for those rows. **Dry-run by default**; uninstalled
+(`suspended`) shops are never touched:
+
+```bash
+# report only (one JSON line per shop: verdict, action, runtime, frameable)
+sudo bash -c 'set -a; . /etc/busymate-ai-shopify/env; set +a; cd /opt/busymate-ai-shopify && sudo -E -H -u deploy npm run tenants:reconcile'
+# repair the named shops (orphaned, stuck, domains-missing and refused rows need no flag;
+# add --reprovision-unverified only to also repair tenants that could not be read at all)
+sudo bash -c 'set -a; . /etc/busymate-ai-shopify/env; set +a; cd /opt/busymate-ai-shopify && sudo -E -H -u deploy npm run tenants:reconcile -- --apply <shop>.myshopify.com'
+```
+
+`afterAuth` no longer re-publishes a live tenant on every token re-exchange (expiring
+offline tokens re-exchange about hourly); it provisions only a new, reinstalled or errored
+tenant (`authNeedsProvision`, `app/lib/provision.ts`), and checks a live one in the
+background — an orphaned tenant or a missing storefront domain is repaired, at most once per
+shop per 10 minutes (`app/lib/tenantRepair.ts`). The `domains/*` webhooks and Home's load run
+the same check.
 
 ## 3d. App Proxy (storefront identity) 🔒
 
@@ -271,7 +366,7 @@ derived-per-connector master and is no longer read by the verifier.
 Credential + PII columns (`Session.accessToken` + `email`, `BmaiCredential.refreshToken`)
 are AES-256-GCM encrypted at the app layer (`app/lib/fieldCipher.ts`). Set a 32-byte
 key on the host — `openssl rand -base64 32` — as `APP_ENCRYPTION_KEY`. Value-blind;
-never logged. UNSET ⇒ those columns are stored plaintext (a documented dev/CI no-op);
+never logged. UNSET or malformed ⇒ sensitive writes are refused in production. Outside production, an unset key permits the credential-free dev/CI path;
 SET it in production so the PCD at-rest attestation is true. Legacy plaintext rows
 read fine and upgrade to ciphertext on the next write. Retention windows + the full
 data map: `docs/DATA-RETENTION.md`.
@@ -342,7 +437,7 @@ and a redirect URL of **`/app/billing`** (the app reads `?plan_handle=` there).
 | `SHOPIFY_APP_ID` (numeric) or `SHOPIFY_APP_GID` | The app's GID for the Partner API query | host env |
 | `SHOPIFY_APP_EVENTS_CLIENT_ID` + `SHOPIFY_APP_EVENTS_CLIENT_SECRET` | Dev Dashboard API key → App Events API (usage billing events) | host env |
 | `BILLING_METER_SECRET` | Shared secret for the `POST /api/billing/meter` timer trigger | host env |
-| `STOREFRONT_ASSISTANT_EXTENSION_UUID` | Optional override of the Shopify-assigned theme-extension CDN UUID used only for storefront asset detection (activation uses `SHOPIFY_API_KEY`) | host env |
+| ~~`STOREFRONT_ASSISTANT_EXTENSION_UUID`~~ | Retired (#3718): storefront embed detection matches the extension asset `assets/assistant.js` + this store's `data-slug`, never a CDN UUID; activation uses `SHOPIFY_API_KEY`. Safe to delete from the host env. | — |
 
 Metering trigger (systemd timer on the host; the secret is read from the env file, never argv):
 
@@ -350,7 +445,7 @@ Metering trigger (systemd timer on the host; the secret is read from the env fil
 # /etc/systemd/system/bmai-shopify-meter.service
 [Service]
 Type=oneshot
-EnvironmentFile=/etc/bmai-shopify-app/env
+EnvironmentFile=/etc/busymate-ai-shopify/env
 ExecStart=/bin/sh -c 'curl -fsS -X POST -H "x-billing-meter-secret: $$BILLING_METER_SECRET" http://127.0.0.1:3970/api/billing/meter'
 # /etc/systemd/system/bmai-shopify-meter.timer  →  OnCalendar=hourly
 ```

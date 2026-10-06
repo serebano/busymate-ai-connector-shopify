@@ -17,7 +17,7 @@
 - [ ] `npm test` is green — and I added/updated a test, including the failure path
 - [ ] `npm run build` is green
 - [ ] No secrets added; `.env` stays gitignored (only `.env.example` placeholders committed)
-- [ ] Merchant/customer-facing copy says "Busymate AI" / "bro" (no internal codenames)
+- [ ] Merchant/customer-facing copy says "Busymate AI" / "your mate" (no internal codenames)
 - [ ] Docs updated if behavior/paths/commands changed
 
 ## Notes for reviewers

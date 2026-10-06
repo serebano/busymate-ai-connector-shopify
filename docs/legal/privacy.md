@@ -16,7 +16,7 @@ assistant on a merchant's storefront. It is written to satisfy the EU/UK **GDPR*
 the **California CCPA/CPRA**.
 
 The App is the integration layer between a Shopify store and its **Busymate AI**
-white-label assistant ("bro"). It reaches the Busymate AI platform only through
+white-label assistant ("your mate"). It reaches the Busymate AI platform only through
 official APIs and holds the minimum data needed to run the integration.
 
 ## 1. Who is responsible (controller / processor)
@@ -27,7 +27,7 @@ official APIs and holds the minimum data needed to run the integration.
   conversation content), the **merchant is the controller** and Busymate AI is a
   **processor** acting on the merchant's instructions.
 
-Contact: **mr.serebano@gmail.com**.
+Contact: **hi@busymate.ai**.
 
 ## 2. What we collect and why
 
@@ -97,7 +97,7 @@ sensitive personal information, and the right not to be discriminated against fo
 exercising them. We do **not** sell or "share" personal information as those terms are
 defined by the CPRA.
 
-To exercise a right, contact the merchant you interacted with, or **mr.serebano@gmail.com**.
+To exercise a right, contact the merchant you interacted with, or **hi@busymate.ai**.
 
 ## 7. International transfers
 
@@ -114,7 +114,7 @@ We will update this policy as the App evolves and post the new effective date he
 
 ## 10. Contact and merchant terms
 
-**Busymate AI** — mr.serebano@gmail.com (we answer privacy requests within 30 days).
+**Busymate AI** — hi@busymate.ai (we answer privacy requests within 30 days).
 
 Merchants: the [Terms of Service & Data Processing Addendum](https://store.busymate.ai/legal/terms)
 sets out our processor obligations to you (roles, security, sub-processors, breach

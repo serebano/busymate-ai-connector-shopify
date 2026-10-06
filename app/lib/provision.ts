@@ -25,11 +25,13 @@
  * safe.
  *
  */
+import { DEFAULT_ASSISTANT_NAME } from "./assistantName";
 import { shopToSlug } from "./tenantSlug";
 import { proofArgs, type PartnerProof } from "./partnerProof";
 import { brandingArgs, identityProviderArgs, publishArgs, type IdentityProviderRegistration } from "./mgmtArgs";
 import type { KnowledgeBuild, KnowledgeCounts } from "./kbSnapshot";
 import { isKnowledgeRejection, publishOptionsFor, trainingPatch, type TrainingPatch } from "./kbTrain";
+import { formatStoredDomains, parseStoredDomains } from "./storefrontDomains";
 
 export interface McpResult<T = unknown> {
   ok: boolean;
@@ -55,6 +57,8 @@ export interface TenantRecord {
 
 export type TenantPatch = {
   slug?: string;
+  /** The store's storefront domains, comma-separated (#3718). */
+  customDomain?: string | null;
   bmaiTenantId?: string | null;
   connectorId?: string | null;
   identityProviderId?: string | null;
@@ -67,15 +71,28 @@ export type TenantPatch = {
    */
   provisionWarning?: string | null;
   publishedAt?: Date | null;
+  /**
+   * The meter's "the platform denied this tenant" mark. A successful publish
+   * proves the tenant is reachable again, so it is cleared there (#3718): left
+   * set, it kept afterAuth and Home re-repairing a healthy tenant every 10 min
+   * until the next hourly meter run.
+   */
+  tenantUnreachableAt?: Date | null;
 } & Partial<TrainingPatch>;
 
-/** The runtime origins every publish carries (install AND re-train use the same). */
+/**
+ * The runtime origins every publish carries (install AND re-train use the same).
+ * `customDomain` is the stored column: one host or a comma-separated list of the
+ * store's real storefront domains (#3718 — app/lib/storefrontDomains.ts).
+ */
 export function runtimeOrigins(shop: string, slug: string, customDomain?: string | null): { launchOrigins: string[]; embedOrigins: string[] } {
   return {
     launchOrigins: [servingHost(slug)],
     // CSP frame-ancestors checks EVERY ancestor. Theme preview nests the store
     // inside Shopify's editor iframe and admin; allow those exact hosts, never *.
-    embedOrigins: [`https://${shop}`, ...(customDomain ? [`https://${customDomain}`] : []),
+    // The store's own custom domains follow its myshopify origin so a shopper on
+    // `https://www.<brand>.com` is never refused (#3718).
+    embedOrigins: [`https://${shop}`, ...parseStoredDomains(customDomain).map((host) => `https://${host}`),
       "https://admin.shopify.com", "https://online-store-web.shopifyapps.com"],
   };
 }
@@ -122,6 +139,12 @@ export interface ProvisionDeps {
    * green-while-dead) and shoppers stay anonymous with public tools only.
    */
   launchIdentity?: IdentityProviderRegistration | null;
+  /**
+   * The store's real storefront domains (primary + others) from the Admin API
+   * (#3718 — app/lib/storefrontDomains.ts). Optional (the ops verify script has
+   * no shop session) and SOFT: a failure keeps the previously stored domains.
+   */
+  storefrontHosts?: (shop: string) => Promise<string[]>;
 }
 
 export interface TrainingSummary {
@@ -219,8 +242,20 @@ export async function runProvisionLifecycle(
   // re-projection) and says so. The publish below re-takes it live either way.
   const reactivated = provisioned.data?.reactivated === true;
 
+  // #3718 — the store's REAL storefront domains (a custom domain is where most
+  // shoppers are). Soft: a failed read keeps what was stored before.
+  let customDomain = existing?.customDomain ?? null;
+  if (deps.storefrontHosts) {
+    try {
+      const hosts = await deps.storefrontHosts(shop);
+      customDomain = formatStoredDomains([...hosts, ...parseStoredDomains(existing?.customDomain)]);
+    } catch (err) {
+      warnings.push(`storefront domains: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`);
+    }
+  }
+
   // Storefront parent origins allowed to iframe-embed the assistant.
-  const origins = runtimeOrigins(shop, slug, existing?.customDomain);
+  const origins = runtimeOrigins(shop, slug, customDomain);
   const storefrontOrigins = origins.embedOrigins;
 
   // 2) Branding (proof-of-shop path — re-resolves tenant from the proven shop, so the
@@ -231,7 +266,7 @@ export async function runProvisionLifecycle(
   //    below re-reads the tenant row, so an existing tenant keeps its branding.
   const isNewTenant = provisioned.data?.created === true || (!existing?.bmaiTenantId && provisioned.data?.reactivated !== true);
   if (isNewTenant) {
-    await soft("set_tenant_branding", brandingArgs(proof, tenantId, { productName: shop, assistantName: "bro" }));
+    await soft("set_tenant_branding", brandingArgs(proof, tenantId, { productName: shop, assistantName: DEFAULT_ASSISTANT_NAME }));
   }
 
   // 3) Storefront embed-origin allowlist (proof path — re-resolves tenant from shop).
@@ -362,10 +397,12 @@ export async function runProvisionLifecycle(
     bmaiTenantId: tenantId,
     connectorId,
     identityProviderId,
+    customDomain,
     provisionState: "published",
     provisionError: null,
     provisionWarning,
     publishedAt: new Date(),
+    tenantUnreachableAt: null,
     ...(training ?? {}),
   });
 
@@ -393,6 +430,43 @@ export function publishedRuntimeGaps(
   }
   if (!gaps.length) return null;
   return `Not live yet: ${gaps.join("; ")}. Shoppers get product and policy answers only — reconnect after the Busymate AI platform update, or contact support.`;
+}
+
+/** The tenant-row slice the afterAuth decision reads. */
+export interface AuthTenantState {
+  provisionState?: string | null;
+  bmaiTenantId?: string | null;
+  tenantUnreachableAt?: Date | string | null;
+}
+
+/**
+ * AFTER-AUTH IDEMPOTENCY (#3718 — Shopify review 5.1.2).
+ *
+ * `afterAuth` runs on every token exchange, not only on install: with EXPIRING
+ * offline tokens (`expiringOfflineAccessTokens`, ~1 h) the first admin load after
+ * an hour re-runs it, and it used to re-run the WHOLE lifecycle — a new
+ * `publish_tenant_runtime` revision each time. Every re-publish reopened the
+ * publish-to-apply window in which the storefront chat could not start, and on a
+ * reinstalled store it fed the platform's reinstall deadlock (a reviewer store,
+ * revision 5 at 19:09). The token refresh itself is the library's job;
+ * provisioning is needed only when the tenant is NOT already live:
+ *
+ *   • no row / never published / suspended (a reinstall) / error → provision;
+ *   • a published row whose tenant the platform no longer resolves
+ *     (`tenantUnreachableAt`, set by the meter on `tenant_management_denied`)
+ *     → provision: the orphan self-heals on the merchant's next admin open;
+ *   • otherwise → no provisioning on the auth path. The live row is CHECKED in
+ *     the background instead (`checkPublishedTenant`, app/lib/tenantRepair.ts):
+ *     a tenant the platform no longer resolves (`get_tenant_integration` answers
+ *     "administration denied" / "unavailable" → readiness `orphaned`, no meter
+ *     flag needed) or a storefront domain missing from the published allowlist
+ *     is repaired by the same idempotent lifecycle, gated per shop.
+ */
+export function authNeedsProvision(row: AuthTenantState | null | undefined): boolean {
+  if (!row) return true;
+  if (row.provisionState !== "published") return true;
+  if (!row.bmaiTenantId) return true;
+  return Boolean(row.tenantUnreachableAt);
 }
 
 /**

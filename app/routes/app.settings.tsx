@@ -18,6 +18,7 @@ import prisma from "../db.server";
 import { setTenantBranding } from "../bmai.server";
 import { retrainNow } from "../lib/ingest";
 import { saveBrandingAndRepublish } from "../lib/brandingSave";
+import { DEFAULT_ASSISTANT_NAME } from "../lib/assistantName";
 import { readTenantBranding } from "../lib/tenantRead.server";
 import { failClosedClientAction } from "../lib/clientAction";
 import { AppRouteBoundary } from "../components/AppRouteError";
@@ -27,7 +28,7 @@ import { AppRouteBoundary } from "../components/AppRouteError";
 export const clientAction = failClosedClientAction;
 export const ErrorBoundary = AppRouteBoundary;
 
-export const DEFAULT_ASSISTANT_NAME = "bro";
+export { DEFAULT_ASSISTANT_NAME };
 
 /** A sane display-name default: the store's name, else the shop domain without the suffix. */
 export function defaultDisplayName(shop: string, shopName?: string | null): string {
@@ -123,7 +124,7 @@ export default function SettingsPage() {
                     value={assistantName}
                     onChange={setAssistantName}
                     maxLength={40}
-                    helpText="How the assistant introduces itself in chat (default: bro)."
+                    helpText="How the assistant introduces itself in chat (default: your mate)."
                     requiredIndicator
                   />
                   <TextField

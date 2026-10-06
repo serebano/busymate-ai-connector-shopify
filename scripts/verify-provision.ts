@@ -5,7 +5,7 @@
  * exercises the exact proof + credential + lifecycle code the install callback runs.
  * The tenant STORE is in-memory (no ShopTenant row) so the app's tables stay clean.
  *
- * Env (sourced from /etc/bmai-shopify-app/env on the host): BMAI_MGMT_MCP_URL,
+ * Env (sourced from /etc/busymate-ai-shopify/env on the host): BMAI_MGMT_MCP_URL,
  * BMAI_PARTNER_PROOF_SECRET, BMAI_MGMT_CLIENT_ID/REFRESH_TOKEN, DATABASE_URL.
  * Prints only non-secret status. Usage:
  *   TEST_SHOP=<shop> node /tmp/verify.mjs          # provision

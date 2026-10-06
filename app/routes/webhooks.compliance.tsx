@@ -1,5 +1,4 @@
 import type { ActionFunctionArgs } from "react-router";
-import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import {
   exportTenantCustomerData,
@@ -7,15 +6,17 @@ import {
   onShopRedact,
 } from "../bmai.server";
 import { handleComplianceTopic, type ComplianceDeps } from "../lib/compliance";
+import { authenticateWebhookWithoutSession } from "../lib/webhookAuth";
 
 /**
  * The THREE mandatory GDPR compliance webhooks — the #1 App Store rejection cause.
  * Handlers ACTUALLY satisfy the request (export/erase tenant data; tear the tenant
  * down on shop/redact), they do not merely 200.
  *
- * authenticate.webhook verifies the HMAC; an invalid signature throws before we
- * act (fail-closed). The topic dispatch itself is the pure, unit-tested
- * handleComplianceTopic (app/lib/compliance.ts) with the real MCP + DB effects
+ * authenticateWebhookWithoutSession verifies the HMAC; an invalid signature throws
+ * 401 before we act (fail-closed). It never loads the offline session: after an
+ * uninstall the library's token refresh fails and answered 500 (#3731). The topic
+ * dispatch itself is the pure, unit-tested handleComplianceTopic (app/lib/compliance.ts) with the real MCP + DB effects
  * injected here. A shop with no provisioned tenant holds nothing → 200 no-op.
  */
 const deps: ComplianceDeps = {
@@ -29,7 +30,7 @@ const deps: ComplianceDeps = {
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { shop, topic, payload } = await authenticate.webhook(request);
+  const { shop, topic, payload } = await authenticateWebhookWithoutSession(request);
   const customerId =
     (payload?.customer as { id?: number | string } | undefined)?.id?.toString() ?? null;
 

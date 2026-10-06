@@ -1,6 +1,6 @@
 # Prepared resolution delivery outbox
 
-> **WIRED as of #19 / devtools #2835 (2026-09-13).** This module is no longer an
+> **WIRED as of #19 (2026-09-13).** This module is no longer an
 > unwired draft (PR #28 superseded — see `docs/BILLING.md` "Superseded: draft
 > PR #28"). `app/lib/usageBilling.ts` (`liveMeterDeps().reportUsage`) now
 > builds a `PreparedMeterBatch` from the real resolution producer
