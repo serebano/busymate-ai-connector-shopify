@@ -50,9 +50,15 @@ export function decideResolutions(
   now: Date = new Date(),
 ): ResolutionDecision[] {
   const handedOff = new Set(handoffs.map((h) => h.sessionId).filter((id): id is string => Boolean(id)));
+  // Older/system requests may have only the visitor session. Keep its namespace
+  // separate; an exact agent binding must not exclude another conversation.
+  const supportHandedOff = new Set(handoffs.filter((h) => !h.sessionId)
+    .map((h) => h.supportSessionId).filter((id): id is string => Boolean(id)));
   return conversations.map((c) => {
     if (c.live) return { sessionId: c.sessionId, billable: false, reason: "live", occurredAt: null };
-    if (handedOff.has(c.sessionId)) return { sessionId: c.sessionId, billable: false, reason: "handoff", occurredAt: null };
+    if (handedOff.has(c.sessionId) || (c.supportSessionId && supportHandedOff.has(c.supportSessionId))) {
+      return { sessionId: c.sessionId, billable: false, reason: "handoff", occurredAt: null };
+    }
     if (!c.lastActiveAt) return { sessionId: c.sessionId, billable: false, reason: "no-last-active", occurredAt: null };
     const lastActive = Date.parse(c.lastActiveAt);
     if (!Number.isFinite(lastActive)) return { sessionId: c.sessionId, billable: false, reason: "no-last-active", occurredAt: null };

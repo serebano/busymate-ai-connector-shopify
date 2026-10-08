@@ -26,7 +26,10 @@ export interface ConversationRow {
 
 export interface HandoffRow {
   id: string;
+  /** Agent conversation id; legacy responses called this session_id. */
   sessionId: string | null;
+  /** Visitor support session, distinct from the agent conversation. */
+  supportSessionId: string | null;
   status: string;
   reason: string | null;
   requestedAt: string | null;
@@ -35,6 +38,7 @@ export interface HandoffRow {
 type Obj = Record<string, unknown>;
 const obj = (v: unknown): Obj => (v && typeof v === "object" && !Array.isArray(v) ? (v as Obj) : {});
 const str = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
+const sessionId = (v: unknown): string | null => str(v)?.trim() || null;
 
 /** `{ ok, result: { conversations: [{ session_id, support_session_id, created_at, last_active_at, live }] } }` */
 export function conversationRows(data: unknown): ConversationRow[] {
@@ -52,7 +56,7 @@ export function conversationRows(data: unknown): ConversationRow[] {
     }));
 }
 
-/** `{ ok, result: { interventions: [{ id, session_id, status, reason, requested_at }], … } }` */
+/** Current interventions carry agent_session_id + support_session_id; retain legacy aliases. */
 export function handoffRows(data: unknown): HandoffRow[] {
   const list = obj(obj(data).result).interventions;
   if (!Array.isArray(list)) return [];
@@ -61,7 +65,8 @@ export function handoffRows(data: unknown): HandoffRow[] {
     .filter((i) => str(i.id))
     .map((i) => ({
       id: String(i.id),
-      sessionId: str(i.session_id) ?? str(i.sessionId),
+      sessionId: sessionId(i.agent_session_id) ?? sessionId(i.session_id) ?? sessionId(i.sessionId),
+      supportSessionId: sessionId(i.support_session_id),
       status: str(i.status) ?? "requested",
       reason: str(i.reason) ?? str(i.summary),
       requestedAt: str(i.requested_at) ?? str(i.created_at),
@@ -98,7 +103,7 @@ export async function listTenantHandoffs(
 }
 
 /**
- * ALL handoffs (no status filter), any lifecycle — used by the resolution meter
+ * ALL handoffs (explicit all status), any lifecycle — used by the resolution meter
  * (app/lib/resolutionLedger.server.ts): a conversation that ever had a human
  * intervention requested (open, resolved, or declined) is disqualified from the
  * "no hand-off" billable-resolution definition, not just a currently-open one.
@@ -109,7 +114,7 @@ export async function listTenantInterventionsAll(
   call: McpCall = callMcpTool,
 ): Promise<ListResult<HandoffRow>> {
   if (!tenantId) return { ok: false, rows: [], error: NOT_PROVISIONED };
-  const r = await call("list_tenant_interventions", { tenant_id: tenantId });
+  const r = await call("list_tenant_interventions", { tenant_id: tenantId, status: "all" });
   if (!r.ok) return { ok: false, rows: [], error: `list_tenant_interventions: ${r.error ?? "refused"}` };
   return { ok: true, rows: handoffRows(r.data) };
 }
