@@ -17,7 +17,7 @@ function conv(over: Partial<ConversationRow> & { sessionId: string }): Conversat
   return { supportSessionId: null, startedAt: null, lastActiveAt: null, live: false, ...over };
 }
 function handoff(sessionId: string, over: Partial<HandoffRow> = {}): HandoffRow {
-  return { id: `int_${sessionId}`, sessionId, status: "requested", reason: null, requestedAt: null, ...over };
+  return { id: `int_${sessionId}`, sessionId, supportSessionId: null, status: "requested", reason: null, requestedAt: null, ...over };
 }
 
 describe("RESOLUTION_DEFINITION", () => {

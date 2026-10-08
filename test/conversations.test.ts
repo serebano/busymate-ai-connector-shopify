@@ -4,6 +4,7 @@ import {
   handoffRows,
   listTenantConversations,
   listTenantHandoffs,
+  listTenantInterventionsAll,
   readTenantBranding,
   type McpCall,
 } from "../app/lib/tenantRead.server";
@@ -67,7 +68,14 @@ describe("listTenantHandoffs", () => {
     const out = await listTenantHandoffs("t_1", c);
     expect(c).toHaveBeenCalledWith("list_tenant_interventions", { tenant_id: "t_1", status: "open" });
     expect(out.ok).toBe(true);
-    expect(out.rows).toEqual([{ id: "int_1", sessionId: "wrun_01ABC", status: "requested", reason: "customer asked for a human", requestedAt: "2026-09-02T08:55:00Z" }]);
+    expect(out.rows).toEqual([{ id: "int_1", sessionId: "wrun_01ABC", supportSessionId: null, status: "requested", reason: "customer asked for a human", requestedAt: "2026-09-02T08:55:00Z" }]);
+  });
+  it("explicitly includes resolved and dismissed handoffs for resolution billing", async () => {
+    const c = call({ list_tenant_interventions: LIVE_INTERVENTIONS });
+    const out = await listTenantInterventionsAll("t_1", c);
+    expect(c).toHaveBeenCalledWith("list_tenant_interventions", { tenant_id: "t_1", status: "all" });
+    expect(out.ok).toBe(true);
+    expect(out.rows[0].sessionId).toBe("wrun_01ABC");
   });
 });
 
@@ -79,7 +87,28 @@ describe("row view-models", () => {
     expect(conversationRows(null)).toEqual([]);
   });
   it("handoffRows tolerates missing fields", () => {
-    expect(handoffRows({ result: { interventions: [{ id: "i" }] } })).toEqual([{ id: "i", sessionId: null, status: "requested", reason: null, requestedAt: null }]);
+    expect(handoffRows({ result: { interventions: [{ id: "i" }] } })).toEqual([{ id: "i", sessionId: null, supportSessionId: null, status: "requested", reason: null, requestedAt: null }]);
+  });
+  it("keeps current agent and support bindings distinct and prefers the canonical agent id", () => {
+    const rows = handoffRows({ ok: true, result: { interventions: [{
+      id: "current", agent_session_id: "wrun_current", support_session_id: "visitor-session",
+      session_id: "obsolete", sessionId: "also-obsolete", status: "requested", summary: "Shopper requested a person",
+      requested_at: "2026-10-08T11:54:58Z",
+    }] } });
+    expect(rows).toEqual([{ id: "current", sessionId: "wrun_current", supportSessionId: "visitor-session",
+      status: "requested", reason: "Shopper requested a person", requestedAt: "2026-10-08T11:54:58Z" }]);
+  });
+  it("supports agent-only, support-only, legacy, and malformed optional bindings", () => {
+    const rows = handoffRows({ result: { interventions: [
+      { id: "agent", agent_session_id: "wrun_agent" },
+      { id: "support", support_session_id: "visitor-session" },
+      { id: "legacy", sessionId: "wrun_legacy" },
+      { id: "fallback", agent_session_id: 42, session_id: "wrun_fallback", support_session_id: [] },
+      { id: "empty", agent_session_id: "  ", session_id: null, support_session_id: "" },
+    ] } });
+    expect(rows.map(({ sessionId, supportSessionId }) => [sessionId, supportSessionId])).toEqual([
+      ["wrun_agent", null], [null, "visitor-session"], ["wrun_legacy", null], ["wrun_fallback", null], [null, null],
+    ]);
   });
 });
 

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { evidenceRefFor, isTenantManagementDenied, readNewResolutions, type ResolutionLedgerDeps } from "../app/lib/resolutionLedger.server";
-import type { ConversationRow, HandoffRow } from "../app/lib/tenantRead.server";
+import { conversationRows, handoffRows, type ConversationRow, type HandoffRow } from "../app/lib/tenantRead.server";
 
 /**
  * The producer (#19/#2835): conversation + hand-off MCP reads → the
@@ -38,7 +38,7 @@ describe("readNewResolutions", () => {
 
   it("excludes handed-off and still-reopenable conversations from the count", async () => {
     const conversations: ConversationRow[] = [conv("billable", hoursAgo(30)), conv("handed-off", hoursAgo(30)), conv("too-recent", hoursAgo(1))];
-    const handoffs: HandoffRow[] = [{ id: "i1", sessionId: "handed-off", status: "resolved", reason: null, requestedAt: null }];
+    const handoffs: HandoffRow[] = [{ id: "i1", sessionId: "handed-off", supportSessionId: null, status: "resolved", reason: null, requestedAt: null }];
     const out = await readNewResolutions(
       "t_1",
       deps({ listConversations: async () => ({ ok: true, rows: conversations }), listHandoffs: async () => ({ ok: true, rows: handoffs }) }),
@@ -55,6 +55,27 @@ describe("readNewResolutions", () => {
     );
     expect(out?.resolutions).toBe(1);
     expect(out?.sessions.map((s) => s.sessionId)).toEqual(["s2"]);
+  });
+
+  it("excludes current MCP handoff bindings, including closed and support-only requests", async () => {
+    const conversations = conversationRows({ result: { conversations: [
+      { session_id: "wrun_current", support_session_id: "visitor-shared", last_active_at: hoursAgo(30) },
+      { session_id: "wrun_next", support_session_id: "visitor-shared", last_active_at: hoursAgo(30) },
+      { session_id: "wrun_support_only", support_session_id: "visitor-support-only", last_active_at: hoursAgo(30) },
+      { session_id: "wrun_unrelated", support_session_id: "visitor-other", last_active_at: hoursAgo(30) },
+      { session_id: "wrun_no_visitor", last_active_at: hoursAgo(30) },
+    ] } });
+    const handoffs = handoffRows({ ok: true, result: { interventions: [
+      { id: "resolved", agent_session_id: "wrun_current", support_session_id: "visitor-shared", status: "resolved" },
+      { id: "dismissed", agent_session_id: null, support_session_id: "visitor-support-only", status: "dismissed" },
+      { id: "unbound", agent_session_id: "", support_session_id: null, status: "requested" },
+    ] } });
+    const out = await readNewResolutions("t_1", deps({
+      listConversations: async () => ({ ok: true, rows: conversations }),
+      listHandoffs: async () => ({ ok: true, rows: handoffs }),
+    }));
+    expect(out?.sessions.map((s) => s.sessionId)).toEqual(["wrun_next", "wrun_unrelated", "wrun_no_visitor"]);
+    expect(out?.resolutions).toBe(3);
   });
 
   it("STABLE cursor across retries of the identical undecided batch (never a wall-clock value)", async () => {
