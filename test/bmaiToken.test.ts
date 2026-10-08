@@ -76,6 +76,68 @@ describe("bmai durable token provider", () => {
     expect(String(init.body)).toContain("refresh_token=stored-rt");
   });
 
+  it("reloads another process's rotation before the next grant", async () => {
+    const store = memStore({ clientId: "cid", refreshToken: "refresh-1" });
+    const fetchImpl = vi.fn(async () => tokenResponse("access", "refresh-2"));
+    const p = createTokenProvider({ mcpUrl: "https://busymate.ai/mcp", store, fetchImpl: fetchImpl as typeof fetch });
+    await p.getAccessToken();
+    await store.save({ clientId: "cid", refreshToken: "worker-rotated" });
+    p.invalidate();
+    await p.getAccessToken();
+    const [, init] = fetchImpl.mock.calls[1] as unknown as [string, RequestInit];
+    expect(new URLSearchParams(String(init.body)).get("refresh_token")).toBe("worker-rotated");
+  });
+
+  it("does not use the env seed when the durable read fails", async () => {
+    const fetchImpl = vi.fn();
+    const store = { load: vi.fn().mockRejectedValue(new Error("database unavailable")), save: vi.fn() };
+    const p = createTokenProvider({ mcpUrl: "https://busymate.ai/mcp", store, seedClientId: "cid", seedRefreshToken: "stale-seed", fetchImpl });
+    await expect(p.getAccessToken()).rejects.toThrow("database unavailable");
+    await expect(p.getAccessToken()).rejects.toThrow("database unavailable");
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(store.load).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not call OAuth when committing the attempt marker fails", async () => {
+    const store = memStore({ clientId: "cid", refreshToken: "refresh-1" });
+    store.beginRefresh = async () => { throw new Error("attempt commit failed"); };
+    const fetchImpl = vi.fn();
+    const p = createTokenProvider({ mcpUrl: "https://busymate.ai/mcp", store, fetchImpl });
+    await expect(p.getAccessToken()).rejects.toThrow("attempt commit failed");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, "", 123])("does not save the old credential when a success response omits a valid rotated refresh token: %s", async (refreshToken) => {
+    const store = memStore({ clientId: "cid", refreshToken: "consumed-after-grant" });
+    const save = vi.spyOn(store, "save");
+    const fetchImpl = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ access_token: "must-not-escape", refresh_token: refreshToken }) }) as Response);
+    const p = createTokenProvider({ mcpUrl: "https://busymate.ai/mcp", store, fetchImpl });
+    await expect(p.getAccessToken()).rejects.toBeInstanceOf(BmaiCredentialError);
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it("does not reseed after a previously populated durable credential disappears", async () => {
+    const store = memStore({ clientId: "cid", refreshToken: "refresh-1" });
+    const fetchImpl = vi.fn(async () => tokenResponse("access", "refresh-2"));
+    const p = createTokenProvider({ mcpUrl: "https://busymate.ai/mcp", store, seedClientId: "cid", seedRefreshToken: "stale-seed", fetchImpl: fetchImpl as typeof fetch });
+    await p.getAccessToken();
+    store.load = async () => null;
+    p.invalidate();
+    await expect(p.getAccessToken()).rejects.toThrow("stored credential is missing");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["save", "commit"])("withholds access and avoids replay after a %s failure", async (failure) => {
+    const store = memStore({ clientId: "cid", refreshToken: "refresh-1" });
+    if (failure === "save") store.save = async () => { throw new Error("save unavailable"); };
+    else store.withLock = async (run) => { await run(store); throw new Error("commit unavailable"); };
+    const fetchImpl = vi.fn(async () => tokenResponse("must-not-escape", "refresh-2"));
+    const p = createTokenProvider({ mcpUrl: "https://busymate.ai/mcp", store, fetchImpl: fetchImpl as typeof fetch });
+    await expect(p.getAccessToken()).rejects.toThrow("could not be saved");
+    await expect(p.getAccessToken()).rejects.toThrow("could not be saved");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it("falls back to a static bootstrap token when no refresh creds are set", async () => {
     const fetchImpl = vi.fn();
     const p = createTokenProvider({

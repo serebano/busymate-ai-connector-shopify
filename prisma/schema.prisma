@@ -111,6 +111,7 @@ model BmaiCredential {
   id           String   @id @default("provision")
   clientId     String
   refreshToken String
+  refreshPendingAt DateTime? @db.Timestamptz
   updatedAt    DateTime @updatedAt
 }
 

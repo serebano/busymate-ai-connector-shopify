@@ -7,6 +7,20 @@ on:
 jobs:
   build-test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: shopify_test
+          POSTGRES_PASSWORD: shopify_test
+          POSTGRES_DB: shopify_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U shopify_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,6 +32,8 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint --if-present
       - run: npm test
+        env:
+          SHOPIFY_TOKEN_TEST_DATABASE_URL: postgresql://shopify_test:shopify_test@127.0.0.1:5432/shopify_test
       - name: Install local PostgreSQL fixture binaries
         run: sudo apt-get update && sudo apt-get install -y postgresql
       - name: Durable reingest exact-SQL concurrency and restart proof

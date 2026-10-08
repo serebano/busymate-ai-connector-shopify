@@ -308,6 +308,17 @@ node scripts/mint-provision-credential.mjs  # → BMAI_MGMT_*
 
 `app/lib/bmaiToken.ts` mints access tokens, caches until near-expiry, and PERSISTS
 each rotation to the `BmaiCredential` table (store wins over the env seed).
+The web process and background workers serialize each refresh with an app-database
+advisory transaction lock, then reload the current credential before using it. A
+`refreshPendingAt` attempt marker commits before the OAuth request; only saving its
+renewed credential clears it. An interrupted request or failed save stops subsequent
+refreshes, including after restart, until connection recovery. The lock and journal
+use separate app-DB connections (the pool needs at least two); the journal must survive
+lock-transaction rollback. Updating only the env seed does not replace an existing stored
+credential: recovery must update the app-owned encrypted credential and restart its
+consumers together, clearing `refreshPendingAt` with the recovered credential. Apply
+the additive credential migration before starting this version. Integration tests use a dedicated disposable Postgres via
+`SHOPIFY_TOKEN_TEST_DATABASE_URL`; CI runs two real worker processes against it.
 
 **⚠️ The provisioner identity is a PLATFORM OPERATOR** (`profiles.role='admin'`). The
 tenant-management tools authorize only a platform-operator OR a tenant's own

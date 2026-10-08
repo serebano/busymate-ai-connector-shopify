@@ -31,6 +31,10 @@ export interface StoredRefresh {
 export interface TokenStore {
   load: () => Promise<StoredRefresh | null>;
   save: (v: StoredRefresh) => Promise<void>;
+  /** Commit an attempt marker before the remote grant; save clears it on success. */
+  beginRefresh?: (credential: StoredRefresh) => Promise<void>;
+  /** Serialize reload → refresh → save across processes; resolves after commit. */
+  withLock?: <T>(run: (store: TokenStore) => Promise<T>) => Promise<T>;
 }
 
 export interface TokenProviderDeps {
@@ -69,33 +73,23 @@ export function createTokenProvider(deps: TokenProviderDeps): TokenProvider {
   const skewMs = (deps.skewSeconds ?? 120) * 1000;
 
   let cached: { token: string; expMs: number } | null = null;
-  // In-memory copy of the current refresh credential (seed until the store loads).
+  // Only used without a durable store. A shared store is read on EVERY refresh.
   let current: StoredRefresh | null =
     deps.seedClientId && deps.seedRefreshToken
       ? { clientId: deps.seedClientId, refreshToken: deps.seedRefreshToken }
       : null;
-  let loadedFromStore = false;
+  let hasStoredCredential = false;
+  let persistenceFailure: BmaiCredentialError | null = null;
 
-  async function ensureLoaded(): Promise<void> {
-    if (loadedFromStore || !deps.store) return;
-    loadedFromStore = true;
-    const stored = await deps.store.load().catch(() => null);
-    if (stored?.clientId && stored?.refreshToken) current = stored; // store WINS over the seed
-  }
-
-  async function refresh(): Promise<string> {
-    if (!current) {
-      throw new BmaiCredentialError(
-        "no Busymate AI refresh credential configured",
-      );
-    }
+  async function refresh(credential: StoredRefresh) {
     const res = await fetchImpl(tokenEndpoint(deps.mcpUrl), {
       method: "POST",
+      signal: AbortSignal.timeout(10_000),
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         grant_type: "refresh_token",
-        refresh_token: current.refreshToken,
-        client_id: current.clientId,
+        refresh_token: credential.refreshToken,
+        client_id: credential.clientId,
       }).toString(),
     });
     const json = (await res.json().catch(() => ({}))) as {
@@ -105,21 +99,19 @@ export function createTokenProvider(deps: TokenProviderDeps): TokenProvider {
       error?: string;
       error_description?: string;
     };
-    if (!res.ok || !json.access_token) {
+    if (!res.ok || typeof json.access_token !== "string" || !json.access_token.trim()
+      || typeof json.refresh_token !== "string" || !json.refresh_token.trim()) {
       throw new BmaiCredentialError(
         `refresh_token grant failed (${res.status} ${json.error ?? ""}${
           json.error_description ? ": " + json.error_description : ""
         }) — re-authorize the app (DCR + PKCE) and reseed the Busymate AI refresh token`,
       );
     }
-    // Persist the ROTATED refresh token BEFORE returning (the old one is now revoked).
-    if (json.refresh_token && json.refresh_token !== current.refreshToken) {
-      current = { clientId: current.clientId, refreshToken: json.refresh_token };
-      if (deps.store) await deps.store.save(current).catch(() => {});
-    }
     const ttlMs = (json.expires_in ?? 3600) * 1000;
-    cached = { token: json.access_token, expMs: now() + ttlMs };
-    return json.access_token;
+    return {
+      credential: { clientId: credential.clientId, refreshToken: json.refresh_token },
+      access: { token: json.access_token, expMs: now() + ttlMs },
+    };
   }
 
   // SINGLE-FLIGHT refresh. The refresh token ROTATES on every grant and the edge
@@ -131,12 +123,45 @@ export function createTokenProvider(deps: TokenProviderDeps): TokenProvider {
   let inFlight: Promise<string> | null = null;
 
   async function mint(): Promise<string> {
-    await ensureLoaded();
-    if (current) return refresh();
-    if (deps.staticToken) return deps.staticToken; // bootstrap/testing fallback
-    throw new BmaiCredentialError(
-      "no Busymate AI credential configured (refresh credential or bootstrap token required)",
-    );
+    if (persistenceFailure) throw persistenceFailure;
+    let grantCompleted = false;
+    const run = async (store?: TokenStore) => {
+      // Never swallow a failed read and fall back to an already-consumed env seed.
+      const stored = store ? await store.load() : null;
+      if (stored) hasStoredCredential = true;
+      if (store && hasStoredCredential && !stored) {
+        throw new BmaiCredentialError("Busymate AI stored credential is missing; restore the connection before retrying");
+      }
+      const credential = stored ?? current;
+      if (!credential) {
+        if (deps.staticToken) return { token: deps.staticToken, expMs: now() + 60_000 };
+        throw new BmaiCredentialError("no Busymate AI credential configured (refresh credential or bootstrap token required)");
+      }
+      // This marker survives a crash or rollback of the separate advisory-lock transaction.
+      await store?.beginRefresh?.(credential);
+      const renewed = await refresh(credential);
+      grantCompleted = true;
+      // The previous credential has been consumed. Persist BEFORE exposing access.
+      if (store) await store.save(renewed.credential);
+      else current = renewed.credential;
+      return renewed.access;
+    };
+    try {
+      const access = deps.store?.withLock
+        ? await deps.store.withLock(run)
+        : await run(deps.store);
+      if (deps.store && grantCompleted) hasStoredCredential = true;
+      // A transaction can fail at commit after save resolves; cache only after it commits.
+      cached = access;
+      return access.token;
+    } catch (err) {
+      if (grantCompleted && deps.store) {
+        // Do not retry the consumed durable token after an uncertain save/commit.
+        persistenceFailure = new BmaiCredentialError("Busymate AI credential renewal could not be saved; restore the connection before retrying");
+        throw persistenceFailure;
+      }
+      throw err;
+    }
   }
 
   return {
