@@ -13,10 +13,10 @@ import { authenticateWebhookWithoutSession, offlineSessionId } from "../lib/webh
 // `updateMany` so a shop with no session row is a no-op, never a throw. The
 // re-train refreshes the token itself in the background (unauthenticated.admin).
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { shop, payload } = await authenticateWebhookWithoutSession(request);
+  const { shop, payload, webhookId } = await authenticateWebhookWithoutSession(request);
   const sessionId = offlineSessionId(shop);
   const out = await handleScopesUpdate(
-    { shop, sessionId, current: (payload as { current?: unknown } | null)?.current },
+    { shop, webhookId, sessionId, current: (payload as { current?: unknown } | null)?.current },
     {
       updateSessionScope: async (id, scope) => {
         await prisma.session.updateMany({ where: { id, shop, isOnline: false }, data: { scope } });

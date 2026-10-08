@@ -82,6 +82,7 @@ model ShopTenant {
   updatedAt      DateTime @updatedAt
 
   billing BillingState?
+  reingestQueue KbReingestQueue?
 }
 
 /// Merchant-facing billing (Shopify Billing API). DISTINCT from the internal
@@ -179,4 +180,39 @@ model KbFreshnessRun {
   detail      Json?
 
   @@index([finishedAt])
+}
+
+/// Durable webhook requests, independent of billing. Bound but unprovisioned shops remain pending.
+model KbReingestQueue {
+  shop String @id
+  requested Int @default(0)
+  completed Int @default(0)
+  dueAt DateTime @default(now()) @db.Timestamptz
+  firstPendingAt DateTime @default(now()) @db.Timestamptz
+  attempts Int @default(0)
+  leaseToken String?
+  leaseGeneration Int?
+  leaseTenantId String?
+  leaseUntil DateTime? @db.Timestamptz
+  lastErrorCode String?
+  updatedAt DateTime @default(now()) @db.Timestamptz
+  receipts KbReingestReceipt[]
+  tenant ShopTenant @relation(fields: [shop], references: [shop], onDelete: Cascade)
+  @@index([dueAt])
+}
+model KbReingestReceipt {
+  shop String
+  webhookId String
+  receivedAt DateTime @default(now()) @db.Timestamptz
+  queue KbReingestQueue @relation(fields: [shop], references: [shop], onDelete: Cascade)
+  @@id([shop, webhookId])
+  @@index([receivedAt])
+}
+model KbReingestWorkerState {
+  id Int @id @default(1)
+  listenerConnected Boolean @default(false)
+  startedAt DateTime? @db.Timestamptz
+  finishedAt DateTime? @db.Timestamptz
+  claimed Int @default(0)
+  failed Int @default(0)
 }

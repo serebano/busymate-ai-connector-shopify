@@ -1,0 +1,23 @@
+[Unit]
+Description=Busymate AI for Shopify - event-woken durable knowledge worker
+After=network-online.target postgresql.service busymate-ai-shopify.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/busymate-ai-shopify
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/busymate-ai-shopify/env
+ExecStart=/opt/busymate-ai-shopify/node_modules/.bin/tsx scripts/kb-reingest.ts
+Restart=always
+RestartSec=5
+TimeoutStopSec=130
+KillMode=control-group
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

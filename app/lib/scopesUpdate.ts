@@ -12,6 +12,7 @@
  */
 export interface ScopesUpdateInput {
   shop: string;
+  webhookId: string;
   /** The offline session the webhook resolved (null when the shop has none). */
   sessionId?: string | null;
   /** The webhook payload's `current` scopes (untrusted shape). */
@@ -20,7 +21,7 @@ export interface ScopesUpdateInput {
 
 export interface ScopesUpdateDeps {
   updateSessionScope: (sessionId: string, scope: string) => Promise<void>;
-  scheduleReingest: (shop: string, reason: "scopes") => { scheduled: boolean; reason?: string };
+  scheduleReingest: (shop: string, reason: "scopes", webhookId: string) => Promise<{ scheduled: boolean; reason?: string }>;
 }
 
 export interface ScopesUpdateOutcome {
@@ -43,6 +44,6 @@ export async function handleScopesUpdate(input: ScopesUpdateInput, deps: ScopesU
     await deps.updateSessionScope(input.sessionId, scope);
     sessionUpdated = true;
   }
-  const retrain = deps.scheduleReingest(input.shop, "scopes");
+  const retrain = await deps.scheduleReingest(input.shop, "scopes", input.webhookId);
   return { scope, sessionUpdated, retrain };
 }

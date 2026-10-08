@@ -8,8 +8,8 @@ import { authenticateWebhookWithoutSession } from "../lib/webhookAuth";
 // be re-enabled once Protected Customer Data access is granted. HMAC only, no
 // offline-session load (0.1.15), like every webhook route.
 export const action = async ({ request }: ActionFunctionArgs) => {
-  const { shop, topic } = await authenticateWebhookWithoutSession(request);
-  const r = scheduleReingest(shop, "orders");
+  const { shop, topic, webhookId } = await authenticateWebhookWithoutSession(request);
+  const r = await scheduleReingest(shop, "orders", webhookId);
   console.log(`[kb] ${topic} for ${shop} → ${r.scheduled ? "re-train queued" : `no re-train (${r.reason})`}`);
   return new Response();
 };

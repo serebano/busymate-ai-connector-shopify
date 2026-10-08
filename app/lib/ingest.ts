@@ -14,8 +14,10 @@
 import prisma from "../db.server";
 import { publishTenantRuntime } from "../bmai.server";
 import { buildKbSnapshot } from "./kbFetch";
-import { createReingestScheduler, trainTenant, type ReingestReason, type TrainOutcome } from "./kbTrain";
+import { trainTenant, type ReingestReason, type TrainOutcome } from "./kbTrain";
 import { runtimeOrigins } from "./provision";
+import { enqueueWebhookReingest, type ReingestLease } from "./reingestQueue";
+import { reingestStore, requestImmediateReingest, saveTrainingForLease } from "./reingestStore.server";
 import { shopToSlug } from "./tenantSlug";
 
 export { buildKbSnapshot } from "./kbFetch";
@@ -29,6 +31,18 @@ export function retrainRefusal(tenant: { provisionState?: string | null; inactiv
 
 /** Re-train the shop NOW: fetch → compress → publish → persist. Never throws for an ingest error. */
 export async function retrainNow(shop: string): Promise<TrainOutcome> {
+  const lease = await requestImmediateReingest(shop);
+  if (!lease) return { ok: false, error: "Training is queued, already running, or the shop is inactive.", counts: { products: 0, policies: 0, pages: 0 }, fetched: { products: 0, policies: 0, pages: 0 }, totalChars: 0, truncated: false };
+  const { runReingestAttempt } = await import("./reingestProcess.server");
+  return runReingestAttempt(lease);
+}
+
+/** Only the isolated attempt child calls the actual publisher. */
+export async function trainShopUnderLease(shop: string, lease: ReingestLease): Promise<TrainOutcome> {
+  const beforePublish = async () => {
+    if (shop !== lease.shop || !await reingestStore.owns(lease)) throw new Error("reingest lease lost");
+  };
+  await beforePublish();
   const tenant = await prisma.shopTenant.findUnique({ where: { shop } });
   const refusal = retrainRefusal(tenant);
   if (refusal) {
@@ -41,34 +55,21 @@ export async function retrainNow(shop: string): Promise<TrainOutcome> {
     { shop, tenantId: tenant?.bmaiTenantId, ...runtimeOrigins(shop, slug, tenant?.customDomain) },
     {
       fetchSnapshot: buildKbSnapshot,
-      publish: (s, tenantId, opts) => publishTenantRuntime(s, tenantId, opts),
-      saveTraining: async (s, patch) => {
-        await prisma.shopTenant.updateMany({ where: { shop: s }, data: patch });
+      publish: async (s, tenantId, opts) => {
+        await beforePublish();
+        return publishTenantRuntime(s, tenantId, opts);
       },
+      saveTraining: async (_s, patch) => { await saveTrainingForLease(lease, patch); },
       log: (m) => console.error(m),
     },
   );
 }
 
-const scheduler = createReingestScheduler({
-  run: async (shop) => {
-    const out = await retrainNow(shop);
-    if (out.ok) console.log(`[kb] re-trained ${shop}: ${out.counts.products} products, ${out.counts.policies} policies, ${out.counts.pages} pages${out.truncated ? " (truncated to fit)" : ""}`);
-    else console.error(`[kb] re-train failed for ${shop}: ${out.error}`);
-  },
-  delayMs: Number(process.env.KB_REINGEST_DEBOUNCE_MS) > 0 ? Number(process.env.KB_REINGEST_DEBOUNCE_MS) : 20_000,
-  onError: (shop, err) => console.error(`[kb] re-train crashed for ${shop}: ${err instanceof Error ? err.message : String(err)}`),
-});
-
-/**
- * Webhook entry: queue a re-train after a quiet period (product webhooks arrive in
- * bursts). Returns immediately so the webhook can 200; the outcome is persisted on
- * ShopTenant (kbTrainedAt / kbError) and logged. Order webhooks never re-train.
- */
-export function cancelReingest(shop: string): boolean {
-  return scheduler.cancel(shop);
+/** Durable webhook entry; never acknowledge a request before its database commit. */
+export function cancelReingest(shop: string): Promise<void> {
+  return reingestStore.cancel(shop);
 }
 
-export function scheduleReingest(shop: string, reason: ReingestReason): { scheduled: boolean; reason?: string } {
-  return scheduler.schedule(shop, reason);
+export function scheduleReingest(shop: string, reason: ReingestReason, webhookId: string): Promise<{ scheduled: boolean; reason?: string }> {
+  return enqueueWebhookReingest(reingestStore, { shop, reason, webhookId });
 }
