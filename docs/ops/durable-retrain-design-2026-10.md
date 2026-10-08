@@ -1,8 +1,9 @@
 # Durable webhook retrain — implementation and rollout
 
-Source implementation for the app-owned queue; **not deployed or activated**.
-Production DDL and worker activation require the final owner window described
-below. Local proofs do not establish production delivery or exactly-once effects.
+Source implementation for the app-owned queue. The owner authorized completing
+and shipping the Shopify fixes on 2026-10-08; execute the reviewed rollout below
+only after the final protected merge. Local proofs do not establish production
+delivery or exactly-once effects.
 
 ## Behavior and ownership
 
@@ -104,7 +105,7 @@ separate; a healthy queue does not prove the 72-hour backstop ran.
 - CI installs local PostgreSQL binaries and runs the same SQL fixture in the
   existing build-test job. No production URL or fixture is used.
 
-## Concrete owner rollout window — approval required before execution
+## Concrete rollout window — protected merge and release captain required
 
 The captain must review this exact migration and final source/CI first:
 `prisma/migrations/20261006053000_kb_reingest_queue/migration.sql`.
@@ -149,10 +150,11 @@ reverse the migration just to make rollback look clean.
 
 ## Source validation record (not production acceptance)
 
-The exact migration passes an isolated PostgreSQL restart/contention/rebind/purge
-fixture, including the real production LISTEN client. Owning route, worker,
-process, wake and health tests are run without production credentials. Full
-Prisma generation, typecheck, lint, all tests and build still require the
-coordinator's resource slot before this branch may be proposed as ready to ship.
+On 2026-10-08 the candidate integrated with protected main `6740811` passed
+`npm ci`, Prisma generation, typecheck, lint, all 83 suites / 805 tests, the exact
+PostgreSQL restart/contention/rebind/purge fixture with the production LISTEN
+client, and the production build. `npm audit --omit=dev` reported zero production
+vulnerabilities. Hosted required checks and the production rollout are separate
+acceptance gates; these local checks use no production credentials.
 
 The LISTEN client behavior follows the upstream [node-postgres Client API](https://node-postgres.com/apis/client).
