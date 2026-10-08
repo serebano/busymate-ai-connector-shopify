@@ -26,7 +26,8 @@ import { shopToSlug } from "./lib/tenantSlug";
 import { connectorEndpoint } from "./lib/connector";
 import { authNeedsProvision, provisionOnInstall, type ProvisionDeps } from "./lib/provision";
 import { buildPartnerProof, proofArgs } from "./lib/partnerProof";
-import { createTokenProvider, type TokenStore } from "./lib/bmaiToken";
+import { createTokenProvider } from "./lib/bmaiToken";
+import { createPrismaTokenStore } from "./lib/bmaiTokenStore";
 import { decryptField, encryptField } from "./lib/fieldCipher";
 import { masterSecretUsable } from "./mcp/actorToken";
 import { brandingArgs, publishArgs, type Branding, type PublishOptions } from "./lib/mgmtArgs";
@@ -50,26 +51,6 @@ export interface McpResult<T = unknown> {
   error?: string;
 }
 
-/** Prisma-backed store for a rotating refresh token, keyed by credential id. */
-function makeTokenStore(id: string): TokenStore {
-  return {
-    load: async () => {
-      const row = await prisma.bmaiCredential.findUnique({ where: { id } });
-      // The rotating refresh token is stored encrypted at rest; decrypt on load
-      // (legacy plaintext rows pass through unchanged).
-      return row ? { clientId: row.clientId, refreshToken: decryptField(row.refreshToken) } : null;
-    },
-    save: async (v) => {
-      const refreshToken = encryptField(v.refreshToken);
-      await prisma.bmaiCredential.upsert({
-        where: { id },
-        create: { id, clientId: v.clientId, refreshToken },
-        update: { clientId: v.clientId, refreshToken },
-      });
-    },
-  };
-}
-
 // One RFC-8707 resource and one durable rotating credential for every Busymate
 // AI call. The existing `mgmt` store id is preserved so deployed refresh-token
 // rotation survives this code upgrade without re-authorization.
@@ -78,7 +59,7 @@ const tokenProvider = createTokenProvider({
   staticToken: process.env.BMAI_MGMT_TOKEN || undefined,
   seedClientId: process.env.BMAI_MGMT_CLIENT_ID || undefined,
   seedRefreshToken: process.env.BMAI_MGMT_REFRESH_TOKEN || undefined,
-  store: makeTokenStore("mgmt"),
+  store: createPrismaTokenStore(prisma, "mgmt", { encrypt: encryptField, decrypt: decryptField }),
 });
 
 /** Sign a proof-of-shop for a shop (fail-closed to null when no secret is set). */
