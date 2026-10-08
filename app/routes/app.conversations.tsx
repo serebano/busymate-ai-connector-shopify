@@ -16,7 +16,7 @@ import {
 import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { listTenantConversations, listTenantHandoffs } from "../lib/tenantRead.server";
+import { listTenantConversations, listTenantInterventionsAll } from "../lib/tenantRead.server";
 import { LocalTime } from "../components/LocalTime";
 import { AppRouteBoundary } from "../components/AppRouteError";
 
@@ -24,21 +24,17 @@ import { AppRouteBoundary } from "../components/AppRouteError";
 // the root 500 page.
 export const ErrorBoundary = AppRouteBoundary;
 
-/** The Busymate AI inbox (auth-gated) where the merchant reads full transcripts. */
-export const INBOX_URL = "https://busymate.ai/console/inbox";
-
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const tenant = await prisma.shopTenant.findUnique({ where: { shop: session.shop }, select: { bmaiTenantId: true, slug: true } });
   const [conversations, handoffs] = await Promise.all([
     listTenantConversations(tenant?.bmaiTenantId, 25),
-    listTenantHandoffs(tenant?.bmaiTenantId),
+    listTenantInterventionsAll(tenant?.bmaiTenantId),
   ]);
   return {
     provisioned: Boolean(tenant?.bmaiTenantId),
     conversations,
     handoffs,
-    inboxUrl: INBOX_URL,
     servingHost: tenant?.slug ? `https://${tenant.slug}.busymate.ai` : null,
   };
 };
@@ -46,7 +42,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export default function ConversationsPage() {
   const data = useLoaderData<typeof loader>();
   const convs = data.conversations.rows;
-  const open = data.handoffs.rows;
+  const open = data.handoffs.rows.filter((handoff) => ["requested", "acknowledged", "active"].includes(handoff.status));
+  const closed = data.handoffs.rows.filter((handoff) => ["resolved", "dismissed"].includes(handoff.status));
   return (
     <Page>
       <TitleBar title="Conversations" />
@@ -59,7 +56,7 @@ export default function ConversationsPage() {
               </Banner>
             ) : null}
             {data.handoffs.error ? (
-              <Banner tone="critical" title="Could not load open handoffs">
+              <Banner tone="critical" title="Could not load handoffs">
                 <p>{data.handoffs.error}</p>
               </Banner>
             ) : null}
@@ -83,7 +80,7 @@ export default function ConversationsPage() {
                   <div style={{ padding: "0 var(--p-space-400) var(--p-space-400)" }}>
                     <Text as="p" tone="subdued">
                       No shopper is waiting for a human right now. When the assistant is not confident it offers a
-                      handoff; those requests appear here and in your Busymate AI inbox.
+                      handoff; open a request here to read the conversation, claim it, and reply to the customer.
                     </Text>
                   </div>
                 ) : (
@@ -101,7 +98,7 @@ export default function ConversationsPage() {
                         </IndexTable.Cell>
                         <IndexTable.Cell>{h.reason ?? "—"}</IndexTable.Cell>
                         <IndexTable.Cell>
-                          <code>{h.sessionId ?? "—"}</code>
+                          <Link url={`/app/handoffs/${encodeURIComponent(h.id)}`}>Open conversation</Link>
                         </IndexTable.Cell>
                       </IndexTable.Row>
                     ))}
@@ -110,6 +107,20 @@ export default function ConversationsPage() {
               </BlockStack>
             </Card>
 
+            {closed.length ? <Card>
+              <BlockStack gap="300">
+                <Text as="h2" variant="headingMd">Recent completed handoffs</Text>
+                <Text as="p" tone="subdued">Read the customer and team messages after a request is closed.</Text>
+                {closed.map((handoff) => <InlineGrid columns="1fr auto" key={handoff.id}>
+                  <BlockStack gap="100">
+                    <Link url={`/app/handoffs/${encodeURIComponent(handoff.id)}`}>{handoff.reason ?? "Customer conversation"}</Link>
+                    <Text as="p" tone="subdued"><LocalTime iso={handoff.requestedAt} /></Text>
+                  </BlockStack>
+                  <Badge>{handoff.status}</Badge>
+                </InlineGrid>)}
+              </BlockStack>
+            </Card> : null}
+
             <Card padding="0">
               <BlockStack gap="0">
                 <div style={{ padding: "var(--p-space-400)" }}>
@@ -117,9 +128,7 @@ export default function ConversationsPage() {
                     <Text as="h2" variant="headingMd">
                       Recent conversations
                     </Text>
-                    <Link url={data.inboxUrl} target="_blank">
-                      Open transcripts in the Busymate AI inbox
-                    </Link>
+                    <Text as="p" tone="subdued">Read customer conversations here in Shopify.</Text>
                   </InlineGrid>
                 </div>
                 {convs.length === 0 ? (
@@ -142,7 +151,7 @@ export default function ConversationsPage() {
                         <IndexTable.Cell><LocalTime iso={c.lastActiveAt} /></IndexTable.Cell>
                         <IndexTable.Cell>{c.live ? <Badge tone="success">Live</Badge> : <Badge>Ended</Badge>}</IndexTable.Cell>
                         <IndexTable.Cell>
-                          <code>{c.sessionId}</code>
+                          <Link url={`/app/transcripts/${encodeURIComponent(c.sessionId)}`}>Read assistant chat</Link>
                         </IndexTable.Cell>
                       </IndexTable.Row>
                     ))}
