@@ -1,6 +1,6 @@
 # Busymate AI for Shopify — app server (Admin UI + /mcp connector + /identity + JWKS)
-# Deployed as a systemd unit behind nginx at shopify.busymate.ai (fleet-uniform),
-# or Fly.io/Vercel. See docs/ARCHITECTURE.md §Hosting.
+# Live image is built from git main on efirs (busymate-ai-infra images/shopify-app/Dockerfile.src)
+# and run on k8s (ns bmai). This file is the reference build. See SETUP.md 3b.
 FROM node:20-alpine AS base
 ENV NODE_ENV=production
 WORKDIR /app

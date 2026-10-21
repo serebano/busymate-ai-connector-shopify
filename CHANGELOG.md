@@ -13,7 +13,7 @@ never reached the assistant.
 
 - **Event-driven:** `shop/update` now re-trains (debounced per shop, like `products/*`). Collections,
   inventory and theme content are not part of the snapshot, so they are not subscribed.
-- **Backstop:** `scripts/kb-freshness.ts` on the systemd timer `busymate-ai-shopify-kb-freshness`
+- **Backstop:** `scripts/kb-freshness.ts` as the k8s CronJob `shopify-kb-freshness` (ns `bmai`; originally a systemd timer on the retired droplet)
   (every 6 h, jittered) re-trains active shops older than 72 h, spaced and capped per run; shops
   Shopify answers 404 on admin + storefront are marked inactive and never retried; every run is a
   `KbFreshnessRun` ledger row with counts. Idempotent (re-read before training, run lease).
