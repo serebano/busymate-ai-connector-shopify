@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
-  ALERT_AFTER_HOURS, classifyReachability, freshnessHealth, isDue, runBackstop, runInFlight, selectDue,
+  ALERT_AFTER_HOURS, TRAINING_NOT_STARTED, classifyReachability, isSkippableRetrainError, isTestShop, freshnessHealth, isDue, runBackstop, runInFlight, selectDue,
   type BackstopDeps, type FreshnessRow, type ReachProbe,
 } from "../app/lib/kbFreshness";
 
@@ -19,7 +19,7 @@ const row = (shop: string, trainedHoursAgo: number | null, over: Partial<Freshne
 const LIVE: ReachProbe = { admin: 401, storefront: 302 };
 const GONE: ReachProbe = { admin: 404, storefront: 404 };
 
-function harness(rows: FreshnessRow[], probes: Record<string, ReachProbe> = {}, retrainOk: Record<string, boolean> = {}) {
+function harness(rows: FreshnessRow[], probes: Record<string, ReachProbe> = {}, retrainOk: Record<string, boolean> = {}, retrainError: Record<string, string> = {}) {
   const table = new Map(rows.map((r) => [r.shop, { ...r }]));
   const calls = { retrain: [] as string[], inactive: [] as Array<[string, string]>, sleeps: [] as number[], probes: [] as string[] };
   const deps: BackstopDeps = {
@@ -28,7 +28,7 @@ function harness(rows: FreshnessRow[], probes: Record<string, ReachProbe> = {}, 
     probe: async (shop) => { calls.probes.push(shop); return probes[shop] ?? LIVE; },
     retrain: async (shop) => {
       calls.retrain.push(shop);
-      if (retrainOk[shop] === false) return { ok: false, error: "publish_tenant_runtime: boom" };
+      if (retrainOk[shop] === false) return { ok: false, error: retrainError[shop] ?? "publish_tenant_runtime: boom" };
       table.get(shop)!.kbTrainedAt = NOW;
       return { ok: true };
     },
@@ -116,6 +116,50 @@ describe("runBackstop", () => {
     expect(s.trained).toBe(1);
     expect(s.results.find((r) => r.shop === "a")).toMatchObject({ result: "failed", error: "publish_tenant_runtime: boom" });
     expect(calls.inactive).toEqual([]);
+  });
+
+  it("queued / already-running / inactive answers are a logged skip, not a failed run", async () => {
+    const logs: string[] = [];
+    const { deps, calls } = harness(
+      [row("busy", 100), row("gone-quiet", 100), row("real", 100)], {},
+      { busy: false, "gone-quiet": false, real: false },
+      { busy: TRAINING_NOT_STARTED, "gone-quiet": "shop is inactive (shop_not_found) — not re-trained", real: "publish_tenant_runtime: boom" },
+    );
+    deps.log = (l) => logs.push(l);
+    const s = await runBackstop(deps);
+    expect(s.results.find((r) => r.shop === "busy")).toMatchObject({ result: "skipped" });
+    expect(s.results.find((r) => r.shop === "gone-quiet")).toMatchObject({ result: "skipped" });
+    expect(s.skipped).toBe(2);
+    expect(s.failed).toBe(1); // the real failure still fails the run
+    expect(s.ok).toBe(false);
+    expect(logs.some((l) => l.includes("busy") && l.includes("skipped"))).toBe(true);
+    expect(calls.inactive).toEqual([]);
+  });
+
+  it("a run whose only non-trained shops are skips is ok", async () => {
+    const { deps } = harness([row("a", 100), row("busymate-ai-review-test-5.myshopify.com", 100)], {}, { "busymate-ai-review-test-5.myshopify.com": false }, { "busymate-ai-review-test-5.myshopify.com": "publish_tenant_runtime: no" });
+    const s = await runBackstop(deps);
+    expect(s.ok).toBe(true);
+    expect(s).toMatchObject({ trained: 1, failed: 0, skipped: 1 });
+  });
+
+  it("a test shop that CAN be refreshed is still trained; a real shop with the same error still fails", async () => {
+    const t = "busymate-ai-review-test-3.myshopify.com";
+    const { deps, calls } = harness([row(t, 100), row("shop-x", 100)], {}, { "shop-x": false });
+    const s = await runBackstop(deps);
+    expect(calls.retrain.sort()).toEqual([t, "shop-x"].sort());
+    expect(s.trained).toBe(1);
+    expect(s.failed).toBe(1);
+  });
+
+  it("classifies skippable answers and test shops narrowly", () => {
+    expect(isSkippableRetrainError(TRAINING_NOT_STARTED)).toBe(true);
+    expect(isSkippableRetrainError("app is uninstalled (tenant suspended) — not re-trained")).toBe(true);
+    expect(isSkippableRetrainError("publish_tenant_runtime: boom")).toBe(false);
+    expect(isSkippableRetrainError(undefined)).toBe(false);
+    expect(isTestShop("busymate-ai-review-test-5.myshopify.com")).toBe(true);
+    expect(isTestShop("acme-store.myshopify.com")).toBe(false);
+    expect(isTestShop("not-busymate-ai-review-test-5.myshopify.com")).toBe(false);
   });
 
   it("an unreachable-for-now shop (402, network error) is skipped, not inactivated", async () => {

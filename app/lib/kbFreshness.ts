@@ -33,6 +33,23 @@ export const RUN_LEASE_HOURS = 2;
 
 const HOUR = 3_600_000;
 
+/** What `retrainNow` answers when no lease could be taken (another training queued/running, or the shop went inactive). */
+export const TRAINING_NOT_STARTED = "Training is queued, already running, or the shop is inactive.";
+
+/** Review/test stores (busymate-ai-review-test-N …): a failure there is an expected skip, never a failed run. */
+export function isTestShop(shop: string): boolean {
+  return /^busymate-ai-review-test-[^.]*\./i.test(shop) || /^busymate-ai-(review-)?test[-.]/i.test(shop);
+}
+
+/**
+ * A retrain answer that is not a training failure: nothing was started because another
+ * training holds the shop, or the shop is inactive/uninstalled (`retrainRefusal`).
+ */
+export function isSkippableRetrainError(error: string | undefined): boolean {
+  if (!error) return false;
+  return error === TRAINING_NOT_STARTED || /^shop is inactive\b/.test(error) || /^app is uninstalled\b/.test(error);
+}
+
 export interface FreshnessRow {
   shop: string;
   provisionState: string | null;
@@ -121,7 +138,7 @@ export interface BackstopOptions {
   dryRun?: boolean;
 }
 
-export type ShopResult = "trained" | "failed" | "inactivated" | "unavailable" | "unknown" | "not-due" | "deferred" | "would-train";
+export type ShopResult = "trained" | "failed" | "inactivated" | "unavailable" | "unknown" | "not-due" | "deferred" | "would-train" | "skipped";
 
 export interface BackstopSummary {
   ok: boolean;
@@ -203,6 +220,12 @@ export async function runBackstop(deps: BackstopDeps, opts: BackstopOptions = {}
     if (out.ok) {
       summary.trained++;
       summary.results.push({ shop: candidate.shop, result: "trained", ageHours: age });
+    } else if (isSkippableRetrainError(out.error) || isTestShop(candidate.shop)) {
+      // Queued / already running / inactive, or a test store that cannot be refreshed: logged, not a failure.
+      const why = (out.error ?? "failed").slice(0, 300);
+      summary.skipped++;
+      summary.results.push({ shop: candidate.shop, result: "skipped", ageHours: age, error: why });
+      log(`[kb-freshness] ${candidate.shop}: ${isTestShop(candidate.shop) && !isSkippableRetrainError(out.error) ? "test shop" : "not retrainable now"} — skipped (${why})`);
     } else {
       summary.failed++;
       summary.ok = false;
