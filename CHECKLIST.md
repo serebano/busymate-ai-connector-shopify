@@ -13,8 +13,7 @@ Status legend: **[x]** scaffolded (structure + seam in place) · **[~]** partial
 
 ## Deployment state (Phase-1)
 
-- **App host** `shopify.busymate.ai` (busymate-v2-lon1, systemd `busymate-ai-shopify`,
-  :3970) redeployed on the Phase-1 code. Live `/api/bmai/status` →
+- **App host** `shopify.busymate.ai` (historical: busymate-v2-lon1 droplet, now deleted; the app runs on k8s ns `bmai`, see SETUP.md 3b; :3970) redeployed on the Phase-1 code. Live `/api/bmai/status` →
   `{ok:true, actorVerifier:true, launchIdentity:true, apiVersion:"2026-07"}`;
   MCP `tools/list` serves 12 tools; `tools/call` fails closed. Env updated:
   `SHOPIFY_API_VERSION=2026-07`, `APP_ENCRYPTION_KEY` set (mirrored to vault as
