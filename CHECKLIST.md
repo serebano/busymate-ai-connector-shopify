@@ -165,7 +165,7 @@ Status legend: **[x]** scaffolded (structure + seam in place) · **[~]** partial
    → `shopify app config link` writes them into `shopify.app.toml` / env.
 2. 🔒 **Provisioning credential** (the provisioning-credential step): ship `provision_partner_tenant` (proof-of-shop)
    on the Busymate AI side, OR mint a scoped operator OAuth client for the app.
-3. 🔒 **App-server host** (`shopify.busymate.ai`) + DNS + Let's Encrypt + systemd unit.
+3. 🔒 **App-server host** (`shopify.busymate.ai`) + DNS + TLS (historical: droplet + systemd; now k8s, SETUP §3b).
 4. 🔒 **ES256 launch signing key** + register JWKS as the tenant visitor IdP.
 5. 🔒 **Billing plan** definition in Partners + guarantee accounting decision.
 6. 🔒 **Listing assets + translations** + demo store.
