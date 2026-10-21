@@ -19,6 +19,7 @@ import { runtimeOrigins } from "./provision";
 import { enqueueWebhookReingest, type ReingestLease } from "./reingestQueue";
 import { reingestStore, requestImmediateReingest, saveTrainingForLease } from "./reingestStore.server";
 import { shopToSlug } from "./tenantSlug";
+import { TRAINING_NOT_STARTED } from "./kbFreshness";
 
 export { buildKbSnapshot } from "./kbFetch";
 
@@ -32,7 +33,7 @@ export function retrainRefusal(tenant: { provisionState?: string | null; inactiv
 /** Re-train the shop NOW: fetch → compress → publish → persist. Never throws for an ingest error. */
 export async function retrainNow(shop: string): Promise<TrainOutcome> {
   const lease = await requestImmediateReingest(shop);
-  if (!lease) return { ok: false, error: "Training is queued, already running, or the shop is inactive.", counts: { products: 0, policies: 0, pages: 0 }, fetched: { products: 0, policies: 0, pages: 0 }, totalChars: 0, truncated: false };
+  if (!lease) return { ok: false, error: TRAINING_NOT_STARTED, counts: { products: 0, policies: 0, pages: 0 }, fetched: { products: 0, policies: 0, pages: 0 }, totalChars: 0, truncated: false };
   const { runReingestAttempt } = await import("./reingestProcess.server");
   return runReingestAttempt(lease);
 }
