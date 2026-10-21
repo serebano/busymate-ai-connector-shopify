@@ -5,7 +5,7 @@
  * storefront) inactive, and logs the run with counts in the KbFreshnessRun ledger.
  * Decisions: app/lib/kbFreshness.ts. Wiring: app/lib/kbFreshness.server.ts.
  *
- *   npm run kb:freshness                     # one run (what the systemd timer does)
+ *   npm run kb:freshness                     # one run (what the k8s CronJob runs)
  *   npm run kb:freshness -- --dry-run        # what WOULD happen (probes, no writes)
  *   npm run kb:freshness -- --report         # per-shop age + the health verdict, no writes
  *   npm run kb:freshness -- --trigger manual # label the ledger row

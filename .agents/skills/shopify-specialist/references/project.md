@@ -11,7 +11,7 @@
 | Shopify App Pricing and usage | `app/lib/plans.ts`, `app/lib/partnerApi.ts`, `app/lib/billingSync.ts`, `app/lib/billingGate.ts`, `app/lib/appEvents.ts`, `app/lib/usageBilling.ts`, `app/routes/app.billing.tsx`, `listing/pricing.json` |
 | Customer identity and delegated actions | `app/routes/identity.tsx`, `app/lib/storefrontIdentity.ts`, `app/lib/identity.ts`, `app/mcp/` |
 | Compliance and uninstall | `app/routes/webhooks.compliance.tsx`, `app/routes/webhooks.app.uninstalled.tsx`, `app/lib/compliance.ts` |
-| Runtime/configuration | `shopify.app.toml`, `package.json`, `prisma/schema.prisma`, `deploy/`, `SETUP.md` |
+| Runtime/configuration | `shopify.app.toml`, `package.json`, `prisma/schema.prisma`, `.github/workflows/`, `SETUP.md` |
 
 Read `docs/ARCHITECTURE.md`, `docs/PROVISIONING.md`, and `docs/EXTENDING.md` for lifecycle details, and `docs/STORE-SINGLE-SOURCE.md` before changing listing or legal material. Do not copy platform logic into this client.
 
