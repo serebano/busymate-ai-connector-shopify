@@ -4,6 +4,8 @@ import {
   authNeedsProvision,
   provisionOnInstall,
   publishedRuntimeGaps,
+  findExistingIdentityProvider,
+  isConflictError,
   CONNECTOR_POLICIES,
   servingHost,
   type ProvisionDeps,
@@ -676,6 +678,89 @@ describe("lifecycle — visitor identity provider (#2132)", () => {
     expect(seen["upsert_tenant_identity_provider"].provider_id).toBe("p_existing");
     expect(out.identityProviderId).toBe("p_existing");
     expect(states.at(-1)?.identityProviderId).toBe("p_existing");
+  });
+
+  // #72 — reinstall where the local row lost its provider id but the platform kept
+  // the store's provider: the create is refused as a duplicate. The lifecycle must
+  // re-adopt the existing provider (lookup + re-target once), never warn forever.
+  const CONFLICT = "constraint violation — a value conflicts with an existing record";
+  const integrationWith = (rows: Record<string, unknown>[]) => ({ ok: true, identity_providers: rows });
+  const providerRow = (id: string, extra: Record<string, unknown> = {}) => ({
+    id, issuer: LAUNCH.issuer, tenant_claim: "shop", tenant_claim_value: "acme.myshopify.com", enabled: true, ...extra,
+  });
+
+  it("#72 reinstall with a null local provider id: conflict → looks up the existing provider → re-targets it once (no duplicate, no warning)", async () => {
+    const upserts: Record<string, unknown>[] = [];
+    const call = vi.fn(async (name: string, args: Record<string, unknown> = {}) => {
+      if (name === "provision_partner_tenant") return { ok: true, data: { tenant_id: "t_1", reactivated: true } };
+      if (name === "upsert_tenant_support_connector") return { ok: true, data: { id: "c_1" } };
+      if (name === "upsert_tenant_identity_provider") {
+        upserts.push(args);
+        return args.provider_id ? { ok: true, data: { provider: { id: String(args.provider_id) } } } : { ok: false, error: CONFLICT };
+      }
+      if (name === "get_tenant_integration") {
+        return { ok: true, data: integrationWith([
+          providerRow("p_other_shop", { tenant_claim_value: "other.myshopify.com" }),
+          providerRow("p_other_issuer", { issuer: "https://elsewhere.example" }),
+          providerRow("p_orig"),
+        ]) };
+      }
+      if (name === "publish_tenant_runtime") return { ok: true, data: { connector_ids: ["c_1"], identity_provider_ids: ["p_orig"] } };
+      return { ok: true };
+    });
+    const { deps, states } = makeDeps(call as unknown as ProvisionDeps["call"], { launchIdentity: LAUNCH });
+    deps.getTenant = async () => ({ bmaiTenantId: "t_1", customDomain: null, connectorId: "c_1", identityProviderId: null });
+    const out = await runProvisionLifecycle(session, deps);
+    expect(out.ok).toBe(true);
+    expect(upserts).toHaveLength(2);
+    expect(upserts[0]).not.toHaveProperty("provider_id");
+    expect(upserts[1].provider_id).toBe("p_orig");
+    expect(call.mock.calls.find(([n]) => n === "get_tenant_integration")?.[1]).toEqual({ tenant_id: "t_1" });
+    expect(out.warnings.filter((w) => /identity_provider/.test(w))).toEqual([]);
+    expect(out.identityProviderId).toBe("p_orig");
+    expect(states.at(-1)?.identityProviderId).toBe("p_orig");
+    expect(states.at(-1)?.provisionWarning).toBeNull();
+  });
+
+  it("#72 conflict but no matching provider on the platform → one warning, no blind retry, no id invented", async () => {
+    const call = vi.fn(async (name: string, _args?: Record<string, unknown>) => {
+      if (name === "provision_partner_tenant") return { ok: true, data: { tenant_id: "t_1" } };
+      if (name === "upsert_tenant_identity_provider") return { ok: false, error: CONFLICT };
+      if (name === "get_tenant_integration") return { ok: true, data: integrationWith([providerRow("p_x", { tenant_claim_value: "other.myshopify.com" })]) };
+      if (name === "publish_tenant_runtime") return { ok: true, data: { connector_ids: [] } };
+      return { ok: true };
+    });
+    const { deps, states } = makeDeps(call as unknown as ProvisionDeps["call"], { launchIdentity: LAUNCH });
+    const out = await runProvisionLifecycle(session, deps);
+    expect(out.ok).toBe(true);
+    expect(out.calls.filter((n) => n === "upsert_tenant_identity_provider")).toHaveLength(1);
+    expect(out.warnings.filter((w) => /upsert_tenant_identity_provider: constraint violation/.test(w))).toHaveLength(1);
+    expect(states.at(-1)?.identityProviderId).toBeNull();
+  });
+
+  it("#72 a non-conflict refusal does not trigger the lookup", async () => {
+    const call = vi.fn(async (name: string, _args?: Record<string, unknown>) => {
+      if (name === "provision_partner_tenant") return { ok: true, data: { tenant_id: "t_1" } };
+      if (name === "upsert_tenant_identity_provider") return { ok: false, error: "tenant integration administration denied" };
+      return { ok: true };
+    });
+    const { deps } = makeDeps(call as unknown as ProvisionDeps["call"], { launchIdentity: LAUNCH });
+    const out = await runProvisionLifecycle(session, deps);
+    expect(out.calls).not.toContain("get_tenant_integration");
+  });
+
+  it("#72 findExistingIdentityProvider matches issuer + shop claim, prefers enabled, tolerates junk", () => {
+    expect(findExistingIdentityProvider(undefined, LAUNCH, "acme.myshopify.com")).toBeNull();
+    expect(findExistingIdentityProvider({ identity_providers: "nope" }, LAUNCH, "acme.myshopify.com")).toBeNull();
+    expect(findExistingIdentityProvider(integrationWith([
+      providerRow("p_disabled", { enabled: false }), providerRow("p_enabled"),
+    ]), LAUNCH, "acme.myshopify.com")).toBe("p_enabled");
+    expect(findExistingIdentityProvider(integrationWith([providerRow("p_disabled", { enabled: false })]), LAUNCH, "acme.myshopify.com")).toBe("p_disabled");
+    expect(findExistingIdentityProvider(integrationWith([providerRow("p_x", { tenant_claim: "store" })]), LAUNCH, "acme.myshopify.com")).toBeNull();
+    expect(isConflictError(CONFLICT)).toBe(true);
+    expect(isConflictError("duplicate key value violates unique constraint")).toBe(true);
+    expect(isConflictError("tenant integration administration denied")).toBe(false);
+    expect(isConflictError(undefined)).toBe(false);
   });
 
   it("no launch signing key (launchIdentity null) → NO provider step; shoppers stay anonymous honestly", async () => {

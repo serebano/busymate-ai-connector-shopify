@@ -330,13 +330,26 @@ export async function runProvisionLifecycle(
   // Best-effort like the connector: a denial is recorded, the tenant still goes live.
   let identityProviderId: string | null = (sameTenant ? existing?.identityProviderId : null) ?? null;
   if (deps.launchIdentity) {
-    const provider = await soft<{ provider?: { id?: string }; id?: string }>(
-      "upsert_tenant_identity_provider",
-      identityProviderArgs(proof, tenantId, shop, deps.launchIdentity, {
-        providerId: identityProviderId,
-        delegatedAccess: deps.delegationReady,
-      }),
-    );
+    const reg = deps.launchIdentity;
+    const upsertProvider = (providerId: string | null) =>
+      call<{ provider?: { id?: string }; id?: string }>(
+        "upsert_tenant_identity_provider",
+        identityProviderArgs(proof, tenantId, shop, reg, { providerId, delegatedAccess: deps.delegationReady }),
+      );
+    let provider = await upsertProvider(identityProviderId);
+    // #72 — REINSTALL with a lost local id: the platform already holds this
+    // store's provider (same issuer + `shop` claim) and refuses a second one as a
+    // duplicate. Re-adopt it: look the provider up on the tenant's integration
+    // read and re-target it ONCE with its id (idempotent — never a duplicate).
+    if (!provider.ok && !identityProviderId && tenantId && isConflictError(provider.error)) {
+      const integration = await call("get_tenant_integration", { tenant_id: tenantId });
+      const adopted = integration.ok ? findExistingIdentityProvider(integration.data, reg, shop) : null;
+      if (adopted) {
+        identityProviderId = adopted;
+        provider = await upsertProvider(adopted);
+      }
+    }
+    if (!provider.ok) warnings.push(`upsert_tenant_identity_provider: ${provider.error ?? "failed"}`);
     identityProviderId = provider.data?.provider?.id ?? provider.data?.id ?? identityProviderId;
   }
 
@@ -407,6 +420,33 @@ export async function runProvisionLifecycle(
   });
 
   return { ok: true, tenantId, connectorId, identityProviderId, calls, warnings, reactivated, training: trainingSummary };
+}
+
+/** A platform refusal that names an existing conflicting record (unique constraint). */
+export function isConflictError(error: string | undefined | null): boolean {
+  return typeof error === "string" && /constraint violation|conflicts? with an existing|duplicate|already exists|unique/i.test(error);
+}
+
+/**
+ * #72 — the id of THIS store's existing visitor identity provider on the
+ * tenant, from the official `get_tenant_integration` read (`identity_providers`):
+ * same issuer + tenant claim + claim value (the shop). An enabled row wins over a
+ * disabled one. null when none matches (never guess another provider's id).
+ */
+export function findExistingIdentityProvider(
+  integration: unknown,
+  reg: IdentityProviderRegistration,
+  shop: string,
+): string | null {
+  const data = integration && typeof integration === "object" ? (integration as { identity_providers?: unknown }) : {};
+  const rows = Array.isArray(data.identity_providers) ? data.identity_providers : [];
+  const matches = rows.filter((row): row is { id: string; enabled?: unknown } => {
+    if (!row || typeof row !== "object") return false;
+    const r = row as Record<string, unknown>;
+    return typeof r.id === "string" && r.id.length > 0
+      && r.issuer === reg.issuer && r.tenant_claim === reg.tenantClaim && r.tenant_claim_value === shop;
+  });
+  return (matches.find((r) => r.enabled === true) ?? matches[0])?.id ?? null;
 }
 
 /**
