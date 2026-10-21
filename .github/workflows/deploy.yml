@@ -7,11 +7,10 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
-# OWNER-GATED secrets required (repo → Settings → Secrets):
+# OWNER-GATED secret required (repo → Settings → Secrets):
 #   SHOPIFY_CLI_PARTNERS_TOKEN  — for `shopify app deploy` (extension + app config)
-#   DEPLOY_SSH_KEY, DEPLOY_HOST, DEPLOY_KNOWN_HOSTS — app-server SSH deploy
-# The separate Shopify extension step retains its existing secret guard. The
-# app-server job refuses missing access, so green app-server means verified live.
+# The app server itself ships from git main through k8s (busymate-ai-infra), not from
+# this workflow. The Shopify extension step retains its existing secret guard.
 jobs:
   shopify-deploy:
     runs-on: ubuntu-latest
@@ -27,25 +26,3 @@ jobs:
       - name: Shopify app deploy
         if: ${{ env.SHOPIFY_CLI_PARTNERS_TOKEN != '' }}
         run: npx shopify app deploy --force
-
-  app-server-deploy:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    concurrency:
-      group: app-server-production
-      cancel-in-progress: false
-    env:
-      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-      DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Deploy exact app-server revision and verify live service
-        run: bash scripts/deploy-app-host.sh "$GITHUB_SHA"
-      - name: App-server release result
-        if: always()
-        run: |
-          echo "App-server release $GITHUB_SHA: ${{ job.status }}" >> "$GITHUB_STEP_SUMMARY"
-          echo 'Normal main merges do not deploy: use a version tag or an authorized manual release.' >> "$GITHUB_STEP_SUMMARY"

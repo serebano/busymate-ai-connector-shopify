@@ -210,15 +210,6 @@ describe("freshnessHealth — fail-closed", () => {
 
 describe("wiring", () => {
   const root = join(__dirname, "..");
-  it("the systemd timer exists and runs the backstop script as deploy with the env file", () => {
-    const svc = readFileSync(join(root, "deploy/systemd/busymate-ai-shopify-kb-freshness.service"), "utf8");
-    const timer = readFileSync(join(root, "deploy/systemd/busymate-ai-shopify-kb-freshness.timer"), "utf8");
-    expect(svc).toMatch(/^ExecStart=.*scripts\/kb-freshness\.ts$/m);
-    expect(svc).toMatch(/^User=deploy$/m);
-    expect(svc).toMatch(/^EnvironmentFile=\/etc\/busymate-ai-shopify\/env$/m);
-    expect(timer).toMatch(/^Unit=busymate-ai-shopify-kb-freshness\.service$/m);
-    expect(timer).toMatch(/^RandomizedDelaySec=\d+/m);
-  });
   it("schema + an additive migration carry the inactive marker and the run ledger", () => {
     const schema = readFileSync(join(root, "prisma/schema.prisma"), "utf8");
     const sql = readFileSync(join(root, "prisma/migrations/20261004150000_kb_freshness/migration.sql"), "utf8");

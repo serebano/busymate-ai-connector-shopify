@@ -80,9 +80,7 @@ order reads → resolved conversations meter to Shopify Billing + internal `usag
 
 ## Hosting
 
-App server (admin UI + `/mcp` + `/identity` + JWKS) runs as k8s Deployments/CronJobs in ns `bmai` on efirs (image pinned in busymate-ai-infra `gen.py`; see SETUP.md 3b). The `deploy/` systemd + nginx files are the legacy droplet reference. Originally a **systemd unit + nginx +
-Let's Encrypt** at the app's public host (the official app serves at
-`shopify.busymate.ai`). Reference unit + vhost are in [`deploy/`](../deploy). The theme
+App server (admin UI + `/mcp` + `/identity` + JWKS) runs as k8s Deployments/CronJobs in ns `bmai` on efirs (image pinned in busymate-ai-infra `gen.py`; see SETUP.md 3b). The public host is `shopify.busymate.ai` behind the efirs edge. The theme
 extension + app config deploy to Shopify's infra via `shopify app deploy`. Use a
 dedicated Postgres and run `prisma migrate deploy` on release.
 

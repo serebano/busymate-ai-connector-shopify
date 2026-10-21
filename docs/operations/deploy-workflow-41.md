@@ -1,3 +1,6 @@
+> **Legacy (historical record).** The app-server SSH job, `scripts/deploy-app-host*.sh` and the droplet units
+> were removed in `chore/remove-legacy-deploy`; the app now ships via k8s. Kept as the #41 record only.
+
 # Exact app-host delivery (#41)
 
 The tag/manual app-server workflow replaces its successful echo placeholder with

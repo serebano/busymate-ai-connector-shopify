@@ -86,7 +86,7 @@ uri = "https://store.busymate.ai/webhooks/kb/products"
 # Shopify has NO webhook topic for shop policies or pages (checked against the 2026-07
 # WebhookSubscriptionTopic list), and the snapshot reads neither collections, inventory
 # nor theme content — so policies and pages are bounded by the 72 h freshness backstop
-# (scripts/kb-freshness.ts, systemd timer deploy/systemd/busymate-ai-shopify-kb-freshness.*).
+# (scripts/kb-freshness.ts, k8s CronJob `shopify-kb-freshness` in busymate-ai-infra).
 [[webhooks.subscriptions]]
 topics = [ "shop/update" ]
 uri = "https://store.busymate.ai/webhooks/kb/shop"

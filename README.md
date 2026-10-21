@@ -131,8 +131,8 @@ needs a Shopify Partner app; see below.
 2. **Get a Busymate AI partner credential** so your app can provision tenants — see
    [SETUP.md §4](./SETUP.md). (Adapting to a non-Shopify platform? [docs/EXTENDING.md](./docs/EXTENDING.md).)
 3. **Fill `.env`** from `.env.example` — every variable documents where it comes from.
-4. **Host it** — `npm run build && npm start` behind TLS (reference `systemd` unit +
-   `nginx` vhost in [`deploy/`](./deploy)), with the app's own Postgres.
+4. **Host it** — `npm run build && npm start` behind TLS, with the app's own Postgres.
+   The official app is hosted on k8s from git `main` (see [SETUP.md §3b](./SETUP.md)).
 
 Nothing in this repo is a secret: `.env` is gitignored, and `.env.example` +
 `shopify.app.toml` ship placeholders only.
