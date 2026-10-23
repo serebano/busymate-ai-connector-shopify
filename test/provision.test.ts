@@ -571,7 +571,7 @@ describe("lifecycle — grounded knowledge + reinstall", () => {
     expect((await runProvisionLifecycle(session, again.deps)).calls).not.toContain("set_tenant_branding");
   });
 
-  it("#2132 C — a NEW tenant is seeded with the default branding (productName = shop, assistant 'your mate')", async () => {
+  it("#2132 C / #2618 — a NEW tenant is seeded with the store's name and '<Store> AI' (what shoppers see; 'your mate' is the platform's own)", async () => {
     const seen: Record<string, Record<string, unknown>> = {};
     const call = vi.fn(async (name: string, args?: Record<string, unknown>) => {
       seen[name] = args ?? {};
@@ -581,7 +581,23 @@ describe("lifecycle — grounded knowledge + reinstall", () => {
     const { deps } = makeDeps(call as unknown as ProvisionDeps["call"]);
     const out = await runProvisionLifecycle(session, deps);
     expect(out.calls).toContain("set_tenant_branding");
-    expect(seen["set_tenant_branding"]).toMatchObject({ branding: { productName: session.shop, assistantName: "your mate" }, confirm: true });
+    // No shopName dep → the domain's handle, never the raw myshopify domain.
+    const handle = session.shop.replace(/\.myshopify\.com$/, "");
+    expect(seen["set_tenant_branding"]).toMatchObject({ branding: { productName: handle, assistantName: `${handle} AI` }, confirm: true });
+  });
+
+  it("#2618 — a NEW tenant uses the Admin API store name when available (soft on failure)", async () => {
+    const seen: Record<string, Record<string, unknown>> = {};
+    const call = vi.fn(async (name: string, args?: Record<string, unknown>) => {
+      seen[name] = args ?? {};
+      if (name === "provision_partner_tenant") return { ok: true, data: { tenant_id: "t_new", created: true } };
+      return { ok: true };
+    });
+    const { deps } = makeDeps(call as unknown as ProvisionDeps["call"]);
+    await runProvisionLifecycle(session, { ...deps, shopName: async () => "Tony Stark" });
+    expect(seen["set_tenant_branding"]).toMatchObject({ branding: { productName: "Tony Stark", assistantName: "Tony Stark AI" } });
+    const failing = await runProvisionLifecycle(session, { ...deps, shopName: async () => { throw new Error("admin down"); } });
+    expect(failing.warnings.join(" ")).toMatch(/shop name: admin down/);
   });
 
   it("without a buildKnowledge dep (ops verify script) the lifecycle publishes with no knowledge and records no training", async () => {

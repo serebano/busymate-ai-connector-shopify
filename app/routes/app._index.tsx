@@ -20,7 +20,8 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { shopToSlug } from "../lib/tenantSlug";
 import { callMcpTool, onAppInstalled, repairTenantInBackground } from "../bmai.server";
-import { readRuntimeReadiness } from "../lib/runtimeReadiness";
+import { awaitRuntimeSettled, readRuntimeReadiness } from "../lib/runtimeReadiness";
+import { merchantError } from "../lib/merchantError";
 import { readStorefrontFrameable } from "../lib/embedFrameable";
 import { homeActivation } from "../lib/homeActivation";
 import { useActivationRecheck } from "../lib/useActivationRecheck";
@@ -73,6 +74,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     published ? readStorefrontFrameable({ platformOrigin: PLATFORM_ORIGIN, shop, slug }) : Promise.resolve(null),
   ]);
   const live = runtime?.state === "ready";
+  // #2618 follow-up — a merchant's "It's switched on" confirmation stands only while
+  // the storefront is password-protected; a public check that finds the embed OFF
+  // clears it (the storefront is the truth once we can see it).
+  let embedConfirmed = Boolean(tenant?.embedConfirmedAt);
+  if (embedConfirmed && embed === "off") {
+    embedConfirmed = false;
+    await prisma.shopTenant.update({ where: { shop }, data: { embedConfirmedAt: null } }).catch(() => null);
+  }
   // #3718 — an ORPHANED tenant (the platform answered that it is gone) is
   // repaired in the background right here, gated per shop; Home shows it as
   // activating and re-checks until the chat can be framed.
@@ -97,6 +106,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     provisionState,
     connectorReady: live && Boolean(tenant?.connectorId) && !tenant?.provisionWarning,
     embed,
+    embedConfirmed,
     trainedAt: training.trainedAt,
     trainError: training.error,
     counts: training.counts,
@@ -122,6 +132,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     connectorReady: live && Boolean(tenant?.connectorId) && !tenant?.provisionWarning,
     training: { ...training, summary: trainingSummary(training.counts, training.fetched) },
     embed,
+    embedConfirmed,
     steps,
     embedSteps: EMBED_STEPS,
     activateUrl: themeEditorActivateUrl(shop),
@@ -137,14 +148,25 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const form = await request.formData();
-  if (String(form.get("intent")) === "retry") {
+  const intent = String(form.get("intent"));
+  if (intent === "confirm-embed") {
+    // The merchant's own word for a storefront we cannot see (password-protected).
+    await prisma.shopTenant.updateMany({ where: { shop: session.shop }, data: { embedConfirmedAt: new Date() } });
+    return { ok: true, state: "confirmed", error: null };
+  }
+  if (intent === "retry") {
     // Idempotent re-run of the provisioning lifecycle (NEVER PARK an errored install).
     await onAppInstalled(session);
   }
   const tenant = await prisma.shopTenant.findUnique({ where: { shop: session.shop } });
-  const runtime = tenant?.provisionState === "published" && tenant.bmaiTenantId
-    ? await readRuntimeReadiness(tenant.bmaiTenantId, callMcpTool) : null;
-  return { ok: runtime?.state === "ready", state: runtime?.state ?? tenant?.provisionState ?? "pending", error: tenant?.provisionError ?? (runtime?.state !== "ready" ? runtime?.detail : null) ?? null };
+  const tenantId = tenant?.bmaiTenantId;
+  // A fresh publish leaves the runtime `pending` for a few seconds — wait it out
+  // (bounded) rather than report the normal hand-over as "still not live".
+  const runtime = tenant?.provisionState === "published" && tenantId
+    ? await awaitRuntimeSettled(() => readRuntimeReadiness(tenantId, callMcpTool), { timeoutMs: intent === "retry" ? 25_000 : 0 }) : null;
+  const ok = runtime?.state === "ready";
+  const raw = tenant?.provisionError ?? (!ok ? runtime?.detail : null) ?? null;
+  return { ok, state: runtime?.state ?? tenant?.provisionState ?? "pending", error: ok ? null : merchantError("reprovision", session.shop, raw) };
 };
 
 function stateBadge(state: string) {
@@ -160,7 +182,7 @@ function stateBadge(state: string) {
 
 export default function Index() {
   const data = useLoaderData<typeof loader>();
-  const embedSetup = embedSetupPresentation(data.embed);
+  const embedSetup = embedSetupPresentation(data.embed, data.embedConfirmed);
   const retry = useFetcher<typeof action>();
   const done = data.steps.filter((s) => s.done).length;
   // #3718 — while the runtime is not yet ready (held CTA or not), re-check by
@@ -186,7 +208,7 @@ export default function Index() {
                   </retry.Form>
                   {retry.data && !retry.data.ok ? (
                     <Text as="p" tone="critical">
-                      Still not live ({retry.data.state}){retry.data.error ? `: ${retry.data.error}` : ""}.
+                      {retry.data.error ?? "Your assistant isn't live yet. Please try again in a minute."}
                     </Text>
                   ) : null}
                 </BlockStack>
@@ -212,7 +234,8 @@ export default function Index() {
                   </InlineStack>
                 </InlineGrid>
                 <Text as="p" tone="subdued">
-                  Busymate AI adds <strong>your mate</strong>, your store&apos;s own assistant, to your storefront. It answers
+                  Busymate AI adds your store&apos;s own AI assistant to your storefront, named after your store (rename it in
+                  Assistant settings). It answers
                   only from your products, pages and policies, in your shoppers&apos; languages, and takes order actions
                   only with confirmation.
                 </Text>
@@ -246,7 +269,13 @@ export default function Index() {
                   <Text as="h2" variant="headingMd">
                     {embedSetup.heading}
                   </Text>
-                  {data.embed === "on" ? <Badge tone="success">On</Badge> : data.embed === "off" ? <Badge tone="attention">Off</Badge> : null}
+                  {data.embed === "on" ? (
+                    <Badge tone="success">On</Badge>
+                  ) : data.embed === "off" ? (
+                    <Badge tone="attention">Off</Badge>
+                  ) : data.embed === "password" ? (
+                    data.embedConfirmed ? <Badge tone="success">On (confirmed)</Badge> : <Badge tone="info">Password-protected store</Badge>
+                  ) : null}
                 </InlineGrid>
                 <Text as="p" tone="subdued">
                   {embedSetup.detail}
@@ -284,9 +313,18 @@ export default function Index() {
                   >
                     {embedSetup.button}
                   </Button>
-                  <Button url={data.embedReady ? data.appEmbedsUrl : undefined} target="_top" disabled={!data.embedReady}>
-                    Open App embeds
-                  </Button>
+                  {data.embed === "password" && !data.embedConfirmed ? (
+                    <retry.Form method="post">
+                      <input type="hidden" name="intent" value="confirm-embed" />
+                      <Button submit loading={retry.state !== "idle" && retry.formData?.get("intent") === "confirm-embed"}>
+                        It&apos;s switched on
+                      </Button>
+                    </retry.Form>
+                  ) : embedSetup.button !== "Open App embeds" ? (
+                    <Button url={data.embedReady ? data.appEmbedsUrl : undefined} target="_top" disabled={!data.embedReady}>
+                      Open App embeds
+                    </Button>
+                  ) : null}
                 </InlineStack>
                 <Box>
                   <Text as="h3" variant="headingSm">

@@ -41,10 +41,30 @@ export function themeEditorAppEmbedsUrl(shop: string): string {
   return `https://${shop}/admin/themes/current/editor?context=apps`;
 }
 
-export type EmbedStatus = "on" | "off" | "unknown";
+/**
+ * `password` (#2618 follow-up): the storefront answered with Shopify's password
+ * page, so its theme (and our embed) cannot be seen from outside. The merchant
+ * can confirm it themselves; we re-check once the password is removed.
+ */
+export type EmbedStatus = "on" | "off" | "unknown" | "password";
 
 /** Home instructions must reflect what the scope-free storefront check knows. */
-export function embedSetupPresentation(status: EmbedStatus) {
+export function embedSetupPresentation(status: EmbedStatus, confirmed = false) {
+  if (status === "password") {
+    return confirmed
+      ? {
+          heading: "Storefront assistant is on (confirmed by you)",
+          detail: "You confirmed the app embed is switched on and saved. Your store is password-protected, so we can't see the storefront from outside; we check it by ourselves once the password is removed.",
+          button: "Review in App embeds",
+          activationLink: false,
+        }
+      : {
+          heading: "Your store is password-protected",
+          detail: "We can't see a password-protected storefront from outside, so we can't check the assistant for you. Open App embeds, switch on \"Busymate AI assistant\" and click Save, then choose \"It's switched on\" so this step shows as done.",
+          button: "Open App embeds",
+          activationLink: true,
+        };
+  }
   if (status === "on") {
     return {
       heading: "Storefront assistant is on",
@@ -95,7 +115,7 @@ export async function detectStorefrontEmbed(
     });
     if (res.status !== 200) return "unknown";
     const html = await res.text();
-    if (/action="\/password"|\/password\b/.test(html) && !html.includes("cdn.shopify.com/extensions/")) return "unknown";
+    if (/action="\/password"|\/password\b/.test(html) && !html.includes("cdn.shopify.com/extensions/")) return "password";
     return storefrontLoadsOurEmbed(html, slug) ? "on" : "off";
   } catch {
     return "unknown";
@@ -134,6 +154,8 @@ export interface SetupInput {
   provisionState: string;
   connectorReady: boolean;
   embed: EmbedStatus;
+  /** The merchant confirmed the embed is on (only meaningful while the storefront is password-protected). */
+  embedConfirmed?: boolean;
   trainedAt: string | null;
   trainError: string | null;
   /** Items the assistant was trained on (ShopTenant.kb*); null = unknown/never. */
@@ -206,8 +228,12 @@ export function buildSetupChecklist(s: SetupInput): SetupStep[] {
           ? "The \"Ask us\" launcher is live on your storefront."
           : s.embed === "off"
             ? "Not on yet — the launcher is not loading on your storefront."
-            : "Switch the app embed on in your theme editor and click Save — it only stays on once saved (we can't confirm it on a password-protected store).",
-      done: s.embed === "on",
+            : s.embed === "password"
+              ? s.embedConfirmed
+                ? "You confirmed it's on. Your store is password-protected, so we'll check it ourselves once the password is removed."
+                : "Your store is password-protected, so we can't check it from outside. Switch the app embed on in your theme editor, click Save, then choose \"It's switched on\" below."
+              : "Switch the app embed on in your theme editor and click Save — it only stays on once saved.",
+      done: s.embed === "on" || (s.embed === "password" && Boolean(s.embedConfirmed)),
       failed: false,
     },
     {

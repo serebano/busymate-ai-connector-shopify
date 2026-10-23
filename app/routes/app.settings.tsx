@@ -18,7 +18,7 @@ import prisma from "../db.server";
 import { setTenantBranding } from "../bmai.server";
 import { retrainNow } from "../lib/ingest";
 import { saveBrandingAndRepublish } from "../lib/brandingSave";
-import { DEFAULT_ASSISTANT_NAME } from "../lib/assistantName";
+import { brandedAssistantName, effectiveAssistantName, isPlatformPersonaName } from "../lib/assistantName";
 import { readTenantBranding } from "../lib/tenantRead.server";
 import { failClosedClientAction } from "../lib/clientAction";
 import { merchantError } from "../lib/merchantError";
@@ -29,7 +29,6 @@ import { AppRouteBoundary } from "../components/AppRouteError";
 export const clientAction = failClosedClientAction;
 export const ErrorBoundary = AppRouteBoundary;
 
-export { DEFAULT_ASSISTANT_NAME };
 
 /** A sane display-name default: the store's name, else the shop domain without the suffix. */
 export function defaultDisplayName(shop: string, shopName?: string | null): string {
@@ -53,12 +52,16 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   // hard-coded placeholder that hides what shoppers actually see.
   const saved = await readTenantBranding(tenant?.bmaiTenantId);
   const fallbackDisplay = defaultDisplayName(session.shop, shopName);
+  // Older installs were seeded with the raw myshopify domain — offer the store name instead.
+  const displayName = saved.ok && saved.productName && saved.productName !== session.shop ? saved.productName : fallbackDisplay;
+  if (!saved.ok) console.warn(`[admin] settings could not read branding for ${session.shop}: ${saved.error}`);
   return {
-    assistantName: (saved.ok && saved.assistantName) || DEFAULT_ASSISTANT_NAME,
-    // The provisioning default is the raw myshopify domain — offer the store name instead.
-    displayName: saved.ok && saved.productName && saved.productName !== session.shop ? saved.productName : fallbackDisplay,
+    // #2618 follow-up — show the name SHOPPERS see: the platform renders an unset
+    // name or its own persona "your mate" as "<Store display name> AI".
+    assistantName: effectiveAssistantName(saved.ok ? saved.assistantName : null, displayName),
+    displayName,
     provisioned: Boolean(tenant?.bmaiTenantId),
-    loadError: saved.ok ? null : saved.error,
+    loadError: !saved.ok,
   };
 };
 
@@ -66,8 +69,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const form = await request.formData();
   const tenant = await prisma.shopTenant.findUnique({ where: { shop: session.shop } });
-  const assistantName = String(form.get("assistantName") ?? "");
+  const typedAssistantName = String(form.get("assistantName") ?? "").trim();
   const productName = String(form.get("displayName") ?? "");
+  // "your mate" is Busymate AI's own assistant; on a store the platform shows it
+  // as "<Store> AI". Save that explicitly so Settings and the chat always agree.
+  const persona = isPlatformPersonaName(typedAssistantName) && productName.trim() !== "";
+  const assistantName = persona ? brandedAssistantName(productName) : typedAssistantName;
   // #2132 C: set_tenant_branding via MCP (no backdoor) AND re-publish the runtime —
   // the storefront widget renders the PUBLISHED revision (brand synthesized from
   // the tenant row at publish time), so a save that does not publish never
@@ -80,7 +87,15 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     { setBranding: (shop, tenantId, branding) => setTenantBranding(shop, tenantId, branding), republish: retrainNow },
   );
   // #2618 — the merchant reads one plain sentence; the raw cause goes to the log.
-  return { ok: res.ok, error: res.ok ? null : merchantError("branding", session.shop, res.error), published: res.published };
+  return {
+    ok: res.ok,
+    error: res.ok ? null : merchantError("branding", session.shop, res.error),
+    published: res.published,
+    assistantName: assistantName.trim(),
+    notice: persona && res.ok
+      ? `Saved. "${typedAssistantName}" is Busymate AI's own assistant, so your store's assistant is called "${assistantName.trim()}". You can rename it any time.`
+      : null,
+  };
 };
 
 export default function SettingsPage() {
@@ -93,7 +108,10 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data) {
-      if (fetcher.data.ok) shopify.toast.show("Assistant settings saved and published to your storefront");
+      if (fetcher.data.ok) {
+        if (fetcher.data.assistantName) setAssistantName(fetcher.data.assistantName);
+        shopify.toast.show(fetcher.data.notice ?? "Assistant settings saved and published to your storefront", { duration: fetcher.data.notice ? 8000 : 5000 });
+      }
       else shopify.toast.show(fetcher.data.error ?? "We couldn't save your assistant settings. Please try again.", { isError: true });
     }
   }, [fetcher.state, fetcher.data, shopify]);
@@ -110,7 +128,7 @@ export default function SettingsPage() {
               </Banner>
             ) : data.loadError ? (
               <Banner tone="info" title="Showing defaults">
-                <p>The saved names could not be loaded ({data.loadError}). Saving will overwrite them.</p>
+                <p>We couldn&apos;t load your saved names just now, so the form shows defaults. Saving replaces them.</p>
               </Banner>
             ) : null}
             <Card>
@@ -126,7 +144,7 @@ export default function SettingsPage() {
                     value={assistantName}
                     onChange={setAssistantName}
                     maxLength={40}
-                    helpText="How the assistant introduces itself in chat (default: your mate)."
+                    helpText={`How the assistant introduces itself to shoppers in chat, for example "${brandedAssistantName(displayName || "Your store")}".`}
                     requiredIndicator
                   />
                   <TextField
