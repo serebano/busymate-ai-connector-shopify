@@ -2,12 +2,13 @@ import type { SubscriptionStatus } from "./billingGate";
 import { PLANS, planByHandle } from "./plans";
 
 /**
- * Subscription-state extractors. Sources, in priority order:
- *   1. Partner API `activeSubscription` — the App Pricing truth (partnerApi.ts)
+ * Subscription-state extractors. Sources (src#2624 reviewer F24):
+ *   1. `currentAppInstallation.activeSubscriptions` — THE truth (it lists App
+ *      Pricing contracts; empty after an uninstall cancelled them)
  *   2. the App Pricing redirect `plan_handle` (pending until #1 confirms it)
- *   3. legacy Billing API: `app_subscriptions/update` webhook (App Pricing no
- *      longer sends it) and `currentAppInstallation.activeSubscriptions` (only
- *      Billing-API subscriptions) — kept as fallbacks for migrated contracts.
+ *   3. Partner API `activeSubscription` — enrichment only (trial end, usage); it
+ *      keeps returning a cancelled contract until its period ends
+ *   4. `app_subscriptions/update` webhook (legacy Billing-API contracts)
  * Anything unknown fails safe to `inactive` (⇒ Free; the widget stays on).
  */
 export function normalizeSubscriptionStatus(raw: string | null | undefined): SubscriptionStatus {

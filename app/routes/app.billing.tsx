@@ -19,9 +19,8 @@ import { authenticate } from "../shopify.server";
 import { PLANS, describePlan, planFor } from "../lib/plans";
 import { LocalTime } from "../components/LocalTime";
 import { managedPricingUrl, resolveBillingAccess } from "../lib/billingGate";
-import { subscriptionStateFromInstallation, subscriptionStateFromPlanHandle } from "../lib/billingSync";
-import { readBillingState, syncBillingState } from "../lib/billingState.server";
-import { appGidFromEnv, fetchActiveSubscription, subscriptionStateFromPartnerApi } from "../lib/partnerApi";
+import { readBillingState } from "../lib/billingState.server";
+import { reconcileBilling as reconcile } from "../lib/billingReconcile.server";
 import { listStuckDeliveries, meterShop } from "../lib/usageBilling";
 import { measuredCycleResolutions } from "../lib/usageDisplay";
 import { RESOLUTION_DEFINITION } from "../lib/resolutionDefinition";
@@ -37,64 +36,6 @@ export const ErrorBoundary = AppRouteBoundary;
 // The app handle from shopify.app.toml (`handle = "busymate-ai"`); the App
 // Pricing plan-selection page lives at /store/<store>/charges/<handle>/pricing_plans.
 const APP_HANDLE = process.env.SHOPIFY_APP_HANDLE || "busymate-ai";
-
-type AdminGraphql = (query: string) => Promise<Response>;
-
-/**
- * Reconcile the LIVE plan state into BillingState (Req 1.2.1/1.2.2):
- *   1. the App Pricing redirect `plan_handle` (the merchant just picked a plan)
- *   2. the Partner API activeSubscription (the App Pricing truth — no webhooks)
- *   3. legacy `currentAppInstallation.activeSubscriptions` (Billing-API contracts)
- * Non-fatal: any failure leaves the stored state and is reported as `source`.
- */
-async function reconcile(shop: string, graphql: AdminGraphql, planHandle: string | null) {
-  let chosen: string | null = null;
-  const fromRedirect = subscriptionStateFromPlanHandle(planHandle);
-  if (fromRedirect) {
-    await syncBillingState(shop, fromRedirect);
-    chosen = fromRedirect.plan;
-  }
-  let source: "partner" | "legacy" | "stored" = "stored";
-  let unverified: string | null = null;
-  let trialEndsAt: string | null = null;
-  let usageQuantity: number | null = null;
-  const appGid = appGidFromEnv();
-  try {
-    const shopResp = await graphql(`#graphql
-      query ShopId { shop { id } }`);
-    const shopBody = (await shopResp.json()) as { data?: { shop?: { id?: string } } };
-    const shopGid = shopBody.data?.shop?.id ?? null;
-    if (appGid && shopGid) {
-      const live = await fetchActiveSubscription({ appGid, shopGid });
-      if (live.ok) {
-        const state = subscriptionStateFromPartnerApi(live.subscription);
-        // No contract right after a redirect ⇒ Shopify is still finalizing; keep pending.
-        if (!(state.status === "inactive" && fromRedirect)) await syncBillingState(shop, state);
-        source = "partner";
-        trialEndsAt = state.trialEndsAt;
-        usageQuantity = state.usageQuantity;
-      } else {
-        unverified = live.error;
-      }
-    } else {
-      unverified = appGid ? "shop id unavailable" : "SHOPIFY_APP_ID/SHOPIFY_APP_GID not configured";
-    }
-    if (source !== "partner") {
-      const resp = await graphql(`#graphql
-        query ActiveSubscriptions { currentAppInstallation { activeSubscriptions { id name status } } }`);
-      const body = (await resp.json()) as { data?: unknown };
-      const legacy = subscriptionStateFromInstallation(body.data);
-      if (legacy.status !== "inactive") {
-        await syncBillingState(shop, legacy);
-        source = "legacy";
-      }
-    }
-  } catch (err) {
-    unverified = unverified ?? (err instanceof Error ? err.message : String(err));
-    console.warn(`[billing] reconcile failed shop=${shop}: ${unverified}`);
-  }
-  return { chosen, source, unverified, trialEndsAt, usageQuantity };
-}
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);

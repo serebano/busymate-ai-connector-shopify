@@ -201,14 +201,11 @@ describe("detectStorefrontEmbed matches the asset + this store's slug, never a C
 
 describe("#2618 follow-up — password-protected storefront (Home step 2)", () => {
   const base = { provisionState: "published", connectorReady: true, trainedAt: "2026-09-02T00:00:00Z", trainError: null, planId: "free", hasSubscription: false };
-  it("is To do with a clear action until the merchant confirms, then Done", () => {
+  it("theme unreadable (fallback): To do with a clear action, no stored confirmation offered (reviewer F25)", () => {
     const todo = buildSetupChecklist({ ...base, embed: "password" }).find((s) => s.id === "embed")!;
     expect(todo.done).toBe(false);
-    expect(todo.detail).toMatch(/password-protected/);
-    expect(todo.detail).toMatch(/It's switched on/);
-    const done = buildSetupChecklist({ ...base, embed: "password", embedConfirmed: true }).find((s) => s.id === "embed")!;
-    expect(done.done).toBe(true);
-    expect(done.detail).toMatch(/You confirmed it's on/);
+    expect(todo.detail).toMatch(/re-checks by itself/);
+    expect(todo.detail).not.toMatch(/It's switched on/);
   });
   it("a confirmation never overrides a public storefront that shows the embed OFF", () => {
     const off = buildSetupChecklist({ ...base, embed: "off", embedConfirmed: true }).find((s) => s.id === "embed")!;
@@ -228,5 +225,27 @@ describe("#2624 reviewer W3 — training summary plurals", () => {
     expect(trainingSummary({ products: 15, policies: 1, pages: 2 }, { products: 17, policies: 1, pages: 2 })).toBe("15 of 17 products, 1 policy, 2 pages");
     expect(trainingSummary({ products: 1, policies: 0, pages: 1 })).toBe("1 product, 0 policies, 1 page");
     expect(trainingSummary({ products: 1, policies: 3, pages: 0 }, { products: 2 })).toBe("1 of 2 products, 3 policies, 0 pages");
+  });
+});
+
+describe("src#2624 reviewer F25 — embed state from the theme's settings_data.json", () => {
+  it("on when our block is present and not disabled; off when disabled or absent; header comment tolerated", async () => {
+    const { embedFromSettingsData } = await import("../app/lib/themeEmbed");
+    const t = "shopify://apps/busymate-ai/blocks/assistant/01a061be-71c0-7659-afb4-b5e0d5ef3c3e";
+    const doc = (blocks: object) => `/* auto-generated */\n${JSON.stringify({ current: { blocks } })}`;
+    expect(embedFromSettingsData(doc({ a: { type: t, disabled: false, settings: {} } }), "busymate-ai")).toBe("on");
+    expect(embedFromSettingsData(doc({ a: { type: t } }), "busymate-ai")).toBe("on");
+    expect(embedFromSettingsData(doc({ a: { type: t, disabled: true } }), "busymate-ai")).toBe("off");
+    expect(embedFromSettingsData(doc({ a: { type: "shopify://apps/other-app/blocks/assistant/x" } }), "busymate-ai")).toBe("off");
+    expect(embedFromSettingsData(doc({}), "busymate-ai")).toBe("off");
+    expect(embedFromSettingsData("not json", "busymate-ai")).toBeNull();
+  });
+  it("readThemeEmbed reads the MAIN theme and returns null when unreadable", async () => {
+    const { readThemeEmbed } = await import("../app/lib/themeEmbed");
+    const content = JSON.stringify({ current: { blocks: { a: { type: "shopify://apps/busymate-ai/blocks/assistant/u", disabled: false } } } });
+    const ok = async () => new Response(JSON.stringify({ data: { themes: { nodes: [{ files: { nodes: [{ body: { content } }] } }] } } }));
+    expect(await readThemeEmbed(ok)).toBe("on");
+    expect(await readThemeEmbed(async () => new Response(JSON.stringify({ errors: [{ message: "Access denied" }] })))).toBeNull();
+    expect(await readThemeEmbed(async () => { throw new Error("x"); })).toBeNull();
   });
 });

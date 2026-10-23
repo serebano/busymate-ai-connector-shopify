@@ -20,7 +20,9 @@ embedded = true
 # requested separately at review time, not here.
 # read_legal_policies: the assistant is trained on the store's policies
 # (Shop.shopPolicies — app/lib/kbFetch.ts); read_content covers pages.
-scopes = "read_products,read_content,read_legal_policies,read_orders,read_customers,read_fulfillments,write_orders"
+# read_themes: Home reads ONLY the main theme's config/settings_data.json to see whether
+# the "Busymate AI assistant" app embed is switched on (src#2624 reviewer F25); never writes.
+scopes = "read_products,read_content,read_legal_policies,read_orders,read_customers,read_fulfillments,read_themes,write_orders"
 
 [auth]
 redirect_urls = [

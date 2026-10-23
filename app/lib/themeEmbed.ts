@@ -9,9 +9,12 @@
  * extension asset + this store's slug, never a CDN UUID (#3718).
  * https://shopify.dev/docs/apps/build/online-store/theme-app-extensions/configuration
  *
- * LEAST PRIVILEGE: no `read_themes` scope. Embed status is detected from the
- * PUBLIC storefront HTML (does it load the extension asset?). A password-
- * protected dev store or any non-200 is "unknown" — never a false "off".
+ * src#2624 reviewer F25: the embed state is read from the THEME itself
+ * (`read_themes`: the main theme's config/settings_data.json — is our app-embed
+ * block present and not disabled?), so a password-protected store, a reinstall or
+ * an embed switched off later is always seen as it is. No stored "it's on"
+ * confirmation exists any more. The public-storefront check stays only as the
+ * fallback when the theme cannot be read (e.g. before the scope is granted).
  */
 import { formatServerTime } from "./formatTime";
 import { shopToSlug } from "./tenantSlug";
@@ -34,6 +37,43 @@ export function themeEditorActivateUrl(shop: string, opts: { apiKey?: string; bl
   if (!apiKey) return themeEditorAppEmbedsUrl(shop);
   const block = opts.block ?? STOREFRONT_ASSISTANT_BLOCK;
   return `${themeEditorAppEmbedsUrl(shop)}&activateAppId=${encodeURIComponent(apiKey)}/${encodeURIComponent(block)}`;
+}
+
+/**
+ * Our app-embed block in a theme's settings_data.json → "on" (present and not
+ * disabled) or "off". settings_data.json may open with a comment header.
+ * Block types look like `shopify://apps/<app-handle>/blocks/assistant/<extension-uuid>`.
+ */
+export function embedFromSettingsData(content: string, appHandle = process.env.SHOPIFY_APP_HANDLE || "busymate-ai"): "on" | "off" | null {
+  let data: { current?: unknown } | null = null;
+  try {
+    data = JSON.parse(content.replace(/^\s*\/\*[\s\S]*?\*\//, "")) as { current?: unknown };
+  } catch {
+    return null;
+  }
+  const current = data && typeof data.current === "object" && data.current ? (data.current as { blocks?: Record<string, { type?: string; disabled?: boolean }> }) : null;
+  if (!current) return "off";
+  const ours = Object.values(current.blocks ?? {}).filter((b) => typeof b?.type === "string" && b.type.startsWith(`shopify://apps/${appHandle}/blocks/${STOREFRONT_ASSISTANT_BLOCK}/`));
+  return ours.some((b) => b.disabled !== true) ? "on" : "off";
+}
+
+type ThemeGraphql = (query: string) => Promise<Response>;
+
+/** The main theme's app-embed state via Admin GraphQL (needs `read_themes`); null when it cannot be read. */
+export async function readThemeEmbed(graphql: ThemeGraphql): Promise<"on" | "off" | null> {
+  try {
+    const res = await graphql(`#graphql
+      query MainThemeSettings {
+        themes(first: 1, roles: [MAIN]) {
+          nodes { files(filenames: ["config/settings_data.json"], first: 1) { nodes { body { ... on OnlineStoreThemeFileBodyText { content } } } } }
+        }
+      }`);
+    const body = (await res.json()) as { data?: { themes?: { nodes?: Array<{ files?: { nodes?: Array<{ body?: { content?: string } }> } }> } } };
+    const content = body.data?.themes?.nodes?.[0]?.files?.nodes?.[0]?.body?.content;
+    return typeof content === "string" ? embedFromSettingsData(content) : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Theme editor → App embeds panel (fallback when the deep link is stale). */
@@ -60,7 +100,7 @@ export function embedSetupPresentation(status: EmbedStatus, confirmed = false) {
         }
       : {
           heading: "Your store is password-protected",
-          detail: "We can't see a password-protected storefront from outside, so we can't check the assistant for you. Open App embeds, switch on \"Busymate AI assistant\" and click Save, then choose \"It's switched on\" so this step shows as done.",
+          detail: "We couldn't read your theme just now. Open App embeds, switch on \"Busymate AI assistant\" and click Save; this page re-checks your theme by itself.",
           button: "Open App embeds",
           activationLink: true,
         };
@@ -242,7 +282,7 @@ export function buildSetupChecklist(s: SetupInput): SetupStep[] {
             : s.embed === "password"
               ? s.embedConfirmed
                 ? "You confirmed it's on. Your store is password-protected, so we'll check it ourselves once the password is removed."
-                : "Your store is password-protected, so we can't check it from outside. Switch the app embed on in your theme editor, click Save, then choose \"It's switched on\" below."
+                : "We couldn't read your theme just now. Switch the app embed on in your theme editor and click Save; this page re-checks by itself."
               : "Switch the app embed on in your theme editor and click Save — it only stays on once saved.",
       done: s.embed === "on" || (s.embed === "password" && Boolean(s.embedConfirmed)),
       failed: false,

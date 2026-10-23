@@ -41,8 +41,8 @@ problem — goes to your team: the shopper asks for a person and you reply from
 ## Which permissions do you request, and why?
 Least-privilege Shopify scopes: read products, content, store policies, orders, customers
 and fulfilments (to answer and look up orders), and write orders (for the two confirmed
-order changes above). We do not request access to returns. We do not request theme access — you switch the app embed on
-yourself in the theme editor. Orders older than 60 days are not read.
+order changes above). We do not request access to returns. We read your theme settings only to see whether the app
+embed is switched on (we never change your theme — you switch the embed on yourself in the theme editor). Orders older than 60 days are not read.
 
 ## How does billing work?
 Through **Shopify App Pricing** on your Shopify invoice — never an external checkout.
