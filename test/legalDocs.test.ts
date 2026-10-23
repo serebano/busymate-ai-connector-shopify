@@ -87,7 +87,7 @@ describe("render-legal (markdown → the host HTML template)", () => {
 
 describe("#2624 — the app serves the listing's legal pages (no stale edge copy)", () => {
   it("renders shopify-faq/privacy/terms from docs/legal and 404s anything else", async () => {
-    const { legalPage } = await import("../app/routes/legal.$doc");
+    const { legalPage } = await import("../app/lib/legalPages.server");
     const faq = legalPage("shopify-faq");
     expect(faq).toContain("Busymate AI for Shopify — FAQ");
     expect(faq).toContain("hi@busymate.ai");
