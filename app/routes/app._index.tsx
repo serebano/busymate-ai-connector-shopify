@@ -25,6 +25,7 @@ import { merchantError } from "../lib/merchantError";
 import { readStorefrontFrameable } from "../lib/embedFrameable";
 import { homeActivation } from "../lib/homeActivation";
 import { useActivationRecheck } from "../lib/useActivationRecheck";
+import { isSettingUp, useSetupPoll } from "../lib/useSetupPoll";
 import { publishedTenantRepair } from "../lib/tenantRepair";
 import { readTrainingState } from "../lib/retrain.server";
 import { resolveBillingAccess } from "../lib/billingGate";
@@ -171,13 +172,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
 function stateBadge(state: string) {
   if (state === "published") return <Badge tone="success">Live</Badge>;
-  if (state === "runtime-pending") return <Badge tone="attention">Activating</Badge>;
+  if (state === "runtime-pending") return <Badge tone="info" progress="partiallyComplete">Activating</Badge>;
   if (state === "runtime-orphaned") return <Badge tone="attention">Repairing</Badge>;
   if (state === "runtime-unverified") return <Badge tone="warning">Status unavailable</Badge>;
   if (state === "runtime-error") return <Badge tone="critical">Activation failed</Badge>;
   if (state === "error") return <Badge tone="critical">Needs attention</Badge>;
   if (state === "suspended") return <Badge tone="warning">Suspended</Badge>;
-  return <Badge tone="attention">Provisioning</Badge>;
+  // src#2624 final — the first seconds after install read as progress, never a stuck state.
+  return <Badge tone="info" progress="partiallyComplete">Setting up</Badge>;
 }
 
 export default function Index() {
@@ -190,6 +192,10 @@ export default function Index() {
   // not ready (never a silent stop). The "taking longer" banner with Retry setup
   // shows only while the CTA is HELD past 5 minutes (`activating && slow`).
   const slow = useActivationRecheck(data.recheck);
+  // src#2624 final — right after install the setup takes a few seconds: re-read
+  // every 1.5 s while it is still being set up (bounded), so Home flips to Live
+  // as soon as it is, instead of waiting for the 5 s activation loop.
+  useSetupPoll(isSettingUp(data.provisionState));
   return (
     <Page>
       <TitleBar title="Busymate AI" />

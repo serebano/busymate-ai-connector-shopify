@@ -227,7 +227,7 @@ export function buildSetupChecklist(s: SetupInput): SetupStep[] {
             : "Your assistant is live. The order connector is still registering."
           : s.provisionState === "suspended"
             ? "The assistant is suspended (the app was uninstalled). Reinstall or retry to restore it."
-            : "Setting up your assistant…",
+            : "Setting up: creating your assistant and learning your products, pages and policies. This usually takes a few seconds; this page updates by itself.",
       done: provisioned,
       failed: provisionFailed,
     },

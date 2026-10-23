@@ -4,6 +4,12 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-10-23 — Home right after install shows progress (src#2624 final)
+
+- The first Home paint can land before the ~2 s install lifecycle finishes; Home now re-reads every 1.5 s while
+  the setup runs (≤ 60 s, then the 5 s activation loop), the badge reads "Setting up" / "Activating" with a progress
+  mark instead of "Provisioning", and step 1 says what is happening.
+
 ## 2026-10-23 — owner changes before the review (busymate-ai-src#2631, #2624 reviewer W3/W12/W13)
 
 - **No returns access:** `read_returns`/`write_returns` dropped from `[access_scopes]` (install consent shows no
