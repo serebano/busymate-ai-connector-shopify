@@ -84,7 +84,7 @@ export const KNOWLEDGE_KEYS = {
 /**
  * The store's "order help in this chat" how-to (#2132 FAIL B). Grounded knowledge
  * the assistant can cite when a shopper asks about THEIR order: signed-in shoppers
- * get status/tracking/returns/cancellation in chat through the store connection;
+ * get status/tracking (and, after they approve, a cancellation or an address change) in chat through the store connection;
  * a shopper who is NOT signed in is told to use the Sign in control at the top of
  * the chat (or the store's account login) and ask again, and can ask for a human.
  * Rendered FIRST and reserved out of the budget, so a huge catalog never starves it.
@@ -93,7 +93,7 @@ export function renderOrderHelp(shop: string, storeName: string): string {
   const login = `https://${shop}/account/login`;
   return [
     `# Order help in this chat — ${storeName} (${shop})`,
-    "Order status, tracking, returns and cancellations are handled in this chat for signed-in customers only, and only for that customer's own orders.",
+    "Order status and tracking are handled in this chat for signed-in customers only, and only for that customer's own orders. After the customer approves, the assistant can cancel an unfulfilled order or change the shipping address of an order that has not shipped. Returns and refunds are handled by the store's team: offer to connect the customer with a person.",
     `If you are not signed in, you have two options: sign in with the "Sign in" button at the top of this chat (or at ${login}) and then ask again — for example "Where is my order #1001?" — or ask to talk to a human and the store's team will help you with your order. Always offer both.`,
     "Changes such as cancelling an order, starting a return or updating a shipping address are confirmed with you in the chat before anything happens.",
     "Prefer a person at any point? Ask to talk to a human and the request goes to the store's team.",

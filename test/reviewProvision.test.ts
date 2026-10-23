@@ -16,7 +16,9 @@ describe("fresh install with delegated customer tools", () => {
         }
         expect(args.delegation_mode).toBe("signed_actor_token");
         expect((args.tool_access as Record<string, string>).get_order_status).toBe("identified");
-        expect((args.tool_access as Record<string, string>).create_refund).toBe("delegated");
+        expect((args.tool_access as Record<string, string>).cancel_order).toBe("delegated");
+        expect((args.tool_access as Record<string, string>).create_refund).toBeUndefined();
+        expect((args.tool_access as Record<string, string>).start_return).toBeUndefined();
         connector = true;
         data = { id: "connector" };
       }

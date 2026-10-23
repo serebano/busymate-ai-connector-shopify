@@ -68,3 +68,15 @@ describe("shopify.app.toml [access_scopes] cover the training query", () => {
     expect(scopes).toContain(scope);
   });
 });
+
+describe("#2631 the app requests no returns access (owner, 2026-10-23)", () => {
+  it("no read_returns / write_returns in [access_scopes] or .env.example, and no returnCreate in the app", async () => {
+    const { readFileSync, readdirSync, statSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const scopes = tomlValue(tomlSection("access_scopes"), "scopes");
+    expect(scopes).not.toMatch(/returns/);
+    expect(readFileSync(".env.example", "utf8")).not.toMatch(/_returns/);
+    const walk = (d: string): string[] => readdirSync(d).flatMap((f) => (statSync(join(d, f)).isDirectory() ? walk(join(d, f)) : [join(d, f)]));
+    for (const f of walk("app")) expect(readFileSync(f, "utf8"), f).not.toMatch(/returnCreate\b/);
+  });
+});

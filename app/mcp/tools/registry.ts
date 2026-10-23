@@ -14,7 +14,7 @@ import type { ToolContext, ToolResult } from "./types";
 import { searchProducts, getProduct, listCollections } from "./products";
 import { getOrderStatus, trackFulfillment, listMyOrders } from "./orders";
 import { applyDiscount, createDraftOrder } from "./discounts";
-import { startReturn, cancelOrder, createRefund, updateShippingAddress } from "./returns";
+import { cancelOrder, createRefund, updateShippingAddress } from "./returns";
 
 export type Tier = "public" | "identified" | "delegated";
 
@@ -155,15 +155,6 @@ export const TOOLS: ToolDef[] = [
     adminOnly: true,
     inputSchema: obj({ order_number: str("Order name/number"), reason: str("Reason") }, ["order_number"]),
     handler: cancelOrder,
-  },
-  {
-    name: "start_return",
-    description: "Start a return for the identified customer's order (confirm + adminOnly).",
-    tier: "delegated",
-    confirm: true,
-    adminOnly: true,
-    inputSchema: obj({ order_number: str("Order"), line_items: { type: "array" } }, ["order_number"]),
-    handler: startReturn,
   },
   {
     name: "create_refund",

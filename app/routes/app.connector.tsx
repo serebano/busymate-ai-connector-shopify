@@ -26,6 +26,8 @@ import { runConnectorAction } from "../lib/connectorAction.server";
 import { LocalTime } from "../components/LocalTime";
 import { failClosedClientAction, isTransportFailure } from "../lib/clientAction";
 import { AppRouteBoundary } from "../components/AppRouteError";
+import { useActivationRecheck } from "../lib/useActivationRecheck";
+import { connectionView } from "../lib/connectionView";
 
 // Embedded-frame contract (#retrain-500): a failed action FETCH (network blip,
 // app restarting) renders an error toast + revalidates — never the root 500
@@ -132,7 +134,12 @@ export default function ConnectorPage() {
     }
   }, [fetcher.state, fetcher.data, shopify, revalidate]);
 
-  const connected = Boolean(data.connectorId) && data.runtime?.state === "ready" && !data.provisionWarning;
+  // src#2624 reviewer W12 — a re-train or reconnect re-publishes, and the runtime is
+  // `pending` for a moment: that is still a working connection (never "Not
+  // connected"), and the page re-reads by itself until it settles.
+  const view = connectionView({ connectorId: data.connectorId, provisionState: data.provisionState, provisionWarning: data.provisionWarning, runtime: data.runtime?.state ?? null });
+  useActivationRecheck(view.recheck);
+  const connected = view.connected;
   return (
     <Page>
       <TitleBar title="Store connection" />
@@ -145,18 +152,12 @@ export default function ConnectorPage() {
                   <Text as="h2" variant="headingMd">
                     Store connection
                   </Text>
-                  {connected ? (
-                    <Badge tone="success">Connected</Badge>
-                  ) : data.provisionState === "error" ? (
-                    <Badge tone="critical">Error</Badge>
-                  ) : (
-                    <Badge tone="attention">Not connected</Badge>
-                  )}
+                  <Badge tone={view.badge.tone}>{view.badge.label}</Badge>
                 </InlineGrid>
                 <Text as="p" tone="subdued">
-                  The connection lets the assistant look up a signed-in shopper&apos;s own orders and, with confirmation,
-                  update an address, start a return, cancel or refund. It uses the permissions you approved on install
-                  and nothing more.
+                  The connection lets the assistant look up a signed-in shopper&apos;s own orders and, after the shopper
+                  approves, cancel an unfulfilled order or change the shipping address of an order that has not shipped.
+                  Returns and refunds go to your team. It uses the permissions you approved on install and nothing more.
                 </Text>
                 <Text as="p">
                   Last set up: <LocalTime iso={data.provisionedAt} fallback="never" />
@@ -171,7 +172,9 @@ export default function ConnectorPage() {
                     {data.provisionWarning}
                   </Text>
                 ) : null}
-                {data.runtime && data.runtime.state !== "ready" ? (
+                {view.note ? (
+                  <Text as="p" tone={view.noteTone}>{view.note}</Text>
+                ) : data.runtime && data.runtime.state !== "ready" ? (
                   <Text as="p" tone="caution">{data.runtime.detail}</Text>
                 ) : null}
                 <InlineStack gap="300">

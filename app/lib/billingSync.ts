@@ -95,3 +95,20 @@ export function subscriptionStateFromInstallation(data: unknown): SubscriptionSt
     plan: matchPlanId(active.name),
   };
 }
+
+/**
+ * busymate-ai-src#2631 — the plan the platform records for this shop's workspace
+ * (it decides the Free-plan "Powered by" link in the storefront chat). An ACTIVE
+ * paid subscription (a trial is ACTIVE) → that plan; no contract, cancelled,
+ * frozen or declined → "free"; PENDING (approval not finished) → null = report
+ * nothing yet, so a half-finished approval never changes what shoppers see.
+ */
+export type PlatformPlan = "free" | "starter" | "growth" | "scale";
+export function platformPlanOf(row: { plan?: string | null; status?: string | null } | null | undefined): PlatformPlan | null {
+  if (!row) return "free";
+  const status = String(row.status ?? "inactive");
+  if (status === "pending") return null;
+  const plan = String(row.plan ?? "").toLowerCase();
+  if (status === "active" && (plan === "starter" || plan === "growth" || plan === "scale")) return plan;
+  return "free";
+}

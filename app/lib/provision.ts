@@ -98,6 +98,11 @@ export function runtimeOrigins(shop: string, slug: string, customDomain?: string
 }
 
 export interface ProvisionDeps {
+  /**
+   * busymate-ai-src#2631 — the shop's plan as the platform should record it
+   * (free|starter|growth|scale), or null to send none. Optional (tests, ops).
+   */
+  currentPlan?: (shop: string) => Promise<string | null>;
   /** MCP `tools/call` — the ONLY control-plane effect channel. */
   call: <T = unknown>(name: string, args: Record<string, unknown>) => Promise<McpResult<T>>;
   /** Read the current tenant row for the shop (or null). */
@@ -187,13 +192,19 @@ export function servingHost(slug: string): string {
  * The connector tool policy tiers. Every name MUST be a tool the app's own
  * `/mcp` connector endpoint (app/mcp/tools/*) actually serves — the bmai connector
  * upsert probes the endpoint and REJECTS a tool_access entry for an undiscovered
- * tool (e.g. `start_return`, which the app serves; NOT `create_return`).
+ * tool.
+ *
+ * busymate-ai-src#2631 (owner, 2026-10-23): the DELEGATED writes are exactly the
+ * ones proven end to end and claimed in the listing — cancel an unfulfilled order
+ * and change an unshipped order's shipping address. Returns (the app no longer
+ * requests `read_returns`/`write_returns`), refunds, discounts and draft orders
+ * are not offered to the assistant; shoppers asking for them reach the team.
  */
 export const CONNECTOR_POLICIES = {
   public_tools: ["search_products", "get_product", "list_collections"],
   identified_tools: ["get_order_status", "track_fulfillment", "list_my_orders"],
-  delegated_tools: ["create_refund", "start_return", "cancel_order", "update_shipping_address", "apply_discount", "create_draft_order"],
-  confirm_tools: ["create_refund", "start_return", "cancel_order", "update_shipping_address", "apply_discount", "create_draft_order"],
+  delegated_tools: ["cancel_order", "update_shipping_address"],
+  confirm_tools: ["cancel_order", "update_shipping_address"],
 } as const;
 
 /**
@@ -231,11 +242,13 @@ export async function runProvisionLifecycle(
   await deps.saveTenant(shop, { slug, provisionState: "provisioning", provisionError: null });
 
   // 1) Provision — LOAD-BEARING. Proof-of-shop OR operator; idempotent by shop.
+  const plan = deps.currentPlan ? await deps.currentPlan(shop).catch(() => null) : null;
   const provisioned = await call<{ tenant_id: string; created?: boolean; reactivated?: boolean }>("provision_partner_tenant", {
     partner,
     shop,
     slug,
     ...proofArgs(proof),
+    ...(plan ? { plan } : {}),
   });
   if (!provisioned.ok) {
     await deps.saveTenant(shop, { provisionState: "error", provisionError: provisioned.error });
@@ -302,7 +315,7 @@ export async function runProvisionLifecycle(
   // Unauthenticated server access (`auth_mode:'none'`); the per-user delegation mode
   // is gated on the app's actor-token verifier being READY (deps.delegationReady ==
   // /api/bmai/status actorVerifier). READY → `signed_actor_token` + the DELEGATED
-  // write tools (refunds/returns/cancel/address/discount/draft), each still
+  // write tools (cancel an unfulfilled order, change an unshipped address), each still
   // confirm-gated + actor-scoped. NOT READY → READ-ONLY (`none`, public+identified
   // only): the bmai control plane refuses `signed_actor_token` until the host can
   // honestly verify the HMAC, so we never make a claim we can't back (no
@@ -320,7 +333,7 @@ export async function runProvisionLifecycle(
     // value here (this call never set one) broke the shared registry
     // export's own schema once the connector was projected. Fixed at the
     // source rather than only downstream.
-    description: "Shop order tools — order status, tracking, and (when delegated) refunds, returns, cancellations, address updates, discounts, and draft orders.",
+    description: "Shop order tools — order status and tracking for the signed-in shopper, and (with the shopper's confirmation) cancelling an unfulfilled order or changing an unshipped order's shipping address.",
     auth_mode: "none",
     delegation_mode: delegationMode,
     tool_access: connectorToolAccess(deps.delegationReady),
