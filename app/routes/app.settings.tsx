@@ -16,7 +16,7 @@ import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { setTenantBranding } from "../bmai.server";
-import { retrainNow } from "../lib/ingest";
+import { retrainForMerchant } from "../lib/ingest";
 import { saveBrandingAndRepublish } from "../lib/brandingSave";
 import { brandedAssistantName, effectiveAssistantName, isPlatformPersonaName } from "../lib/assistantName";
 import { readTenantBranding } from "../lib/tenantRead.server";
@@ -84,7 +84,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     session.shop,
     tenant?.bmaiTenantId,
     { productName, assistantName },
-    { setBranding: (shop, tenantId, branding) => setTenantBranding(shop, tenantId, branding), republish: retrainNow },
+    { setBranding: (shop, tenantId, branding) => setTenantBranding(shop, tenantId, branding), republish: (shop) => retrainForMerchant(shop) },
   );
   // #2618 — the merchant reads one plain sentence; the raw cause goes to the log.
   return {
@@ -94,7 +94,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     assistantName: assistantName.trim(),
     notice: persona && res.ok
       ? `Saved. "${typedAssistantName}" is Busymate AI's own assistant, so your store's assistant is called "${assistantName.trim()}". You can rename it any time.`
-      : null,
+      : res.ok && res.queued
+        ? "Assistant settings saved. Your storefront shows the new names within a minute or two, as soon as the training in progress finishes."
+        : null,
   };
 };
 
