@@ -21,6 +21,7 @@ import { saveBrandingAndRepublish } from "../lib/brandingSave";
 import { DEFAULT_ASSISTANT_NAME } from "../lib/assistantName";
 import { readTenantBranding } from "../lib/tenantRead.server";
 import { failClosedClientAction } from "../lib/clientAction";
+import { merchantError } from "../lib/merchantError";
 import { AppRouteBoundary } from "../components/AppRouteError";
 
 // Embedded-frame contract (#retrain-500): a failed action FETCH renders an error
@@ -78,7 +79,8 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     { productName, assistantName },
     { setBranding: (shop, tenantId, branding) => setTenantBranding(shop, tenantId, branding), republish: retrainNow },
   );
-  return { ok: res.ok, error: res.error, published: res.published };
+  // #2618 — the merchant reads one plain sentence; the raw cause goes to the log.
+  return { ok: res.ok, error: res.ok ? null : merchantError("branding", session.shop, res.error), published: res.published };
 };
 
 export default function SettingsPage() {
@@ -92,7 +94,7 @@ export default function SettingsPage() {
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data) {
       if (fetcher.data.ok) shopify.toast.show("Assistant settings saved and published to your storefront");
-      else shopify.toast.show(fetcher.data.error ?? "Could not save", { isError: true });
+      else shopify.toast.show(fetcher.data.error ?? "We couldn't save your assistant settings. Please try again.", { isError: true });
     }
   }, [fetcher.state, fetcher.data, shopify]);
 

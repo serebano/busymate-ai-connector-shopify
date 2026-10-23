@@ -26,6 +26,7 @@ import { listStuckDeliveries, meterShop } from "../lib/usageBilling";
 import { measuredCycleResolutions } from "../lib/usageDisplay";
 import { RESOLUTION_DEFINITION } from "../lib/resolutionDefinition";
 import { failClosedClientAction } from "../lib/clientAction";
+import { merchantError } from "../lib/merchantError";
 import { AppRouteBoundary } from "../components/AppRouteError";
 
 // Embedded-frame contract (#retrain-500): a failed action FETCH renders an error
@@ -139,7 +140,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const { admin, session } = await authenticate.admin(request);
   const r = await reconcile(session.shop, (q) => admin.graphql(q), null);
   const billing = await readBillingState(session.shop);
-  return { ok: !r.unverified, status: billing?.status ?? "inactive", plan: billing?.plan ?? "free", source: r.source, error: r.unverified };
+  return { ok: !r.unverified, status: billing?.status ?? "inactive", plan: billing?.plan ?? "free", source: r.source, error: r.unverified ? merchantError("billing", session.shop, r.unverified) : null };
 };
 
 export default function BillingPage() {
@@ -152,7 +153,7 @@ export default function BillingPage() {
   }, [data.chosen, shopify]);
   useEffect(() => {
     if (refresh.state === "idle" && refresh.data) {
-      shopify.toast.show(refresh.data.ok ? "Plan status refreshed" : `Could not verify with Shopify: ${refresh.data.error ?? "unknown"}`, { isError: !refresh.data.ok });
+      shopify.toast.show(refresh.data.ok ? "Plan status refreshed" : (refresh.data.error ?? "We couldn't confirm your plan with Shopify right now. Please try again."), { isError: !refresh.data.ok });
     }
   }, [refresh.state, refresh.data, shopify]);
 

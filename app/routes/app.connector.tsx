@@ -20,6 +20,7 @@ import { callMcpTool, onAppInstalled } from "../bmai.server";
 import { readRuntimeReadiness } from "../lib/runtimeReadiness";
 import { connectorEndpoint } from "../lib/connector";
 import { readTrainingState, runRetrain } from "../lib/retrain.server";
+import { merchantError } from "../lib/merchantError";
 import { trainingSummary } from "../lib/themeEmbed";
 import { runConnectorAction } from "../lib/connectorAction.server";
 import { LocalTime } from "../components/LocalTime";
@@ -67,10 +68,13 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       const tenant = await prisma.shopTenant.findUnique({ where: { shop: session.shop } });
       const runtime = tenant?.provisionState === "published" && tenant.bmaiTenantId
         ? await readRuntimeReadiness(tenant.bmaiTenantId, callMcpTool) : null;
+      const ok = runtime?.state === "ready" && !tenant?.provisionWarning;
+      const raw = tenant?.provisionError ?? tenant?.provisionWarning ?? (runtime?.state !== "ready" ? runtime?.detail : null) ?? null;
       return {
-        ok: runtime?.state === "ready" && !tenant?.provisionWarning,
+        ok,
         state: runtime?.state ?? tenant?.provisionState ?? "pending",
-        error: tenant?.provisionError ?? tenant?.provisionWarning ?? (runtime?.state !== "ready" ? runtime?.detail : null) ?? null,
+        // #2618 — plain language in the toast; the raw cause stays in "Technical details" + the log.
+        error: ok ? null : merchantError("reprovision", session.shop, raw),
       };
     },
     retrain: async () => {
@@ -79,7 +83,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return {
         ok: r.ok,
         state: r.ok ? "trained" : "failed",
-        error: r.error ?? null,
+        error: r.ok ? null : merchantError("retrain", session.shop, r.error),
         trainedAt: r.state.trainedAt,
         counts: r.state.counts,
         summary: trainingSummary(r.state.counts, r.state.fetched),
@@ -101,8 +105,8 @@ export default function ConnectorPage() {
     if (fetcher.state === "idle" && fetcher.data) {
       const d = fetcher.data;
       if (d.intent === "retrain")
-        shopify.toast.show(d.ok ? `Trained on ${"summary" in d && d.summary ? d.summary : "your store"}` : `Re-train failed: ${d.error ?? "unknown"}`, { isError: !d.ok });
-      if (d.intent === "reprovision") shopify.toast.show(d.ok ? "Store connection is live" : `Still not live: ${d.error ?? d.state}`, { isError: !d.ok });
+        shopify.toast.show(d.ok ? `Trained on ${"summary" in d && d.summary ? d.summary : "your store"}` : (d.error ?? "Training didn't finish. Please try again."), { isError: !d.ok });
+      if (d.intent === "reprovision") shopify.toast.show(d.ok ? "Store connection is live" : (d.error ?? "Your store connection isn't live yet. Please try again."), { isError: !d.ok });
       // The REQUEST failed (network blip / app restart) — the server may still have
       // finished the work, so refresh the loader to show the real state (#retrain-500).
       if (isTransportFailure(d)) revalidate();
