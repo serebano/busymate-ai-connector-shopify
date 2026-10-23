@@ -72,3 +72,27 @@ export async function readRuntimeReadiness(
     return runtimeReadiness(tenantId, { ok: false });
   }
 }
+
+/**
+ * busymate-ai-src#2618 walk — right after a (re)publish the runtime is briefly
+ * `pending` (desired revision ahead of applied). That is the normal hand-over,
+ * not a failure: wait for it to settle (bounded) before an admin action reports,
+ * so "Reconnect" never shows a red toast over a connection that just worked.
+ * Any other state (ready, error, unverified, orphaned) returns at once.
+ */
+export async function awaitRuntimeSettled(
+  read: () => Promise<RuntimeReadiness>,
+  opts: { timeoutMs?: number; intervalMs?: number; sleep?: (ms: number) => Promise<void> } = {},
+): Promise<RuntimeReadiness> {
+  const timeoutMs = opts.timeoutMs ?? 25_000;
+  const intervalMs = opts.intervalMs ?? 2_000;
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  let waited = 0;
+  let r = await read();
+  while (r.state === "pending" && waited < timeoutMs) {
+    await sleep(intervalMs);
+    waited += intervalMs;
+    r = await read();
+  }
+  return r;
+}
