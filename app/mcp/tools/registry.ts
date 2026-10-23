@@ -40,11 +40,11 @@ export const TOOLS: ToolDef[] = [
   // ── public ────────────────────────────────────────────────────────────────
   {
     name: "search_products",
-    description: "Search the store catalog by keyword. Returns titles, prices, availability.",
+    description: "Search the store catalog by keyword. Returns titles, prices (with the compare-at \"was\" price when on sale) and availability. For \"what is on sale\" questions set on_sale: true (query may be empty or a product type).",
     tier: "public",
     confirm: false,
     adminOnly: false,
-    inputSchema: obj({ query: str("Search terms"), first: { type: "number" } }, ["query"]),
+    inputSchema: obj({ query: str("Search terms (may be empty with on_sale)"), first: { type: "number" }, on_sale: { type: "boolean", description: "Only products whose compare-at price is above their price" } }, []),
     handler: searchProducts,
   },
   {

@@ -26,6 +26,7 @@ export const KB_INGEST_QUERY = `#graphql
           minVariantPrice { amount currencyCode }
           maxVariantPrice { amount currencyCode }
         }
+        compareAtPriceRange { minVariantCompareAtPrice { amount currencyCode } }
       }
     }
     pages(first: 100) { nodes { title handle body } }

@@ -29,6 +29,7 @@ export interface KbProduct {
   productType?: string | null;
   vendor?: string | null;
   priceRangeV2?: { minVariantPrice?: KbMoney | null; maxVariantPrice?: KbMoney | null } | null;
+  compareAtPriceRange?: { minVariantCompareAtPrice?: KbMoney | null } | null;
 }
 
 export interface KbPolicy {
@@ -215,6 +216,9 @@ function renderProduct(p: KbProduct, shop: string): string | null {
   const min = money(p.priceRangeV2?.minVariantPrice);
   const max = money(p.priceRangeV2?.maxVariantPrice);
   if (min) lines.push(`Price: ${max && max !== min ? `from ${min} to ${max}` : min}`);
+  // src#2624 reviewer F13 — the "was" price, so "what's on sale?" is answered from the catalog.
+  const was = p.compareAtPriceRange?.minVariantCompareAtPrice;
+  if (min && was?.amount && Number(was.amount) > Number(p.priceRangeV2?.minVariantPrice?.amount)) lines.push(`On sale: yes (compare-at price ${money(was)})`);
   const meta: string[] = [];
   if (p.productType) meta.push(`Type: ${p.productType}`);
   if (p.vendor) meta.push(`Vendor: ${p.vendor}`);
