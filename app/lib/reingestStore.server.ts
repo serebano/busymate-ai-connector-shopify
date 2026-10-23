@@ -33,6 +33,10 @@ export const reingestStore: DurableReingestStore = {
     const rows = await boundedTransaction((tx) => tx.$queryRaw<Row[]>`SELECT * FROM kb_reingest_renew(${l.shop},${l.token},${l.generation}::integer)`);
     return rows[0] ? lease(rows[0]) : null;
   },
+  async release(l) {
+    const rows = await boundedTransaction((tx) => tx.$queryRaw<Array<{ released: boolean }>>`SELECT kb_reingest_release(${l.shop},${l.token},${l.generation}::integer) AS released`);
+    return rows[0]?.released === true;
+  },
   async complete(l) {
     const rows = await boundedTransaction((tx) => tx.$queryRaw<Array<{ settled: boolean }>>`SELECT kb_reingest_settle(${l.shop},${l.token},${l.generation}::integer,true,0,'completed') AS settled`);
     return rows[0]?.settled === true;

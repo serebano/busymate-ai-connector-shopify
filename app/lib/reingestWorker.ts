@@ -34,6 +34,9 @@ export async function processReingestLease(lease: ReingestLease, deps: ReingestW
     return out;
   } catch {
     if (!lost) await deps.store.retry(lease, reingestRetryDelay(lease.attempt), controller.signal.aborted ? "attempt_timeout" : "attempt_failed").catch(() => false);
+    // #2624 — a lost lease cannot settle; give the token back so the queued request is not
+    // blocked for the rest of the 5-minute lease (merchant Re-train / settings publish).
+    else if (deps.store.release) await deps.store.release(lease).catch(() => false);
     // Persist only a classified code; the child may have seen sensitive provider errors.
     return { ok: false, error: lost ? "Training lease changed; work remains queued." : "Training attempt failed; retry remains queued.", counts: { products: 0, policies: 0, pages: 0 }, fetched: { products: 0, policies: 0, pages: 0 }, totalChars: 0, truncated: false };
   } finally {

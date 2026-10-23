@@ -32,3 +32,26 @@ describe("durable worker lease lifecycle", () => {
   await vi.advanceTimersByTimeAsync(11);expect((await pending).ok).toBe(false);expect(db.retry).not.toHaveBeenCalled();expect(db.complete).not.toHaveBeenCalled();
  });
 });
+
+describe("#2624 — a lost lease is given back, never held for the full 5 minutes", () => {
+  it("RED→GREEN: ownership lost before the run → release(lease), no retry/complete", async () => {
+    const db = { ...store(), release: vi.fn(async () => true) };
+    db.owns.mockResolvedValue(false);
+    expect((await processReingestLease(lease, { store: db, run: vi.fn() })).ok).toBe(false);
+    expect(db.release).toHaveBeenCalledWith(lease);
+    expect(db.retry).not.toHaveBeenCalled();
+    expect(db.complete).not.toHaveBeenCalled();
+  });
+  it("a settle that loses ownership also releases", async () => {
+    const db = { ...store(), release: vi.fn(async () => true) };
+    db.complete.mockResolvedValue(false);
+    await processReingestLease(lease, { store: db, run: async () => success });
+    expect(db.release).toHaveBeenCalledWith(lease);
+  });
+  it("an ordinary failed attempt retries (no release)", async () => {
+    const db = { ...store(), release: vi.fn(async () => true) };
+    await processReingestLease(lease, { store: db, run: async () => { throw new Error("boom"); } });
+    expect(db.retry).toHaveBeenCalled();
+    expect(db.release).not.toHaveBeenCalled();
+  });
+});
