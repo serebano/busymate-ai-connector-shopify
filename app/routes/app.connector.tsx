@@ -89,6 +89,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         ok: r.ok,
         state: r.ok ? "trained" : "failed",
         error: r.ok ? null : merchantError("retrain", session.shop, r.error),
+        queued: Boolean(r.queued),
         trainedAt: r.state.trainedAt,
         counts: r.state.counts,
         summary: trainingSummary(r.state.counts, r.state.fetched),
@@ -110,7 +111,14 @@ export default function ConnectorPage() {
     if (fetcher.state === "idle" && fetcher.data) {
       const d = fetcher.data;
       if (d.intent === "retrain")
-        shopify.toast.show(d.ok ? `Trained on ${"summary" in d && d.summary ? d.summary : "your store"}` : (d.error ?? "Training didn't finish. Please try again."), { isError: !d.ok });
+        shopify.toast.show(
+          d.ok
+            ? "queued" in d && d.queued
+              ? "Training is already running. Your assistant updates by itself in a minute or two."
+              : `Trained on ${"summary" in d && d.summary ? d.summary : "your store"}`
+            : (d.error ?? "Training didn't finish. Please try again."),
+          { isError: !d.ok },
+        );
       if (d.intent === "reprovision")
         shopify.toast.show(
           d.ok

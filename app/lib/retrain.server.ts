@@ -1,5 +1,5 @@
 import prisma from "../db.server";
-import { retrainNow } from "./ingest";
+import { retrainForMerchant } from "./ingest";
 
 /**
  * Training state for the "Store connection" page + the Home checklist, read off
@@ -46,6 +46,8 @@ export function readTrainingState(tenant: unknown): TrainingState {
 export interface RetrainResult {
   ok: boolean;
   error?: string;
+  /** Accepted, but a training pass already running will publish it (no failure). */
+  queued?: boolean;
   state: TrainingState;
 }
 
@@ -55,7 +57,7 @@ export async function runRetrain(shop: string): Promise<RetrainResult> {
   if (!before?.bmaiTenantId) {
     return { ok: false, error: "no provisioned tenant for this shop yet", state: readTrainingState(before) };
   }
-  const out = await retrainNow(shop);
+  const out = await retrainForMerchant(shop);
   const after = await prisma.shopTenant.findUnique({ where: { shop } });
-  return { ok: out.ok, error: out.error, state: readTrainingState(after) };
+  return { ok: out.ok, error: out.error, queued: Boolean(out.queued), state: readTrainingState(after) };
 }

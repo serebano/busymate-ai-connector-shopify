@@ -38,6 +38,44 @@ export async function retrainNow(shop: string): Promise<TrainOutcome> {
   return runReingestAttempt(lease);
 }
 
+/**
+ * busymate-ai-src#2624 walk — the MERCHANT's re-train (Store connection, and the
+ * publish after an Assistant settings save). Right after install or a catalog
+ * change the background worker already holds the training lease, and
+ * `retrainNow` answered TRAINING_NOT_STARTED — a red "Training is queued, already
+ * running, or the shop is inactive" toast on a fresh store. The enqueue inside
+ * `retrainNow` has ALREADY recorded this request (the worker runs again after the
+ * current pass, so the latest names/catalog are published either way). So: wait
+ * (bounded) for the running pass to finish and take the lease ourselves; if it is
+ * still busy, report success-in-progress (`queued`), never a failure. An inactive
+ * shop is still refused.
+ */
+export async function retrainForMerchant(
+  shop: string,
+  opts: { waitMs?: number; intervalMs?: number; sleep?: (ms: number) => Promise<void>; train?: (shop: string) => Promise<TrainOutcome>; isInactive?: (shop: string) => Promise<boolean> } = {},
+): Promise<TrainOutcome & { queued?: boolean }> {
+  const train = opts.train ?? retrainNow;
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const isInactive = opts.isInactive ?? (async (s: string) => {
+    const t = await prisma.shopTenant.findUnique({ where: { shop: s }, select: { inactiveAt: true, provisionState: true } });
+    return Boolean(t?.inactiveAt) || t?.provisionState === "suspended";
+  });
+  const waitMs = opts.waitMs ?? 30_000;
+  const intervalMs = opts.intervalMs ?? 5_000;
+  let out = await train(shop);
+  let waited = 0;
+  while (!out.ok && out.error === TRAINING_NOT_STARTED && waited < waitMs) {
+    if (await isInactive(shop)) return out;
+    await sleep(intervalMs);
+    waited += intervalMs;
+    out = await train(shop);
+  }
+  if (!out.ok && out.error === TRAINING_NOT_STARTED && !(await isInactive(shop))) {
+    return { ...out, ok: true, error: undefined, queued: true };
+  }
+  return out;
+}
+
 /** Only the isolated attempt child calls the actual publisher. */
 export async function trainShopUnderLease(shop: string, lease: ReingestLease): Promise<TrainOutcome> {
   const beforePublish = async () => {

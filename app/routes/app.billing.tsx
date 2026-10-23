@@ -286,7 +286,9 @@ export default function BillingPage() {
                             {p.blurb}
                           </Text>
                         </BlockStack>
-                        {p.current ? <Badge tone="success">Current</Badge> : null}
+                        {p.current ? (
+                          noPlan ? <Badge tone="info">Applies until you choose</Badge> : <Badge tone="success">Current</Badge>
+                        ) : null}
                       </InlineGrid>
                     </Box>
                   ))}

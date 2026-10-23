@@ -24,7 +24,7 @@ export interface BrandingSaveDeps {
   /** `set_tenant_branding` via the bmai seam (app/bmai.server.ts). */
   setBranding: (shop: string, tenantId: string, branding: BrandingInput) => Promise<{ ok: boolean; error?: string }>;
   /** The training publish (app/lib/ingest.ts `retrainNow`) — origins + knowledge + the NEW brand. */
-  republish: (shop: string) => Promise<{ ok: boolean; error?: string; revision?: number }>;
+  republish: (shop: string) => Promise<{ ok: boolean; error?: string; revision?: number; queued?: boolean }>;
 }
 
 export interface BrandingSaveResult {
@@ -32,6 +32,8 @@ export interface BrandingSaveResult {
   error: string | null;
   /** True once the new names are in a PUBLISHED revision (what shoppers see). */
   published: boolean;
+  /** Saved; a training pass already running publishes the new names in a minute (#2624). */
+  queued?: boolean;
   revision: number | null;
 }
 
@@ -73,5 +75,6 @@ export async function saveBrandingAndRepublish(
       revision: null,
     };
   }
+  if (pub.queued) return { ok: true, error: null, published: false, queued: true, revision: null };
   return { ok: true, error: null, published: true, revision: typeof pub.revision === "number" ? pub.revision : null };
 }

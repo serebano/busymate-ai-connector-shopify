@@ -37,7 +37,7 @@ describe("assistant settings save (#2132 C)", () => {
   it("the settings ROUTE saves through this seam (never a bare set_tenant_branding)", () => {
     const src = readFileSync(new URL("../app/routes/app.settings.tsx", import.meta.url), "utf8");
     expect(src).toContain("saveBrandingAndRepublish(");
-    expect(src).toContain("republish: retrainNow");
+    expect(src).toContain("republish: (shop) => retrainForMerchant(shop)");
   });
 
   it("FAIL-CLOSED: a failed publish is reported as saved-but-not-live (no green toast over a stale widget)", async () => {

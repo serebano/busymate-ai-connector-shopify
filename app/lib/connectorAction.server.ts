@@ -30,6 +30,8 @@ export interface RetrainResultShape {
   ok: boolean;
   state: string;
   error: string | null;
+  /** Accepted while a training pass is already running (it publishes the request). */
+  queued?: boolean;
   trainedAt: string | null;
   counts: RetrainCounts;
   summary: string | null;

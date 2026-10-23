@@ -33,6 +33,11 @@ export interface DurableReingestStore {
   /** Renew only an unexpired exact token; never revive an expired lease. */
   renew(lease: ReingestLease): Promise<ReingestLease | null>;
   /**
+   * Give back THIS token's lease after ownership was lost mid-run (#2624): no ownership
+   * re-check, exact token + generation; the request stays queued (due within 30 s).
+   */
+  release?(lease: ReingestLease): Promise<boolean>;
+  /**
    * CAS exact token/generation with DB time. Complete only the claimed generation;
    * preserve a newer request arriving in flight. False means stale, never success.
    */
