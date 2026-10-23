@@ -80,3 +80,11 @@ describe("#2631 the app requests no returns access (owner, 2026-10-23)", () => {
     for (const f of walk("app")) expect(readFileSync(f, "utf8"), f).not.toMatch(/returnCreate\b/);
   });
 });
+
+describe("src#2624 reviewer F25 — read_themes (embed state from the theme)", () => {
+  it("requests read_themes and never write_themes", () => {
+    const scopes = tomlValue(tomlSection("access_scopes"), "scopes");
+    expect(scopes.split(",")).toContain("read_themes");
+    expect(scopes).not.toMatch(/write_themes/);
+  });
+});

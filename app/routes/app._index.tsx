@@ -29,6 +29,7 @@ import { isSettingUp, useSetupPoll } from "../lib/useSetupPoll";
 import { publishedTenantRepair } from "../lib/tenantRepair";
 import { readTrainingState } from "../lib/retrain.server";
 import { resolveBillingAccess } from "../lib/billingGate";
+import { reconcileBilling } from "../lib/billingReconcile.server";
 import { planFor } from "../lib/plans";
 import { failClosedClientAction } from "../lib/clientAction";
 import { AppRouteBoundary } from "../components/AppRouteError";
@@ -42,6 +43,8 @@ import {
   buildSetupChecklist,
   detectStorefrontEmbed,
   embedSetupPresentation,
+  readThemeEmbed,
+  type EmbedStatus,
   themeEditorActivateUrl,
   themeEditorAppEmbedsUrl,
   trainingSummary,
@@ -52,8 +55,12 @@ const APP_HANDLE = process.env.SHOPIFY_APP_HANDLE || "busymate-ai";
 const PLATFORM_ORIGIN = process.env.BMAI_EMBED_ORIGIN || "https://busymate.ai";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const shop = session.shop;
+  // src#2624 reviewer F24 — the plan is Shopify's, read live on every Home load
+  // (after a reinstall Shopify has cancelled the old subscription; Home must ask
+  // for a plan again instead of showing the cached one). Non-fatal.
+  await reconcileBilling(shop, (q) => admin.graphql(q), null, { enrich: false }).catch(() => null);
   const tenant = await prisma.shopTenant.findUnique({ where: { shop }, include: { billing: true } });
   const slug = tenant?.slug ?? shopToSlug(shop);
   const training = readTrainingState(tenant);
@@ -68,21 +75,17 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   // #3718 — the third read: can the chat actually be FRAMED on the Online Store
   // and in the Theme Editor right now (the platform's own frame-ancestors answer)?
   const published = provisionState === "published" && Boolean(tenant?.bmaiTenantId);
-  const [embed, runtime, frameable] = await Promise.all([
-    detectStorefrontEmbed(shop),
+  const [themeEmbed, runtime, frameable] = await Promise.all([
+    readThemeEmbed((q) => admin.graphql(q)),
     published && tenant?.bmaiTenantId
       ? readRuntimeReadiness(tenant.bmaiTenantId, callMcpTool) : Promise.resolve(null),
     published ? readStorefrontFrameable({ platformOrigin: PLATFORM_ORIGIN, shop, slug }) : Promise.resolve(null),
   ]);
   const live = runtime?.state === "ready";
-  // #2618 follow-up — a merchant's "It's switched on" confirmation stands only while
-  // the storefront is password-protected; a public check that finds the embed OFF
-  // clears it (the storefront is the truth once we can see it).
-  let embedConfirmed = Boolean(tenant?.embedConfirmedAt);
-  if (embedConfirmed && embed === "off") {
-    embedConfirmed = false;
-    await prisma.shopTenant.update({ where: { shop }, data: { embedConfirmedAt: null } }).catch(() => null);
-  }
+  // src#2624 reviewer F25 — the theme is the truth (read_themes); the public
+  // storefront check is only the fallback. No stored confirmation any more.
+  const embed: EmbedStatus = themeEmbed ?? (await detectStorefrontEmbed(shop));
+  const embedConfirmed = false;
   // #3718 — an ORPHANED tenant (the platform answered that it is gone) is
   // repaired in the background right here, gated per shop; Home shows it as
   // activating and re-checks until the chat can be framed.
@@ -150,11 +153,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const form = await request.formData();
   const intent = String(form.get("intent"));
-  if (intent === "confirm-embed") {
-    // The merchant's own word for a storefront we cannot see (password-protected).
-    await prisma.shopTenant.updateMany({ where: { shop: session.shop }, data: { embedConfirmedAt: new Date() } });
-    return { ok: true, state: "confirmed", error: null };
-  }
   if (intent === "retry") {
     // Idempotent re-run of the provisioning lifecycle (NEVER PARK an errored install).
     await onAppInstalled(session);
@@ -280,7 +278,7 @@ export default function Index() {
                   ) : data.embed === "off" ? (
                     <Badge tone="attention">Off</Badge>
                   ) : data.embed === "password" ? (
-                    data.embedConfirmed ? <Badge tone="success">On (confirmed)</Badge> : <Badge tone="info">Password-protected store</Badge>
+                    <Badge tone="info">Password-protected store</Badge>
                   ) : null}
                 </InlineGrid>
                 <Text as="p" tone="subdued">
@@ -313,21 +311,14 @@ export default function Index() {
                 <InlineStack gap="300">
                   <Button
                     variant="primary"
-                    url={data.embedReady ? (embedSetup.activationLink ? data.activateUrl : data.appEmbedsUrl) : undefined}
+                    url={data.embedReady ? data.activateUrl : undefined}
                     target="_top"
                     disabled={!data.embedReady}
                   >
                     {embedSetup.button}
                   </Button>
-                  {data.embed === "password" && !data.embedConfirmed ? (
-                    <retry.Form method="post">
-                      <input type="hidden" name="intent" value="confirm-embed" />
-                      <Button submit disabled={!data.embedReady} loading={retry.state !== "idle" && retry.formData?.get("intent") === "confirm-embed"}>
-                        It&apos;s switched on
-                      </Button>
-                    </retry.Form>
-                  ) : embedSetup.button !== "Open App embeds" ? (
-                    <Button url={data.embedReady ? data.appEmbedsUrl : undefined} target="_top" disabled={!data.embedReady}>
+                  {embedSetup.button !== "Open App embeds" ? (
+                    <Button url={data.embedReady ? data.activateUrl : undefined} target="_top" disabled={!data.embedReady}>
                       Open App embeds
                     </Button>
                   ) : null}

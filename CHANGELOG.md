@@ -4,6 +4,15 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-10-24 — independent-review round: billing truth, embed truth (src#2624 reviewer F24/F25)
+
+- **Billing (F24, 1.2.2):** the plan is read live from Shopify's `currentAppInstallation.activeSubscriptions`
+  on every Home and Billing load; after a reinstall (Shopify cancelled the subscription) the app shows "No plan
+  selected" and asks for a plan. The Partner API (which kept returning the cancelled contract) is enrichment only.
+- **Embed (F25, 5.1.2):** the app-embed state is read from the main theme's `config/settings_data.json`
+  (`read_themes`, read-only); the stored "It's switched on" confirmation is gone; "Open App embeds" always
+  deep-links with `activateAppId`. Needs a new app version (scope) — existing installs approve `read_themes`.
+
 ## 2026-10-23 — Home right after install shows progress (src#2624 final)
 
 - The first Home paint can land before the ~2 s install lifecycle finishes; Home now re-reads every 1.5 s while
