@@ -169,13 +169,24 @@ export interface SetupInput {
   planSelected?: boolean;
 }
 
-/** "62 of 250 products, 3 policies, 4 pages" — the honest training summary. */
+/** "62 of 250 products, 1 policy, 4 pages" — the honest training summary (plural-aware). */
+const NOUNS = {
+  products: { one: "product", other: "products" },
+  policies: { one: "policy", other: "policies" },
+  pages: { one: "page", other: "pages" },
+} as const;
+const PLURAL = new Intl.PluralRules("en");
+export function countNoun(n: number, noun: keyof typeof NOUNS): string {
+  return NOUNS[noun][PLURAL.select(n) === "one" ? "one" : "other"];
+}
+
 export function trainingSummary(counts: TrainingCounts | null | undefined, fetched?: Partial<TrainingCounts> | null): string | null {
   if (!counts || counts.products === null) return null;
-  const part = (n: number | null, total: number | null | undefined, noun: string) => {
+  const part = (n: number | null, total: number | null | undefined, noun: keyof typeof NOUNS) => {
     const count = n ?? 0;
-    const shown = typeof total === "number" && total > count ? `${count} of ${total}` : `${count}`;
-    return `${shown} ${noun}`;
+    const partial = typeof total === "number" && total > count;
+    // "1 of 2 products" reads by the total; a bare count by itself.
+    return `${partial ? `${count} of ${total}` : `${count}`} ${countNoun(partial ? total : count, noun)}`;
   };
   return `${part(counts.products, fetched?.products, "products")}, ${part(counts.policies, fetched?.policies, "policies")}, ${part(counts.pages, fetched?.pages, "pages")}`;
 }

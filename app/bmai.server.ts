@@ -37,6 +37,7 @@ import { adminForShop } from "./mcp/shopifyAdmin";
 import { launchIdentityRegistration } from "./lib/identity";
 import { resolveBusymateAiMcpUrl } from "./lib/bmaiSurface";
 import { readRuntimeReadiness } from "./lib/runtimeReadiness";
+import { platformPlanOf, type PlatformPlan } from "./lib/billingSync";
 import { checkPublishedTenant, createRepairGate, publishedTenantRepair, type RepairDecision } from "./lib/tenantRepair";
 
 // One product, one protocol surface. Partner proof-of-shop lifecycle and tenant
@@ -65,6 +66,19 @@ const tokenProvider = createTokenProvider({
 /** Sign a proof-of-shop for a shop (fail-closed to null when no secret is set). */
 function shopProof(shop: string) {
   return buildPartnerProof("shopify", shop);
+}
+
+/**
+ * busymate-ai-src#2631 — record the shop's App Store plan on its workspace (the
+ * storefront chat's Free-plan "Powered by" link follows it). The idempotent
+ * provision call carries it; the platform resolves the workspace from the proven
+ * shop. Resolves to whether the platform recorded it.
+ */
+export async function reportShopPlan(shop: string, plan: PlatformPlan): Promise<boolean> {
+  const r = await callMcpTool<{ plan_recorded?: boolean }>("provision_partner_tenant", { partner: "shopify", shop, plan, ...proofArgs(shopProof(shop)) });
+  const recorded = r.ok && r.data?.plan_recorded === true;
+  console.log(`[billing] ${shop}: plan ${plan} ${recorded ? "recorded" : `not recorded (${r.ok ? "platform did not record it" : r.error ?? "failed"})`}`);
+  return recorded;
 }
 
 /**
@@ -189,6 +203,8 @@ function liveProvisionDeps(): ProvisionDeps {
     // provider (#2132 FAIL A) — only when the signing key exists (== /api/bmai/status
     // launchIdentity), so a provider is never registered for tokens we cannot mint.
     launchIdentity: launchIdentityRegistration(),
+    // #2631 — the shop's plan rides on every (re)provision.
+    currentPlan: async (shop) => platformPlanOf(await prisma.billingState.findUnique({ where: { shop }, select: { plan: true, status: true } })),
   };
 }
 

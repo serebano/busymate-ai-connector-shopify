@@ -91,10 +91,10 @@ Status legend: **[x]** scaffolded (structure + seam in place) · **[~]** partial
 ## API version & scopes
 
 - [x] `api_version = "2026-07"` pinned (toml + admin client + `/api/bmai/status`)
-- [x] Least-privilege scopes declared (`read_products,read_content,read_legal_policies,read_orders,read_customers,read_fulfillments,write_orders,read_returns,write_returns`) —
+- [x] Least-privilege scopes declared (`read_products,read_content,read_legal_policies,read_orders,read_customers,read_fulfillments,write_orders`) —
   `read_legal_policies` = the store policies the assistant is trained on (`test/appConfig.test.ts` pins the training query to the scopes)
 - [x] Mutation/scope names verified vs 2026-07: refunds `write_orders`/`refundCreate`,
-  returns `write_returns`/`returnCreate`, `orderCancel`/`orderUpdate`, `appUsageRecordCreate`
+  `orderCancel`/`orderUpdate`, `appUsageRecordCreate` (no returns scope since src#2631)
 - [ ] 🔒 `read_all_orders` (>60-day orders) — needs Shopify approval; request at review
 
 ## Billing

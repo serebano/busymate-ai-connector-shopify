@@ -10,10 +10,14 @@ describe("connector tool registry gates", () => {
     }
   });
 
-  it("the highest-risk writes (refund/return/cancel) are adminOnly", () => {
-    for (const name of ["create_refund", "start_return", "cancel_order"]) {
+  it("the highest-risk writes (refund/cancel) are adminOnly", () => {
+    for (const name of ["create_refund", "cancel_order"]) {
       expect(toolByName(name)?.adminOnly, `${name} must be adminOnly`).toBe(true);
     }
+  });
+
+  it("#2631 no returns tool (the app requests no returns scope)", () => {
+    expect(toolByName("start_return")).toBeUndefined();
   });
 
   it("public tools never write and never confirm", () => {

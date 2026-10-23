@@ -91,7 +91,7 @@ twice), [`2026-10-02-webhooks-proof.md`](2026-10-02-webhooks-proof.md) (webhook 
 | Requirement | Status | Evidence |
 |---|---|---|
 | 3.1.1 Valid TLS/SSL certificate | **pass (2026-10-02 chain check in `docs/review/2026-10-02-live-evidence.md`)** | `https://store.busymate.ai` and `https://busymate.ai` (Let's Encrypt via nginx). Live: `curl -sI https://store.busymate.ai/api/bmai/status` shows a valid chain on submission day |
-| 3.2.1 `read_all_orders` only if necessary | n/a | not requested (`shopify.app.toml` scopes: `read_products,read_content,read_legal_policies,read_orders,read_customers,read_fulfillments,write_orders,read_returns,write_returns`) |
+| 3.2.1 `read_all_orders` only if necessary | n/a | not requested (`shopify.app.toml` scopes: `read_products,read_content,read_legal_policies,read_orders,read_customers,read_fulfillments,write_orders`) |
 | 3.2.2 `write_payment_mandate` only if necessary | n/a | not requested |
 | 3.2.3 `write_checkout_extensions_apis` only if necessary | n/a | not requested |
 | 3.2.4 `read_advanced_dom_pixel_events` only if necessary | n/a | not requested |

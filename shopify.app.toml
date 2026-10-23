@@ -20,7 +20,7 @@ embedded = true
 # requested separately at review time, not here.
 # read_legal_policies: the assistant is trained on the store's policies
 # (Shop.shopPolicies — app/lib/kbFetch.ts); read_content covers pages.
-scopes = "read_products,read_content,read_legal_policies,read_orders,read_customers,read_fulfillments,write_orders,read_returns,write_returns"
+scopes = "read_products,read_content,read_legal_policies,read_orders,read_customers,read_fulfillments,write_orders"
 
 [auth]
 redirect_urls = [

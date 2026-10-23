@@ -91,3 +91,21 @@ describe("currentAppInstallation.activeSubscriptions extraction (legacy fallback
     });
   });
 });
+
+describe("#2631 platformPlanOf — the plan the platform records (Powered-by link)", () => {
+  it("active paid plans (a trial is ACTIVE) report that plan", async () => {
+    const { platformPlanOf } = await import("../app/lib/billingSync");
+    expect(platformPlanOf({ plan: "scale", status: "active" })).toBe("scale");
+    expect(platformPlanOf({ plan: "Starter", status: "active" })).toBe("starter");
+    expect(platformPlanOf({ plan: "growth", status: "active" })).toBe("growth");
+  });
+  it("no row, free, cancelled, frozen or inactive report free; pending reports nothing", async () => {
+    const { platformPlanOf } = await import("../app/lib/billingSync");
+    expect(platformPlanOf(null)).toBe("free");
+    expect(platformPlanOf({ plan: "free", status: "active" })).toBe("free");
+    expect(platformPlanOf({ plan: "scale", status: "cancelled" })).toBe("free");
+    expect(platformPlanOf({ plan: "scale", status: "frozen" })).toBe("free");
+    expect(platformPlanOf({ plan: "starter", status: "inactive" })).toBe("free");
+    expect(platformPlanOf({ plan: "scale", status: "pending" })).toBeNull();
+  });
+});

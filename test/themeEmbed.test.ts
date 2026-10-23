@@ -221,3 +221,12 @@ describe("#2618 follow-up — password-protected storefront (Home step 2)", () =
     expect(embedSetupPresentation("password", true).heading).toMatch(/confirmed by you/);
   });
 });
+
+describe("#2624 reviewer W3 — training summary plurals", () => {
+  it("one policy, one page, one product read singular; others plural", async () => {
+    const { trainingSummary } = await import("../app/lib/themeEmbed");
+    expect(trainingSummary({ products: 15, policies: 1, pages: 2 }, { products: 17, policies: 1, pages: 2 })).toBe("15 of 17 products, 1 policy, 2 pages");
+    expect(trainingSummary({ products: 1, policies: 0, pages: 1 })).toBe("1 product, 0 policies, 1 page");
+    expect(trainingSummary({ products: 1, policies: 3, pages: 0 }, { products: 2 })).toBe("1 of 2 products, 3 policies, 0 pages");
+  });
+});

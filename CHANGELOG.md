@@ -4,6 +4,20 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-10-23 — owner changes before the review (busymate-ai-src#2631, #2624 reviewer W3/W12/W13)
+
+- **No returns access:** `read_returns`/`write_returns` dropped from `[access_scopes]` (install consent shows no
+  returns); the `start_return` tool and its `returnCreate` path are removed. The delegated, confirm-gated writes
+  registered with the platform are exactly the proven ones: `cancel_order`, `update_shipping_address`
+  (refunds, discounts and draft orders are no longer offered to the assistant).
+- **Powered by:** the shop's App Store plan is sent with every `provision_partner_tenant` (install, reinstall,
+  Reconnect) and whenever the billing sync sees the shoppers-visible plan change; the platform shows the
+  Free-plan link only on Free.
+- **Store connection:** a re-publish (`pending` runtime after Re-train/Reconnect) shows Connected with an
+  "applying your latest changes" note and the page re-reads by itself; a failed read shows "Checking".
+  Copy: no "start a return … or refund".
+- **Plurals:** "1 policy", "1 page", "1 product".
+
 ## 2026-10-04 — 0.1.17: store knowledge never goes stale (#52)
 
 Re-training only happened on install, `products/*`, a scope grant or a manual Re-train, so 11 of 13

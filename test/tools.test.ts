@@ -120,7 +120,6 @@ const CASES: Record<string, Record<string, unknown>> = {
   apply_discount: { order_number: "1001", code: "SAVE10" },
   create_draft_order: { line_items: [{ variant_id: "9", quantity: 1 }] },
   cancel_order: { order_number: "1001", reason: "customer" },
-  start_return: { order_number: "1001", line_items: [] },
   create_refund: { order_number: "1001", amount_cents: 1000, reason: "damaged" },
 };
 
@@ -174,13 +173,6 @@ describe("connector tools — real payloads, no TODO stubs", () => {
     const sc = r.structuredContent as { refundId: string; amount: string };
     expect(sc.refundId).toBe("gid://shopify/Refund/3");
     expect(text(r)).toMatch(/refunded/i);
-  });
-
-  it("start_return builds returnable line items and opens a returnCreate", async () => {
-    const r = await run("start_return", { order_number: "1001" });
-    const sc = r.structuredContent as { returnId: string; status: string };
-    expect(sc.returnId).toBe("gid://shopify/Return/4");
-    expect(sc.status).toBe("OPEN");
   });
 
   it("apply_discount validates the code and returns a checkout apply link", async () => {
