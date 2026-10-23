@@ -11,6 +11,11 @@ vi.mock("../app/lib/retrain.server", () => ({ readTrainingState: () => ({ traine
 vi.mock("../app/lib/themeEmbed", async importOriginal => ({
   ...await importOriginal<typeof import("../app/lib/themeEmbed")>(), detectStorefrontEmbed: async () => "on",
 }));
+// The Reconnect settle wait (#2618) runs without real sleeps here.
+vi.mock("../app/lib/runtimeReadiness", async importOriginal => {
+  const real = await importOriginal<typeof import("../app/lib/runtimeReadiness")>();
+  return { ...real, awaitRuntimeSettled: (read: () => Promise<import("../app/lib/runtimeReadiness").RuntimeReadiness>) => real.awaitRuntimeSettled(read, { sleep: async () => {}, timeoutMs: 4000 }) };
+});
 import { loader, action } from "../app/routes/app._index";
 import { loader as connectorLoader, action as connectorAction } from "../app/routes/app.connector";
 
@@ -31,5 +36,8 @@ it.each(["ready", "pending", "error", "denied"])("admin surfaces report actual %
   expect(home.steps.find(s => s.id === "provisioned")?.done).toBe(state === "ready");
   expect((await action(args() as ActionFunctionArgs)).ok).toBe(state === "ready");
   expect((await connectorLoader(args() as LoaderFunctionArgs)).runtime?.state).toBe(state === "denied" ? "unverified" : state);
-  expect((await connectorAction(args() as ActionFunctionArgs)).ok).toBe(state === "ready");
+  // #2618: Reconnect reports a still-activating runtime (pending after a fresh publish) as set up, not as a failure.
+  const reconnect = await connectorAction(args() as ActionFunctionArgs);
+  expect(reconnect.ok).toBe(state === "ready" || state === "pending");
+  expect("activating" in reconnect && reconnect.activating).toBe(state === "pending");
 });

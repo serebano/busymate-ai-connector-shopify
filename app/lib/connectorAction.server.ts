@@ -22,6 +22,8 @@ export interface ReprovisionResult {
   ok: boolean;
   state: string;
   error: string | null;
+  /** Set up fine; the runtime is still taking the new revision (a normal few-second hand-over). */
+  activating?: boolean;
 }
 
 export interface RetrainResultShape {

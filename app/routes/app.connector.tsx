@@ -17,7 +17,7 @@ import { TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { callMcpTool, onAppInstalled } from "../bmai.server";
-import { readRuntimeReadiness } from "../lib/runtimeReadiness";
+import { awaitRuntimeSettled, readRuntimeReadiness } from "../lib/runtimeReadiness";
 import { connectorEndpoint } from "../lib/connector";
 import { readTrainingState, runRetrain } from "../lib/retrain.server";
 import { merchantError } from "../lib/merchantError";
@@ -66,12 +66,17 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       // retryable here rather than stuck.
       await onAppInstalled(session);
       const tenant = await prisma.shopTenant.findUnique({ where: { shop: session.shop } });
-      const runtime = tenant?.provisionState === "published" && tenant.bmaiTenantId
-        ? await readRuntimeReadiness(tenant.bmaiTenantId, callMcpTool) : null;
-      const ok = runtime?.state === "ready" && !tenant?.provisionWarning;
-      const raw = tenant?.provisionError ?? tenant?.provisionWarning ?? (runtime?.state !== "ready" ? runtime?.detail : null) ?? null;
+      const tenantId = tenant?.bmaiTenantId;
+      // The fresh publish leaves the runtime `pending` for a few seconds: wait for it
+      // (bounded) instead of reporting the normal hand-over as a failure (#2618 walk).
+      const runtime = tenant?.provisionState === "published" && tenantId
+        ? await awaitRuntimeSettled(() => readRuntimeReadiness(tenantId, callMcpTool)) : null;
+      const settled = runtime?.state === "ready" || runtime?.state === "pending";
+      const ok = settled && !tenant?.provisionWarning && !tenant?.provisionError;
+      const raw = tenant?.provisionError ?? tenant?.provisionWarning ?? (!settled ? runtime?.detail : null) ?? null;
       return {
         ok,
+        activating: ok && runtime?.state === "pending",
         state: runtime?.state ?? tenant?.provisionState ?? "pending",
         // #2618 — plain language in the toast; the raw cause stays in "Technical details" + the log.
         error: ok ? null : merchantError("reprovision", session.shop, raw),
@@ -106,7 +111,13 @@ export default function ConnectorPage() {
       const d = fetcher.data;
       if (d.intent === "retrain")
         shopify.toast.show(d.ok ? `Trained on ${"summary" in d && d.summary ? d.summary : "your store"}` : (d.error ?? "Training didn't finish. Please try again."), { isError: !d.ok });
-      if (d.intent === "reprovision") shopify.toast.show(d.ok ? "Store connection is live" : (d.error ?? "Your store connection isn't live yet. Please try again."), { isError: !d.ok });
+      if (d.intent === "reprovision")
+        shopify.toast.show(
+          d.ok
+            ? ("activating" in d && d.activating ? "Store connection is set up. Your assistant goes live in a moment." : "Store connection is live")
+            : (d.error ?? "Your store connection isn't live yet. Please try again."),
+          { isError: !d.ok },
+        );
       // The REQUEST failed (network blip / app restart) — the server may still have
       // finished the work, so refresh the loader to show the real state (#retrain-500).
       if (isTransportFailure(d)) revalidate();
