@@ -197,3 +197,13 @@ describe("connector tools — real payloads, no TODO stubs", () => {
     expect(sc.invoiceUrl).toContain("/invoices/2");
   });
 });
+
+describe("#2624 — update_shipping_address accepts a real address", () => {
+  it("the address schema names every field the handler copies (was an empty closed object)", async () => {
+    const { toolByName } = await import("../app/mcp/tools/registry");
+    const schema = toolByName("update_shipping_address")!.inputSchema as { properties: { address: { properties: Record<string, unknown>; required: string[] } } };
+    const props = Object.keys(schema.properties.address.properties);
+    for (const k of ["address1", "address2", "city", "country", "countryCode", "province", "provinceCode", "zip"]) expect(props).toContain(k);
+    expect(schema.properties.address.required).toEqual(["address1", "city", "zip"]);
+  });
+});

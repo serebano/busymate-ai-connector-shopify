@@ -16,7 +16,7 @@ assistant on a merchant's storefront. It is written to satisfy the EU/UK **GDPR*
 the **California CCPA/CPRA**.
 
 The App is the integration layer between a Shopify store and its **Busymate AI**
-white-label assistant ("your mate"). It reaches the Busymate AI platform only through
+white-label assistant (shown to shoppers under the store's name). It reaches the Busymate AI platform only through
 official APIs and holds the minimum data needed to run the integration.
 
 ## 1. Who is responsible (controller / processor)
@@ -43,7 +43,7 @@ Contact: **hi@busymate.ai**.
 | Data | Purpose | Legal basis |
 |---|---|---|
 | Signed-in customer identifier (from Shopify) | Scope order lookups to the shopper's **own** orders | Controller (merchant): contract/legitimate interest |
-| Order/fulfilment details requested in a chat | Answer "where is my order", process a return/refund/cancellation **you confirm** | As above |
+| Order/fulfilment details requested in a chat | Answer "where is my order"; cancel an unfulfilled order or change its shipping address when **you confirm** | As above |
 | Conversation content | Provide the assistant; improve grounding for that store | As above |
 
 We do **not** sell personal information, and we do **not** use shopper data for
@@ -69,8 +69,8 @@ A current sub-processor list is available on request.
   token, staff email) are **encrypted at rest with AES-256-GCM** at the application
   layer, in addition to provider disk encryption.
 - Access to the assistant's order actions is gated: a shopper is verified by a signed,
-  short-lived identity token and can only see and act on their **own** orders; refunds
-  are capped and higher-risk actions require confirmation.
+  short-lived identity token and can only see and act on their **own** orders, and every order change
+  requires their explicit confirmation.
 - Secrets are held only in the host's protected environment and are never logged.
 
 ## 5. Retention

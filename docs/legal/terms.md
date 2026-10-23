@@ -23,11 +23,11 @@ Contact for anything in these Terms: **hi@busymate.ai**.
 
 ### 1. The service
 
-The App adds **your mate**, an AI support assistant, to your Shopify storefront. Your mate answers
+The App adds your store's own AI support assistant to your Shopify storefront. It answers
 shopper questions from your own products, pages and policies, looks up a signed-in
-shopper's own orders, and — only with the shopper's confirmation and inside the limits
-you set — can update a shipping address, start a return, cancel an unfulfilled order or
-issue a refund. The App is an integration between Shopify and the Busymate AI platform;
+shopper's own orders, and — only with the shopper's confirmation — can cancel an
+unfulfilled order (refunded by Shopify) or change the shipping address of an order that has
+not shipped. The App is an integration between Shopify and the Busymate AI platform;
 it does not replace your own customer service.
 
 ### 2. Your account and responsibilities
