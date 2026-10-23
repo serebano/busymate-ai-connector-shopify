@@ -78,6 +78,10 @@ model ShopTenant {
   /// backstop and from the freshness health check.
   inactiveAt      DateTime? @db.Timestamptz
   inactiveReason  String?
+  /// The merchant confirmed the app embed is switched on (#2618 follow-up). Only
+  /// used while the storefront is password-protected (we cannot see it); cleared
+  /// when a public storefront check finds the embed off.
+  embedConfirmedAt DateTime? @db.Timestamptz
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

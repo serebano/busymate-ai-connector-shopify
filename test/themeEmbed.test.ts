@@ -50,8 +50,8 @@ describe("detectStorefrontEmbed (no read_themes scope — reads the public store
   it("reports 'off' on a public storefront that does not load it", async () => {
     expect(await detectStorefrontEmbed("acme.myshopify.com", html("<html><body>shop</body></html>"))).toBe("off");
   });
-  it("reports 'unknown' (never a false 'off') behind a password page or a non-200", async () => {
-    expect(await detectStorefrontEmbed("acme.myshopify.com", html('<form action="/password"></form>'))).toBe("unknown");
+  it("reports 'password' behind a password page and 'unknown' on a non-200 (never a false 'off')", async () => {
+    expect(await detectStorefrontEmbed("acme.myshopify.com", html('<form action="/password"></form>'))).toBe("password");
     expect(await detectStorefrontEmbed("acme.myshopify.com", html("", 503))).toBe("unknown");
     expect(await detectStorefrontEmbed("acme.myshopify.com", async () => { throw new Error("net"); })).toBe("unknown");
   });
@@ -196,5 +196,28 @@ describe("detectStorefrontEmbed matches the asset + this store's slug, never a C
     const page = `<html><p>data-slug="shop-acme"</p><script src="https://cdn.shopify.com/extensions/u/v/assets/assistant.js"></script></html>`;
     expect(storefrontLoadsOurEmbed(page, "shop-acme")).toBe(false);
     expect(storefrontLoadsOurEmbed(page, "")).toBe(false);
+  });
+});
+
+describe("#2618 follow-up — password-protected storefront (Home step 2)", () => {
+  const base = { provisionState: "published", connectorReady: true, trainedAt: "2026-09-02T00:00:00Z", trainError: null, planId: "free", hasSubscription: false };
+  it("is To do with a clear action until the merchant confirms, then Done", () => {
+    const todo = buildSetupChecklist({ ...base, embed: "password" }).find((s) => s.id === "embed")!;
+    expect(todo.done).toBe(false);
+    expect(todo.detail).toMatch(/password-protected/);
+    expect(todo.detail).toMatch(/It's switched on/);
+    const done = buildSetupChecklist({ ...base, embed: "password", embedConfirmed: true }).find((s) => s.id === "embed")!;
+    expect(done.done).toBe(true);
+    expect(done.detail).toMatch(/You confirmed it's on/);
+  });
+  it("a confirmation never overrides a public storefront that shows the embed OFF", () => {
+    const off = buildSetupChecklist({ ...base, embed: "off", embedConfirmed: true }).find((s) => s.id === "embed")!;
+    expect(off.done).toBe(false);
+  });
+  it("the Home card explains the password case and offers App embeds", () => {
+    const p = embedSetupPresentation("password");
+    expect(p.heading).toBe("Your store is password-protected");
+    expect(p.button).toBe("Open App embeds");
+    expect(embedSetupPresentation("password", true).heading).toMatch(/confirmed by you/);
   });
 });

@@ -179,6 +179,12 @@ function liveProvisionDeps(): ProvisionDeps {
     // embed-origin allowlist, so a shopper on a custom domain is never refused.
     // Soft: a failed read keeps the previously stored domains.
     storefrontHosts: async (shop) => fetchStorefrontHosts(await adminForShop(shop)),
+    // The store's name for a NEW tenant's default branding ("<Store name> AI").
+    shopName: async (shop) => {
+      const data = (await (await adminForShop(shop)).graphql(`#graphql
+        query ShopName { shop { name } }`)) as { shop?: { name?: string | null } | null } | null;
+      return data?.shop?.name ?? null;
+    },
     // Register this host's launch-JWT issuer as the tenant's visitor identity
     // provider (#2132 FAIL A) — only when the signing key exists (== /api/bmai/status
     // launchIdentity), so a provider is never registered for tokens we cannot mint.

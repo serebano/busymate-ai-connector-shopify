@@ -25,7 +25,7 @@
  * safe.
  *
  */
-import { DEFAULT_ASSISTANT_NAME } from "./assistantName";
+import { brandedAssistantName, displayNameFromShop } from "./assistantName";
 import { shopToSlug } from "./tenantSlug";
 import { proofArgs, type PartnerProof } from "./partnerProof";
 import { brandingArgs, identityProviderArgs, publishArgs, type IdentityProviderRegistration } from "./mgmtArgs";
@@ -145,6 +145,13 @@ export interface ProvisionDeps {
    * no shop session) and SOFT: a failure keeps the previously stored domains.
    */
   storefrontHosts?: (shop: string) => Promise<string[]>;
+  /**
+   * The store's name from the Admin API (`shop { name }`), used for the NEW
+   * tenant's default branding so shoppers meet "<Store name> AI", never the raw
+   * myshopify domain (busymate-ai-src#2618 follow-up). Optional + SOFT: a failure
+   * falls back to the domain's handle.
+   */
+  shopName?: (shop: string) => Promise<string | null>;
 }
 
 export interface TrainingSummary {
@@ -266,7 +273,18 @@ export async function runProvisionLifecycle(
   //    below re-reads the tenant row, so an existing tenant keeps its branding.
   const isNewTenant = provisioned.data?.created === true || (!existing?.bmaiTenantId && provisioned.data?.reactivated !== true);
   if (isNewTenant) {
-    await soft("set_tenant_branding", brandingArgs(proof, tenantId, { productName: shop, assistantName: DEFAULT_ASSISTANT_NAME }));
+    let storeName = displayNameFromShop(shop);
+    if (deps.shopName) {
+      try {
+        storeName = (await deps.shopName(shop))?.trim() || storeName;
+      } catch (err) {
+        warnings.push(`shop name: ${(err instanceof Error ? err.message : String(err)).slice(0, 200)}`);
+      }
+    }
+    // The platform shows a store's assistant as "<Store name> AI" (the persona
+    // "your mate" is the platform's own) — seed exactly that, so Settings and the
+    // chat agree from the first install.
+    await soft("set_tenant_branding", brandingArgs(proof, tenantId, { productName: storeName, assistantName: brandedAssistantName(storeName) }));
   }
 
   // 3) Storefront embed-origin allowlist (proof path — re-resolves tenant from shop).

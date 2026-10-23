@@ -228,7 +228,7 @@ export default function BillingPage() {
                 </Text>
                 <Text as="p" tone="subdued">
                   {data.usage.cycleResolutions === null
-                    ? `Resolution usage is currently unavailable. Your plan includes ${data.usage.included} resolutions per billing cycle`
+                    ? `Usage shows here after the first hourly update. Your plan includes ${data.usage.included} resolutions per billing cycle`
                     : `This billing cycle: ${data.usage.cycleResolutions} of ${data.usage.included} included resolutions used`}
                   {data.usage.reportedUnits !== null ? ` · ${data.usage.reportedUnits} extra resolutions billed by Shopify` : ""}
                   {data.usage.capped ? " · monthly cap reached — no further overage this month" : ""}.
