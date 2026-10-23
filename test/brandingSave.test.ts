@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { saveBrandingAndRepublish, validateBranding } from "../app/lib/brandingSave";
+import { merchantMessage } from "../app/lib/merchantError";
 
 // #2132 FAIL C — Assistant settings → rename → the storefront widget still
 // greeted "Hi, I'm bro" after a full reload: `set_tenant_branding` updates the
@@ -44,8 +45,10 @@ describe("assistant settings save (#2132 C)", () => {
     const out = await saveBrandingAndRepublish(shop, "t_1", names, d);
     expect(out.ok).toBe(false);
     expect(out.published).toBe(false);
-    expect(out.error).toMatch(/storefront assistant could not be updated/);
-    expect(out.error).toMatch(/preflight failed/);
+    expect(out.error).toMatch(/storefront assistant couldn't be updated/);
+    // #2618 — the raw publish cause is logged, never shown to the merchant.
+    expect(out.error).not.toMatch(/preflight failed/);
+    expect(merchantMessage("branding", out.error)).toBe(out.error);
   });
 
   it("a refused set_tenant_branding never publishes (nothing to publish)", async () => {

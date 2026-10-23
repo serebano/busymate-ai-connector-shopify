@@ -64,9 +64,11 @@ export async function saveBrandingAndRepublish(
 
   const pub = await deps.republish(shop);
   if (!pub.ok) {
+    // The raw publish cause is logged, never shown (#2618: no machinery in a merchant toast).
+    console.warn(`[admin] branding saved but republish failed for ${shop}: ${pub.error ?? "publish failed"}`);
     return {
       ok: false,
-      error: `Saved, but the storefront assistant could not be updated (${pub.error ?? "publish failed"}). Shoppers still see the previous names — retry, or use Store connection → Re-train.`,
+      error: "Your names are saved, but the storefront assistant couldn't be updated yet, so shoppers still see the previous names. Please Save again in a minute, or use Store connection → Re-train.",
       published: false,
       revision: null,
     };
