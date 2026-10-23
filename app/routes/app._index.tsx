@@ -316,7 +316,7 @@ export default function Index() {
                   {data.embed === "password" && !data.embedConfirmed ? (
                     <retry.Form method="post">
                       <input type="hidden" name="intent" value="confirm-embed" />
-                      <Button submit loading={retry.state !== "idle" && retry.formData?.get("intent") === "confirm-embed"}>
+                      <Button submit disabled={!data.embedReady} loading={retry.state !== "idle" && retry.formData?.get("intent") === "confirm-embed"}>
                         It&apos;s switched on
                       </Button>
                     </retry.Form>

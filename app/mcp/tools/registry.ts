@@ -101,7 +101,30 @@ export const TOOLS: ToolDef[] = [
     confirm: true,
     adminOnly: false,
     inputSchema: obj(
-      { order_number: str("Order name/number"), address: obj({}) },
+      {
+        order_number: str("Order name/number"),
+        // #2624 walk — was `obj({})` with additionalProperties:false, so EVERY address the
+        // model sent was rejected by input validation ("tool rejected the input twice") and
+        // a signed-in shopper could never change an address. Spell out the Shopify
+        // MailingAddressInput fields the handler copies (returns.ts ADDRESS_FIELDS).
+        address: obj(
+          {
+            address1: str("Street address"),
+            address2: str("Apartment, suite, etc."),
+            city: str("City"),
+            company: str("Company"),
+            country: str("Country name"),
+            countryCode: str("ISO 3166-1 alpha-2 country code, e.g. US"),
+            firstName: str("Recipient first name"),
+            lastName: str("Recipient last name"),
+            phone: str("Phone"),
+            province: str("State/province name"),
+            provinceCode: str("State/province code, e.g. IL"),
+            zip: str("Postal/ZIP code"),
+          },
+          ["address1", "city", "zip"],
+        ),
+      },
       ["order_number", "address"],
     ),
     handler: updateShippingAddress,

@@ -1,18 +1,18 @@
 <!-- Paste source for the private Partner Dashboard "Testing instructions" field (2800 chars max).
-     Before saving, verify the current reviewer journey and replace the demo access line with
-     the verified storefront URL/password in the PRIVATE form, or clear the optional Demo store URL.
-     Never commit credentials here. Verify the screencast link opens without sign-in. -->
+     Every sentence is true on the live app and was walked on a fresh dev store (busymate-ai-src#2624,
+     .coordination/audits/shopify-resubmit-2026-11-22.md). Never commit credentials here. -->
 ACCESS
-No separate Busymate AI account, password, SSO or two-factor login is required to use the app from Shopify Admin. Guests can ask product/policy questions; order tests use the store's native customer sign-in. Support: hi@busymate.ai.
+No Busymate AI account or password is needed; everything runs inside Shopify Admin. Guests can ask product and policy questions; order questions use the store's own customer sign-in. Support: hi@busymate.ai.
 
-REVIEW FLOW
-Use a development store with a test product, policy, and a test customer/order you control.
+REVIEW FLOW (development store with products, one policy, and a test customer with a paid order)
+1. Install. Home opens and, within about 10 seconds and without a reload, shows "Assistant provisioned: Done" and "Trained on your store: Done".
+2. Billing > Choose a plan opens Shopify's pricing page. Approve any plan (a dev store gets a $0 test charge); Billing then shows that plan. Cancel on Shopify's approval page keeps the current plan. Refresh status re-reads the plan from Shopify.
+3. Assistant settings: change Assistant name and Store display name, then Save. A toast confirms "saved and published"; a reload shows the saved values. If the assistant name is "your mate" (Busymate AI's own assistant), the app saves "<Store display name> AI" and says so.
+4. Store connection: "Re-train on my store" shows "Trained on ..." and "Reconnect" shows "Store connection is live".
+5. Home > Open App embeds: switch on "Busymate AI assistant" and Save. On a password-protected store Home cannot check the storefront; choose "It's switched on" and the step shows Done.
+6. In the theme editor preview and in the Online Store (storefront password if asked), open "Ask us" and ask about a product. The assistant uses the name from step 3 and answers from your catalog.
+7. Sign in as the test customer (storefront account icon, email code). Ask "Where is my latest order?"; it answers with that customer's own order and status. {{ORDER_CHANGE_STEP}}
+8. Ask "I'd like to talk to a person" and press Send request. In the app open Conversations > Open conversation: "Claim and pause assistant", type a reply and "Send reply" (it appears in the shopper's chat), then "Resolve and resume assistant"; the assistant answers the next message. "Read assistant chat" on Conversations opens any transcript inside Shopify.
+9. Uninstall, then reinstall: setup completes by itself; saved names and the theme embed remain.
 
-1. Install and open Busymate AI. Wait for "Assistant provisioned" to show Done and status Live. Home shows training counts and checks progress automatically; use Retry setup if setup failed.
-2. Click "Turn on the storefront assistant". In the Theme Editor, enable "Busymate AI assistant" and Save. Confirm the toggle is on and Save disabled. If already on with Save disabled, it is saved. Manual path: Online Store > Themes > Customize > App embeds.
-3. Open "Ask us" in the editor preview. Ask about the test product/policy and compare with store content. Repeat in the Online Store in a signed-out browser, entering the storefront password if required.
-4. Close the admin, editor and storefront tabs, then reopen them. Confirm the embed is still on and saved, the launcher appears in editor and storefront, and a new chat answers.
-5. Billing > Choose a plan opens Shopify's hosted pricing. On the development store select Free, Starter, Growth, Scale, then Free. Before each approval, confirm Shopify shows a test/$0 subscription. After each return, verify the selected plan in Billing (Refresh status if needed) and Home remains Live. Also select a different plan and cancel/decline before approval; confirm the previous plan remains and the app opens normally.
-6. In Assistant settings, change the assistant name and Save. Fully reload the storefront and start a new chat. In Store connection, select Re-train on my store and wait for completion. Fully reload both the editor and storefront before choosing New chat, then ask about the current product content. New chat alone may retain the existing support session's knowledge.
-7. Sign in as your controlled test customer through the storefront's native customer login. Ask for their own order status/tracking and compare with the test order. Requests to change an order require confirmation; cases needing staff go to your team. Ask for a person. In the app, open Conversations > Open conversation on the matching handoff. Read its history, Claim and pause assistant, send a reply, and confirm it appears in the storefront chat. Resolve and resume assistant; confirm the assistant answers the customer's next message. Recent conversation transcripts also open inside Shopify.
-8. Uninstall and reinstall on the development store; repeat steps 1-4. Confirm setup recovers and both the editor and anonymous storefront can open and use the assistant.
+The private plan "shopify-test" is Shopify's built-in $0 test plan; no store has access to it.

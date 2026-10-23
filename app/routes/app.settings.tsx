@@ -186,8 +186,9 @@ export default function SettingsPage() {
                 What the assistant can do
               </Text>
               <Text as="p" tone="subdued">
-                Everyone: product and policy questions. Signed-in shoppers: their own order status and tracking. With
-                confirmation and a cap: address changes, returns, cancellations and refunds.
+                Everyone: product and policy questions, and asking for a person. Signed-in shoppers: their own order
+                status and tracking; with their confirmation, cancelling an unfulfilled order or changing its shipping
+                address. Anything else goes to your team in Conversations.
               </Text>
             </BlockStack>
           </Card>

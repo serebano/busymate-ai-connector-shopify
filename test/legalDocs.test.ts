@@ -84,3 +84,17 @@ describe("render-legal (markdown → the host HTML template)", () => {
     expect(html).toContain("<p>1 &lt; 2 &amp; 3 &gt; 2</p>");
   });
 });
+
+describe("#2624 — the app serves the listing's legal pages (no stale edge copy)", () => {
+  it("renders shopify-faq/privacy/terms from docs/legal and 404s anything else", async () => {
+    const { legalPage } = await import("../app/routes/legal.$doc");
+    const faq = legalPage("shopify-faq");
+    expect(faq).toContain("Busymate AI for Shopify — FAQ");
+    expect(faq).toContain("hi@busymate.ai");
+    expect(faq).not.toMatch(/\bbro\b/);
+    expect(faq).not.toContain("{{");
+    expect(legalPage("shopify-privacy")).toContain("Privacy");
+    expect(legalPage("shopify-terms")).toContain("Terms");
+    expect(legalPage("../etc/passwd")).toBeNull();
+  });
+});
