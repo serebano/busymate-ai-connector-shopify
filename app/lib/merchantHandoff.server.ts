@@ -59,9 +59,41 @@ async function ownedHandoff(shop: string, requestId: string, deps: MerchantHando
   return { tenantId, request, detail };
 }
 
+const COMPACT_AUTHOR: Record<string, string> = { customer: "Customer", assistant: "Assistant", agent: "Your team" };
+/** Read the newest 200 messages (the tool's maximum page) of the compact view. */
+const TRANSCRIPT_LIMIT = 200;
+const transcriptArgs = (tenantId: string, sessionId: string) => ({ tenant_id: tenantId, session_id: sessionId, limit: TRANSCRIPT_LIMIT });
+
+/**
+ * `get_tenant_conversation_transcript` answers with the compact who-said-what
+ * view by default since busymate-ai-src#2674: `{ messages: [{ role, text, at }],
+ * truncated }` (role customer | assistant | agent | system, text already masked,
+ * no tool payloads). The raw `events` replay is only sent for `view: "events"`.
+ * Both shapes are read so an older or newer host never empties the history.
+ * Returns null when the result carries neither (an unreadable answer).
+ */
+export function transcriptRows(result: Obj, { humanRoles }: { humanRoles: boolean }): HandoffMessage[] | null {
+  if (Array.isArray(result.messages)) {
+    const rows: HandoffMessage[] = [];
+    for (const [index, raw] of result.messages.entries()) {
+      const message = object(raw);
+      const role = String(message.role);
+      const author = COMPACT_AUTHOR[role];
+      // Operator lines are read from the handoff record itself on the handoff page.
+      if (!author || (!humanRoles && role === "agent")) continue;
+      const body = text(message.text);
+      if (!body) continue;
+      rows.push({ id: `ai-${index}`, author, body, at: text(message.at) });
+    }
+    return rows;
+  }
+  if (Array.isArray(result.events)) return handoffHistory(result.events, []);
+  return null;
+}
+
 /** Only shopper-visible text, never tool payloads, reasoning or private notes. */
-export function handoffHistory(events: unknown, messages: unknown): HandoffMessage[] {
-  const rows: HandoffMessage[] = [];
+export function handoffHistory(events: unknown, messages: unknown, aiRows: readonly HandoffMessage[] = []): HandoffMessage[] {
+  const rows: HandoffMessage[] = [...aiRows];
   for (const [index, raw] of (Array.isArray(events) ? events : []).entries()) {
     const event = object(raw);
     if (event.type !== "message.received" && event.type !== "message.completed") continue;
@@ -84,14 +116,15 @@ export async function loadMerchantHandoff(shop: string, requestId: string, deps:
   try {
     const { tenantId, request, detail } = await ownedHandoff(shop, requestId, deps);
     const agentId = text(request.agent_session_id) ?? text(request.session_id) ?? text(request.sessionId);
-    let events: unknown = [];
+    let aiRows: HandoffMessage[] = [];
     let historyWarning: string | null = null;
     if (agentId) {
       try {
-        // Bare, deployed MCP shape; never an arbitrary browser-supplied session.
-        const history = await result(deps.call, "get_tenant_conversation_transcript", { tenant_id: tenantId, session_id: agentId });
-        if (!Array.isArray(history.events)) throw new Error("unreadable history");
-        events = history.events;
+        // The session comes from the owned request, never from the browser.
+        const history = await result(deps.call, "get_tenant_conversation_transcript", transcriptArgs(tenantId, agentId));
+        const rows = transcriptRows(history, { humanRoles: false });
+        if (!rows) throw new Error("unreadable history");
+        aiRows = rows;
         if (history.truncated === true) historyWarning = "Some earlier assistant messages are unavailable. The handoff messages below are still available.";
       } catch {
         historyWarning = "Earlier assistant messages could not be loaded. Refresh to try again; you can still read and answer the handoff below.";
@@ -100,7 +133,7 @@ export async function loadMerchantHandoff(shop: string, requestId: string, deps:
     return { ok: true, handoff: {
       id: requestId, title: text(request.title) ?? "Customer conversation", status: String(request.status),
       summary: text(request.summary) ?? text(request.reason), requestedAt: text(request.requested_at),
-      messages: handoffHistory(events, detail.messages), historyWarning,
+      messages: handoffHistory([], detail.messages, aiRows), historyWarning,
     } };
   } catch (error) {
     return { ok: false, error: error instanceof HandoffError ? error.message : "The conversation could not be loaded. Refresh and try again." };
@@ -116,9 +149,10 @@ export async function loadMerchantConversation(shop: string, sessionId: string, 
     if (!tenantId) throw new HandoffError("Your assistant is still being set up. Return to Home and finish setup.");
     const listed = await result(deps.call, "list_tenant_conversations", { tenant_id: tenantId, query: sessionId, limit: 200 });
     if (!Array.isArray(listed.conversations) || !listed.conversations.some((row) => object(row).session_id === sessionId)) throw new HandoffError("This conversation is unavailable for this store. Return to Conversations and refresh the list.");
-    const history = await result(deps.call, "get_tenant_conversation_transcript", { tenant_id: tenantId, session_id: sessionId });
-    if (!Array.isArray(history.events)) throw new HandoffError("The conversation history could not be loaded. Refresh and try again.");
-    return { ok: true, messages: handoffHistory(history.events, []), truncated: history.truncated === true };
+    const history = await result(deps.call, "get_tenant_conversation_transcript", transcriptArgs(tenantId, sessionId));
+    const messages = transcriptRows(history, { humanRoles: true });
+    if (!messages) throw new HandoffError("The conversation history could not be loaded. Refresh and try again.");
+    return { ok: true, messages, truncated: history.truncated === true };
   } catch (error) {
     return { ok: false, error: error instanceof HandoffError ? error.message : "The conversation could not be loaded. Refresh and try again." };
   }

@@ -17,6 +17,7 @@ import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { listTenantConversations, listTenantInterventionsAll } from "../lib/tenantRead.server";
+import { conversationStatus, handoffStatus } from "../lib/conversationStatus";
 import { LocalTime } from "../components/LocalTime";
 import { AppRouteBoundary } from "../components/AppRouteError";
 
@@ -31,9 +32,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     listTenantConversations(tenant?.bmaiTenantId, 25),
     listTenantInterventionsAll(tenant?.bmaiTenantId),
   ]);
+  // Status is decided once, on the server, so SSR and hydration agree.
+  const now = Date.now();
   return {
     provisioned: Boolean(tenant?.bmaiTenantId),
-    conversations,
+    conversations: { ...conversations, rows: conversations.rows.map((row) => ({ ...row, status: conversationStatus(row, handoffs.rows, now) })) },
     handoffs,
     servingHost: tenant?.slug ? `https://${tenant.slug}.busymate.ai` : null,
   };
@@ -94,7 +97,7 @@ export default function ConversationsPage() {
                       <IndexTable.Row id={h.id} key={h.id} position={i}>
                         <IndexTable.Cell><LocalTime iso={h.requestedAt} /></IndexTable.Cell>
                         <IndexTable.Cell>
-                          <Badge tone="attention">{h.status}</Badge>
+                          <Badge tone={handoffStatus(h.status).tone}>{handoffStatus(h.status).label}</Badge>
                         </IndexTable.Cell>
                         <IndexTable.Cell>{h.reason ?? "—"}</IndexTable.Cell>
                         <IndexTable.Cell>
@@ -116,7 +119,7 @@ export default function ConversationsPage() {
                     <Link url={`/app/handoffs/${encodeURIComponent(handoff.id)}`}>{handoff.reason ?? "Customer conversation"}</Link>
                     <Text as="p" tone="subdued"><LocalTime iso={handoff.requestedAt} /></Text>
                   </BlockStack>
-                  <Badge>{handoff.status}</Badge>
+                  <Badge>{handoffStatus(handoff.status).label}</Badge>
                 </InlineGrid>)}
               </BlockStack>
             </Card> : null}
@@ -149,7 +152,7 @@ export default function ConversationsPage() {
                       <IndexTable.Row id={c.sessionId} key={c.sessionId} position={i}>
                         <IndexTable.Cell><LocalTime iso={c.startedAt} /></IndexTable.Cell>
                         <IndexTable.Cell><LocalTime iso={c.lastActiveAt} /></IndexTable.Cell>
-                        <IndexTable.Cell>{c.live ? <Badge tone="success">Live</Badge> : <Badge>Ended</Badge>}</IndexTable.Cell>
+                        <IndexTable.Cell><Badge tone={c.status.tone}>{c.status.label}</Badge></IndexTable.Cell>
                         <IndexTable.Cell>
                           <Link url={`/app/transcripts/${encodeURIComponent(c.sessionId)}`}>Read assistant chat</Link>
                         </IndexTable.Cell>
