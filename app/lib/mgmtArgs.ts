@@ -38,6 +38,13 @@ export interface PublishOptions {
    * silently ignored — never emit it.
    */
   knowledgeSources?: KnowledgeSource[];
+  /**
+   * busymate-ai-src#2704 (Shopify review S4) — the tenant's PUBLIC hosted chat page
+   * (`shop-<store>.busymate.ai`). `false` while the storefront is password-protected:
+   * the assistant then lives only in the storefront widget's frame. Omitted = the
+   * platform keeps its current behaviour.
+   */
+  hostedWeb?: boolean;
 }
 
 /** `publish_tenant_runtime` — proof-of-shop + confirm, with optional origins/knowledge. */
@@ -52,6 +59,7 @@ export function publishArgs(
     ...(opts.launchOrigins ? { launch_origins: opts.launchOrigins } : {}),
     ...(opts.embedOrigins ? { embed_origins: opts.embedOrigins } : {}),
     ...(opts.knowledgeSources && opts.knowledgeSources.length ? { knowledge_sources: opts.knowledgeSources } : {}),
+    ...(typeof opts.hostedWeb === "boolean" ? { hosted_web: opts.hostedWeb } : {}),
     confirm: true,
   };
 }

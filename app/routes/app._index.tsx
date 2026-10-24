@@ -19,7 +19,8 @@ import { TitleBar } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { shopToSlug } from "../lib/tenantSlug";
-import { callMcpTool, onAppInstalled, repairTenantInBackground } from "../bmai.server";
+import { callMcpTool, onAppInstalled, repairTenantInBackground, storefrontPublicForShop } from "../bmai.server";
+import { hostedWebFor } from "../lib/storefrontPassword";
 import { awaitRuntimeSettled, readRuntimeReadiness } from "../lib/runtimeReadiness";
 import { merchantError } from "../lib/merchantError";
 import { readStorefrontFrameable } from "../lib/embedFrameable";
@@ -75,12 +76,16 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   // #3718 — the third read: can the chat actually be FRAMED on the Online Store
   // and in the Theme Editor right now (the platform's own frame-ancestors answer)?
   const published = provisionState === "published" && Boolean(tenant?.bmaiTenantId);
-  const [themeEmbed, runtime, frameable] = await Promise.all([
+  // busymate-ai-src#2704 — the fourth read: is the storefront public? A
+  // password-protected store has no public assistant page (only the widget).
+  const [themeEmbed, runtime, frameable, storefrontPublic] = await Promise.all([
     readThemeEmbed((q) => admin.graphql(q)),
     published && tenant?.bmaiTenantId
       ? readRuntimeReadiness(tenant.bmaiTenantId, callMcpTool) : Promise.resolve(null),
     published ? readStorefrontFrameable({ platformOrigin: PLATFORM_ORIGIN, shop, slug }) : Promise.resolve(null),
+    storefrontPublicForShop(shop).catch(() => null),
   ]);
+  const publicPage = hostedWebFor(storefrontPublic);
   const live = runtime?.state === "ready";
   // src#2624 reviewer F25 — the theme is the truth (read_themes); the public
   // storefront check is only the fallback. No stored confirmation any more.
@@ -90,7 +95,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   // repaired in the background right here, gated per shop; Home shows it as
   // activating and re-checks until the chat can be framed.
   if (published && tenant?.bmaiTenantId) {
-    const repair = publishedTenantRepair({ readiness: runtime, tenantUnreachableAt: tenant.tenantUnreachableAt });
+    const repair = publishedTenantRepair({ readiness: runtime, tenantUnreachableAt: tenant.tenantUnreachableAt, wantedHostedWeb: storefrontPublic === null ? null : publicPage });
     if (repair) repairTenantInBackground(shop, repair);
   }
   // Offer "Turn on the storefront assistant" once the chat will open: the
@@ -130,6 +135,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     shop,
     planSelected: access.planSelected,
     servingHost: `${slug}.busymate.ai`,
+    publicPage,
     provisionState: provisionState === "published" ? (live ? "published" : `runtime-${runtime?.state ?? "unverified"}`) : provisionState,
     provisionError: tenant?.provisionError ?? null,
     provisionWarning: tenant?.provisionWarning ?? null,
@@ -345,13 +351,20 @@ export default function Index() {
                 <Text as="h3" variant="headingSm">
                   Your assistant
                 </Text>
-                <Text as="p" tone="subdued">
-                  {data.live ? "Serving at " : "Will serve at "}
-                  <Link url={`https://${data.servingHost}`} target="_blank">
-                    {data.servingHost}
-                  </Link>
-                </Text>
-                {data.live ? (
+                {data.publicPage ? (
+                  <Text as="p" tone="subdued">
+                    {data.live ? "Serving at " : "Will serve at "}
+                    <Link url={`https://${data.servingHost}`} target="_blank">
+                      {data.servingHost}
+                    </Link>
+                  </Text>
+                ) : (
+                  <Text as="p" tone="subdued">
+                    Your store is password-protected, so your assistant has no public page. Shoppers who enter your
+                    storefront password chat with it on your store. Its page opens when you remove the password.
+                  </Text>
+                )}
+                {data.live && data.publicPage ? (
                   <Button url={`https://${data.servingHost}`} target="_blank">
                     Open assistant
                   </Button>

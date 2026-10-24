@@ -19,7 +19,8 @@
  * Exits 1 if any applied re-provision failed.
  */
 import prisma from "../app/db.server";
-import { callMcpTool, reprovisionShop } from "../app/bmai.server";
+import { callMcpTool, reprovisionShop, storefrontPublicForShop } from "../app/bmai.server";
+import { hostedWebFor } from "../app/lib/storefrontPassword";
 import { adminForShop } from "../app/mcp/shopifyAdmin";
 import { fetchStorefrontHosts, parseStoredDomains, storefrontHosts } from "../app/lib/storefrontDomains";
 import { readRuntimeReadiness } from "../app/lib/runtimeReadiness";
@@ -45,11 +46,14 @@ async function main(): Promise<number> {
     // Soft: an Admin read that fails is "unknown" (null), never a missing domain.
     const freshHosts = live ? await (async () => fetchStorefrontHosts(await adminForShop(row.shop)))().catch(() => null) : null;
     const domains = storefrontHosts([...parseStoredDomains(row.customDomain), ...(freshHosts ?? [])]);
-    const [readiness, frameable] = await Promise.all([
+    const [readiness, frameable, storefrontPublic] = await Promise.all([
       live ? readRuntimeReadiness(row.bmaiTenantId!, callMcpTool) : Promise.resolve(null),
       live ? readStorefrontFrameable({ platformOrigin: PLATFORM_ORIGIN, shop: row.shop, slug: row.slug ?? shopToSlug(row.shop), domains }) : Promise.resolve(null),
+      // busymate-ai-src#2704 — no public assistant page while the storefront is password-protected.
+      live ? storefrontPublicForShop(row.shop).catch(() => null) : Promise.resolve(null),
     ]);
-    const plan = planReconcile(row, { readiness, frameable, freshHosts }, { reprovisionUnverified });
+    const wantedHostedWeb = storefrontPublic === null ? null : hostedWebFor(storefrontPublic);
+    const plan = planReconcile(row, { readiness, frameable, freshHosts, wantedHostedWeb }, { reprovisionUnverified });
     const line: Record<string, unknown> = { shop: row.shop, verdict: plan.verdict, action: plan.action, reason: plan.reason, frameable, runtime: readiness?.state ?? null, domains };
     if (apply && plan.action === "reprovision") {
       const out = await reprovisionShop(row.shop);

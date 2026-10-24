@@ -18,6 +18,8 @@ import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { listTenantConversations, listTenantInterventionsAll } from "../lib/tenantRead.server";
 import { conversationStatus, handoffStatus } from "../lib/conversationStatus";
+import { storefrontPublicForShop } from "../bmai.server";
+import { hostedWebFor } from "../lib/storefrontPassword";
 import { LocalTime } from "../components/LocalTime";
 import { AppRouteBoundary } from "../components/AppRouteError";
 
@@ -28,9 +30,11 @@ export const ErrorBoundary = AppRouteBoundary;
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
   const tenant = await prisma.shopTenant.findUnique({ where: { shop: session.shop }, select: { bmaiTenantId: true, slug: true } });
-  const [conversations, handoffs] = await Promise.all([
+  const [conversations, handoffs, storefrontPublic] = await Promise.all([
     listTenantConversations(tenant?.bmaiTenantId, 25),
     listTenantInterventionsAll(tenant?.bmaiTenantId),
+    // busymate-ai-src#2704 — no public assistant page while the storefront is password-protected.
+    storefrontPublicForShop(session.shop).catch(() => null),
   ]);
   // Status is decided once, on the server, so SSR and hydration agree.
   const now = Date.now();
@@ -38,7 +42,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     provisioned: Boolean(tenant?.bmaiTenantId),
     conversations: { ...conversations, rows: conversations.rows.map((row) => ({ ...row, status: conversationStatus(row, handoffs.rows, now) })) },
     handoffs,
-    servingHost: tenant?.slug ? `https://${tenant.slug}.busymate.ai` : null,
+    servingHost: tenant?.slug && hostedWebFor(storefrontPublic) ? `https://${tenant.slug}.busymate.ai` : null,
   };
 };
 

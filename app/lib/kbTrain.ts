@@ -77,10 +77,11 @@ export function trainingPatch(build: KnowledgeBuild, at: Date): TrainingPatch {
 }
 
 /** Publish options for a build: origins always, knowledge only when there is some. */
-export function publishOptionsFor(build: KnowledgeBuild | null, origins: { launchOrigins: string[]; embedOrigins: string[] }): PublishOptions {
+export function publishOptionsFor(build: KnowledgeBuild | null, origins: { launchOrigins: string[]; embedOrigins: string[]; hostedWeb?: boolean }): PublishOptions {
   return {
     launchOrigins: origins.launchOrigins,
     embedOrigins: origins.embedOrigins,
+    ...(typeof origins.hostedWeb === "boolean" ? { hostedWeb: origins.hostedWeb } : {}),
     ...(build && build.sources.length ? { knowledgeSources: build.sources } : {}),
   };
 }
