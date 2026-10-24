@@ -15,9 +15,17 @@ describe("conversation status", () => {
   it("a running turn is the assistant replying", () => {
     expect(conversationStatus(row({ live: true, lastActiveAt: null }), [], NOW).label).toBe("Assistant replying");
   });
-  it("an open handoff on the same conversation wins, matched by either id", () => {
-    expect(conversationStatus(row(), [{ sessionId: "wrun_A", supportSessionId: null, status: "requested" }], NOW)).toEqual({ label: "Waiting for your team", tone: "attention" });
-    expect(conversationStatus(row(), [{ sessionId: null, supportSessionId: "support-a", status: "active" }], NOW).label).toBe("Your team is replying");
+  it("an open handoff on the same conversation wins", () => {
+    expect(conversationStatus(row(), [{ sessionId: "wrun_A", supportSessionId: "support-a", status: "requested" }], NOW)).toEqual({ label: "Waiting for your team", tone: "attention" });
+    expect(conversationStatus(row(), [{ sessionId: "wrun_A", supportSessionId: null, status: "active" }], NOW).label).toBe("Your team is replying");
+  });
+  // Listing walk 2026-10-24: five chats of one visitor share a support session;
+  // the handoff named one of them, and all five read "Waiting for your team".
+  it("a handoff in another chat of the same visitor does not mark this chat", () => {
+    const handoffs = [{ sessionId: "wrun_B", supportSessionId: "support-a", status: "requested" }];
+    expect(conversationStatus(row(), handoffs, NOW).label).toBe("Active");
+    expect(conversationStatus(row({ sessionId: "wrun_B" }), handoffs, NOW).label).toBe("Waiting for your team");
+    expect(conversationStatus(row(), [{ sessionId: null, supportSessionId: "support-a", status: "requested" }], NOW).label).toBe("Active");
   });
   it("a closed handoff or another conversation's handoff does not change the status", () => {
     expect(conversationStatus(row(), [{ sessionId: "wrun_A", supportSessionId: null, status: "resolved" }, { sessionId: "wrun_B", supportSessionId: "support-b", status: "requested" }], NOW).label).toBe("Active");
