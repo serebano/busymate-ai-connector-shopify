@@ -55,11 +55,49 @@ export interface ProductSummary {
   handle: string;
   url: string | null;
   price: string | null;
+  /** src#2679 — the lowest variant price as a NUMBER (null when unknown), so ordering is never left to string reading. */
+  priceAmount: number | null;
+  currency: string | null;
   /** The compare-at ("was") price when the product is on sale, else null. */
   compareAtPrice: string | null;
   onSale: boolean;
   available: boolean;
   image: string | null;
+}
+
+function amountOf(m?: Money | null): number | null {
+  if (!m) return null;
+  const n = Number(m.amount);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * src#2679 — "¿Cuál es la snowboard más barata?" was answered with a product that was
+ * NOT the cheapest, then contradicted: the tool returned Shopify's relevance order (top
+ * 10 only) and left the model to compare "629.95 USD" against "600.00 USD" in prose. A
+ * price question is answered in code: `sort: "price_asc" | "price_desc"` reads the whole
+ * matching catalog (up to 250), orders it NUMERICALLY, and the reply names the cheapest
+ * and the most expensive explicitly. Unknown prices sort last; ties keep title order.
+ */
+export type ProductSort = "relevance" | "price_asc" | "price_desc";
+export const PRODUCT_SORTS: readonly ProductSort[] = ["relevance", "price_asc", "price_desc"];
+
+export function sortByPrice(products: readonly ProductSummary[], dir: "asc" | "desc"): ProductSummary[] {
+  const sign = dir === "asc" ? 1 : -1;
+  return [...products].sort((a, b) => {
+    if (a.priceAmount === null || b.priceAmount === null) {
+      if (a.priceAmount === b.priceAmount) return a.title.localeCompare(b.title);
+      return a.priceAmount === null ? 1 : -1;
+    }
+    return sign * (a.priceAmount - b.priceAmount) || a.title.localeCompare(b.title);
+  });
+}
+
+/** The lowest- and highest-priced products of a list (unknown prices ignored), or null. */
+export function priceExtremes(products: readonly ProductSummary[]): { cheapest: ProductSummary; mostExpensive: ProductSummary } | null {
+  const priced = sortByPrice(products.filter((p) => p.priceAmount !== null), "asc");
+  if (priced.length === 0) return null;
+  return { cheapest: priced[0]!, mostExpensive: priced[priced.length - 1]! };
 }
 
 function summarizeProduct(n: ProductNode): ProductSummary {
@@ -68,6 +106,8 @@ function summarizeProduct(n: ProductNode): ProductSummary {
     handle: n.handle,
     url: n.onlineStoreUrl ?? null,
     price: money(n.priceRangeV2?.minVariantPrice),
+    priceAmount: amountOf(n.priceRangeV2?.minVariantPrice),
+    currency: n.priceRangeV2?.minVariantPrice?.currencyCode ?? null,
     compareAtPrice: saleOf(n.priceRangeV2?.minVariantPrice, n.compareAtPriceRange?.minVariantCompareAtPrice),
     onSale: saleOf(n.priceRangeV2?.minVariantPrice, n.compareAtPriceRange?.minVariantCompareAtPrice) !== null,
     available: (n.totalInventory ?? 0) > 0 && n.status === "ACTIVE",
@@ -80,10 +120,15 @@ export async function searchProducts(
   ctx: ToolContext,
 ): Promise<ToolResult> {
   const onSaleOnly = args.on_sale === true;
+  const sort: ProductSort = PRODUCT_SORTS.includes(args.sort as ProductSort) ? (args.sort as ProductSort) : "relevance";
+  const byPrice = sort !== "relevance";
   // "sale" is not a catalog keyword: an on-sale question lists the products whose
   // compare-at price is above their price (fetches a wider page, then filters).
   const query = onSaleOnly ? String(args.query ?? "").replace(/\b(on\s+)?sale\b|\bdiscount(ed)?\b/gi, "").trim() : String(args.query ?? "").trim();
-  const first = onSaleOnly ? 100 : Math.max(1, Math.min(Number(args.first ?? 10) || 10, 25));
+  const limit = Math.max(1, Math.min(Number(args.first ?? 10) || 10, 25));
+  // A price-ordered answer must see every match, not Shopify's first relevance page
+  // (the Admin API has no PRICE sort key for products).
+  const first = byPrice ? 250 : onSaleOnly ? 100 : limit;
   const data = (await ctx.admin.graphql(
     `#graphql
     query SearchProducts($q: String!, $n: Int!) {
@@ -100,17 +145,37 @@ export async function searchProducts(
   )) as { products?: { nodes?: ProductNode[] } };
 
   const all = (data.products?.nodes ?? []).map(summarizeProduct);
-  const products = onSaleOnly ? all.filter((p) => p.onSale) : all;
+  const matching = onSaleOnly ? all.filter((p) => p.onSale) : all;
+  // Extremes over EVERY match fetched, before the page is cut to `first`.
+  const extremes = priceExtremes(matching);
+  const ordered = byPrice ? sortByPrice(matching, sort === "price_asc" ? "asc" : "desc") : matching;
+  const products = byPrice ? ordered.slice(0, limit) : ordered;
   if (products.length === 0) {
-    return textResult(onSaleOnly ? `No products are on sale right now${query ? ` matching “${query}”` : ""}.` : `No products match “${query}”.`, { query, onSale: onSaleOnly, products: [] });
+    return textResult(onSaleOnly ? `No products are on sale right now${query ? ` matching “${query}”` : ""}.` : `No products match “${query}”.`, { query, onSale: onSaleOnly, sort, products: [] });
   }
   const lines = products.map(
     (p) => `• ${p.title}${p.price ? ` — ${p.price}` : ""}${p.compareAtPrice ? ` (on sale, was ${p.compareAtPrice})` : ""}${p.available ? "" : " (out of stock)"}`,
   );
+  const total = matching.length;
+  const order = byPrice ? `, sorted by price (${sort === "price_asc" ? "lowest" : "highest"} first)` : "";
+  const shown = products.length < total ? ` (showing ${products.length} of ${total})` : "";
   const head = onSaleOnly
-    ? `${products.length} product${products.length === 1 ? "" : "s"} on sale${query ? ` matching “${query}”` : ""}:`
-    : `${products.length} product${products.length === 1 ? "" : "s"} matching “${query}”:`;
-  return textResult(`${head}\n${lines.join("\n")}`, { query, onSale: onSaleOnly, products });
+    ? `${total} product${total === 1 ? "" : "s"} on sale${query ? ` matching “${query}”` : ""}${order}${shown}:`
+    : `${total} product${total === 1 ? "" : "s"} matching “${query}”${order}${shown}:`;
+  // The cheapest / most expensive are stated in code, so the reply never has to rank prices itself.
+  const scope = byPrice || onSaleOnly ? "of all matches" : `of these ${products.length}`;
+  const foot = extremes && total > 1
+    ? `\nLowest price ${scope}: ${extremes.cheapest.title} — ${extremes.cheapest.price}. Highest: ${extremes.mostExpensive.title} — ${extremes.mostExpensive.price}.`
+    : "";
+  return textResult(`${head}\n${lines.join("\n")}${foot}`, {
+    query,
+    onSale: onSaleOnly,
+    sort,
+    total,
+    cheapest: extremes?.cheapest ?? null,
+    mostExpensive: extremes?.mostExpensive ?? null,
+    products,
+  });
 }
 
 interface VariantNode {

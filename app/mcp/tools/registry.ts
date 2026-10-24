@@ -40,11 +40,11 @@ export const TOOLS: ToolDef[] = [
   // ── public ────────────────────────────────────────────────────────────────
   {
     name: "search_products",
-    description: "Search the store catalog by keyword. Returns titles, prices (with the compare-at \"was\" price when on sale) and availability. For \"what is on sale\" questions set on_sale: true (query may be empty or a product type).",
+    description: "Search the store catalog by keyword. Returns titles, prices (with the compare-at \"was\" price when on sale), availability and the lowest/highest-priced match. For \"what is on sale\" questions set on_sale: true (query may be empty or a product type). For cheapest / most expensive / price-ordered questions set sort: \"price_asc\" or \"price_desc\" — the whole matching catalog is ordered by numeric price and the cheapest is named in the result; quote it, never re-rank prices yourself.",
     tier: "public",
     confirm: false,
     adminOnly: false,
-    inputSchema: obj({ query: str("Search terms (may be empty with on_sale)"), first: { type: "number" }, on_sale: { type: "boolean", description: "Only products whose compare-at price is above their price" } }, []),
+    inputSchema: obj({ query: str("Search terms (may be empty with on_sale)"), first: { type: "number" }, on_sale: { type: "boolean", description: "Only products whose compare-at price is above their price" }, sort: { type: "string", enum: ["relevance", "price_asc", "price_desc"], description: "Result order: relevance (default), price_asc (cheapest first) or price_desc (most expensive first)" } }, []),
     handler: searchProducts,
   },
   {
