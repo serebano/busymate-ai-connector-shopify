@@ -63,10 +63,21 @@ function noOrders(): ToolResult {
   return textResult("I don't see any orders on your account yet.", { order: null, orders: [] });
 }
 
-/** "Your other recent orders: #1001 · #999" — only when the order was picked for them. */
+/**
+ * An order's state as a shopper says it. A CANCELLED order reads "cancelled", never its
+ * fulfillment status: Shopify keeps a cancelled, never-shipped order UNFULFILLED, and
+ * "#1001 (unfulfilled)" made the assistant tell a shopper their cancelled order was
+ * still open (round-6 live walk, 2026-10-24).
+ */
+export function orderStateLabel(o: Pick<CustomerOrder, "cancelledAt" | "displayFulfillmentStatus">): string {
+  if (o.cancelledAt) return "cancelled";
+  return o.displayFulfillmentStatus.toLowerCase().replace(/_/g, " ");
+}
+
+/** "Your other recent orders: #1001 (cancelled) · #999 (fulfilled)" — only when the order was picked for them. */
 function otherOrdersLine(others: CustomerOrder[]): string {
   if (others.length === 0) return "";
-  return `\nYour other recent orders: ${others.map((o) => `${o.name} (${o.displayFulfillmentStatus.toLowerCase().replace(/_/g, " ")})`).join(" · ")}.`;
+  return `\nYour other recent orders: ${others.map((o) => `${o.name} (${orderStateLabel(o)})`).join(" · ")}.`;
 }
 
 export async function getOrderStatus(
@@ -99,7 +110,7 @@ export async function trackFulfillment(
   );
   if (tracking.length === 0) {
     return textResult(
-      `${order.name} isn't showing tracking yet (status: ${order.displayFulfillmentStatus.toLowerCase().replace(/_/g, " ")}).${more}`,
+      `${order.name} isn't showing tracking yet (status: ${orderStateLabel(order)}).${more}`,
       { order: order.name, tracking: [], ...recent },
     );
   }
@@ -127,11 +138,12 @@ export async function listMyOrders(
   const summaries = orders.map((o) => ({
     name: o.name,
     processedAt: o.processedAt,
+    cancelled: Boolean(o.cancelledAt),
     fulfillmentStatus: o.displayFulfillmentStatus,
     total: o.totalPrice ? `${o.totalPrice.amount} ${o.totalPrice.currencyCode}` : null,
   }));
-  const lines = summaries.map(
-    (o) => `• ${o.name}${o.total ? ` — ${o.total}` : ""} · ${o.fulfillmentStatus.toLowerCase().replace(/_/g, " ")}`,
+  const lines = orders.map(
+    (o, i) => `• ${o.name}${summaries[i]!.total ? ` — ${summaries[i]!.total}` : ""} · ${orderStateLabel(o)}`,
   );
   return textResult(`Your recent orders:\n${lines.join("\n")}`, { orders: summaries });
 }

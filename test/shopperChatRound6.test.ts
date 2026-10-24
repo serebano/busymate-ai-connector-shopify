@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getProduct, searchProducts } from "../app/mcp/tools/products";
-import { getOrderStatus, trackFulfillment } from "../app/mcp/tools/orders";
+import { getOrderStatus, listMyOrders, trackFulfillment } from "../app/mcp/tools/orders";
 import { toolByName } from "../app/mcp/tools/registry";
 import { ONLINE_STORE_QUERY, onOnlineStore, storefrontProductUrl } from "../app/lib/onlineStore";
 import { buildKnowledgeSources, hasReturnPolicy, KNOWLEDGE_KEYS, renderOrderHelp } from "../app/lib/kbSnapshot";
@@ -90,6 +90,8 @@ describe("S1 — a signed-in shopper gets their latest order's tracking without 
     { id: "gid://shopify/Order/2", name: "#1002", displayFulfillmentStatus: "FULFILLED", displayFinancialStatus: "PAID", fulfillments: [{ trackingInfo: [{ company: "UPS", number: "1Z999AA10123456785", url: "https://ups.example/1Z" }] }] },
     { id: "gid://shopify/Order/1", name: "#1001", displayFulfillmentStatus: "UNFULFILLED", displayFinancialStatus: "PAID", fulfillments: [] },
   ];
+  // The live review-3 state: #1001 was cancelled (Shopify keeps it UNFULFILLED).
+  const withCancelled = [orders[0], { ...orders[1], cancelledAt: "2026-10-24T08:20:00Z", displayFinancialStatus: "REFUNDED" }];
   const customerOrders = (seen: Array<Record<string, unknown> | undefined>) => (_q: string, v?: Record<string, unknown>) => {
     seen.push(v);
     return { customer: { orders: { nodes: v?.q ? orders.filter((o) => `name:${o.name}` === v.q) : orders } } };
@@ -114,6 +116,15 @@ describe("S1 — a signed-in shopper gets their latest order's tracking without 
     expect(r.structuredContent).toMatchObject({ order: "#1002", mostRecent: true, otherOrders: ["#1001"] });
     const s = await getOrderStatus({}, ctx(customerOrders([]), "42"));
     expect(s.content[0]!.text).toMatch(/^Your most recent order — #1002: fulfilled · tracking UPS 1Z999AA10123456785/);
+  });
+
+  it("a cancelled order reads 'cancelled' in every order list, never 'unfulfilled'", async () => {
+    const live = () => ({ customer: { orders: { nodes: withCancelled } } });
+    const r = await trackFulfillment({}, ctx(live, "42"));
+    expect(r.content[0]!.text).toMatch(/Your other recent orders: #1001 \(cancelled\)\.$/);
+    const list = await listMyOrders({}, ctx(live, "42"));
+    expect(list.content[0]!.text).toBe("Your recent orders:\n• #1002 · fulfilled\n• #1001 · cancelled");
+    expect((list.structuredContent as { orders: Array<{ cancelled: boolean }> }).orders.map((o) => o.cancelled)).toEqual([false, true]);
   });
 
   it("an explicit number still looks up exactly that order; a guest is still refused; no orders is said plainly", async () => {
