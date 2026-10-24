@@ -15,6 +15,8 @@
  * `app/lib/kbTrain.ts` publishes the result and persists the training state.
  */
 
+import { onOnlineStore, storefrontProductUrl } from "./onlineStore";
+
 export interface KbMoney {
   amount?: string | null;
   currencyCode?: string | null;
@@ -26,6 +28,8 @@ export interface KbProduct {
   status?: string | null;
   descriptionHtml?: string | null;
   onlineStoreUrl?: string | null;
+  /** When the product was published to the Online Store (null = not published there). */
+  publishedAt?: string | null;
   productType?: string | null;
   vendor?: string | null;
   priceRangeV2?: { minVariantPrice?: KbMoney | null; maxVariantPrice?: KbMoney | null } | null;
@@ -90,13 +94,32 @@ export const KNOWLEDGE_KEYS = {
  * the chat (or the store's account login) and ask again, and can ask for a human.
  * Rendered FIRST and reserved out of the budget, so a huge catalog never starves it.
  */
-export function renderOrderHelp(shop: string, storeName: string): string {
+/**
+ * src#2624 review S7 — "What is your return policy?" was answered "Returns and refunds are
+ * handled by the store's team … connect you with a person?" on a store that has published
+ * NO return policy: the how-to's only line about returns was a hand-off, so the shopper
+ * never learned the fact. The policy line is now the FACT, decided in code from the
+ * store's own policies: the published refund policy (under "Store policies"), or plainly
+ * that none is published.
+ */
+export function hasReturnPolicy(policies: readonly KbPolicy[]): boolean {
+  return policies.some((p) => (p.type ?? "").toUpperCase() === "REFUND_POLICY" && htmlToText(p.body).trim().length > 0);
+}
+
+export function returnPolicyLine(storeName: string, published: boolean): string {
+  return published
+    ? `Return and refund policy: ${storeName} has published one; it is under "Store policies" — answer a returns question from it. Starting a return or a refund for a specific order is done by the store's team: offer to connect the customer with a person for that.`
+    : `Return and refund policy: ${storeName} has NOT published a return or refund policy. When asked about returns, refunds or exchanges, say plainly that the store has not published a return policy, then offer to connect the customer with a person who can answer for their order.`;
+}
+
+export function renderOrderHelp(shop: string, storeName: string, policies: readonly KbPolicy[] = []): string {
   const login = `https://${shop}/account/login`;
   return [
     `# Order help in this chat — ${storeName} (${shop})`,
-    "Order status and tracking are handled in this chat for signed-in customers only, and only for that customer's own orders. After the customer approves, the assistant can cancel an unfulfilled order or change the shipping address of an order that has not shipped. Returns and refunds are handled by the store's team: offer to connect the customer with a person.",
+    "Order status and tracking are handled in this chat for signed-in customers only, and only for that customer's own orders; a signed-in customer does not need to give an order number for their most recent order. After the customer approves, the assistant can cancel an unfulfilled order or change the shipping address of an order that has not shipped.",
+    returnPolicyLine(storeName, hasReturnPolicy(policies)),
     `If you are not signed in, you have two options: sign in with the "Sign in" button at the top of this chat (or at ${login}) and then ask again — for example "Where is my order #1001?" — or ask to talk to a human and the store's team will help you with your order. Always offer both.`,
-    "Changes such as cancelling an order, starting a return or updating a shipping address are confirmed with you in the chat before anything happens.",
+    "Changes such as cancelling an order or updating a shipping address are confirmed with you in the chat before anything happens.",
     "Prefer a person at any point? Ask to talk to a human and the request goes to the store's team.",
   ].join("\n\n");
 }
@@ -194,19 +217,16 @@ function humanizePolicyType(type: string | null | undefined): string | null {
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
-function isPublished(p: KbProduct): boolean {
-  return Boolean(p.onlineStoreUrl) || (p.status ?? "").toUpperCase() === "ACTIVE";
-}
-
 /**
- * Only SELLABLE products are knowledge: a DRAFT or ARCHIVED product is
- * merchant-internal and must never be described to a shopper (seen live: the
- * assistant listed "The Draft Snowboard — not published"). An unknown status is
- * kept (the API always sets one; fail open on shape, closed on intent).
+ * Only products a shopper can open are knowledge: published to the ONLINE STORE
+ * (app/lib/onlineStore.ts). A DRAFT or ARCHIVED product is merchant-internal
+ * (seen live: "The Draft Snowboard — not published"), and an ACTIVE product on no
+ * channel or only on POS has no storefront page (src#2624 review X2: "The Hidden
+ * Snowboard" was recommended with a 404 link). Re-training REPLACES the catalog
+ * source by key, so a re-train also purges such a product from the trained index.
  */
 export function isSellable(p: KbProduct): boolean {
-  const status = (p.status ?? "").toUpperCase();
-  return status !== "DRAFT" && status !== "ARCHIVED";
+  return onOnlineStore(p);
 }
 
 function renderProduct(p: KbProduct, shop: string): string | null {
@@ -224,9 +244,8 @@ function renderProduct(p: KbProduct, shop: string): string | null {
   if (p.vendor) meta.push(`Vendor: ${p.vendor}`);
   if (meta.length) lines.push(meta.join(" · "));
   if (p.handle) lines.push(`Handle: ${p.handle}`);
-  if (p.onlineStoreUrl) lines.push(`URL: ${p.onlineStoreUrl}`);
-  else if (p.handle && isPublished(p)) lines.push(`URL: https://${shop}/products/${p.handle}`);
-  else lines.push("Availability: not published on the online store");
+  const url = storefrontProductUrl(shop, p);
+  if (url) lines.push(`URL: ${url}`);
   const desc = clip(htmlToText(p.descriptionHtml).replace(/\n+/g, " "), PRODUCT_DESCRIPTION_CHARS);
   if (desc) lines.push(`Description: ${desc}`);
   return lines.join("\n");
@@ -264,7 +283,7 @@ interface Section {
   noun: string;
   /** Rows the store has (for the "N of M" state). */
   fetched: number;
-  /** Rows eligible to be knowledge (fetched minus drafts/archived). */
+  /** Rows eligible to be knowledge (fetched minus products not on the Online Store). */
   renderable: number;
 }
 
@@ -309,10 +328,8 @@ function pack(section: Section, cap: number): { content: string; included: numbe
 export function buildKnowledgeSources(snapshot: KbSnapshot, limits: KnowledgeLimits = KNOWLEDGE_LIMITS): KnowledgeBuild {
   const shop = snapshot.shop;
   const storeName = (snapshot.shopName ?? "").trim() || shop;
-  // Drafts/archived are dropped BEFORE ordering; online-store products first, then
-  // active products not on the online store (e.g. POS-only) in API order.
-  const sellable = snapshot.products.filter(isSellable);
-  const products = [...sellable.filter(isPublished), ...sellable.filter((p) => !isPublished(p))];
+  // Only Online Store products (src#2624 X2), in API order.
+  const products = snapshot.products.filter(isSellable);
 
   const sections: Section[] = [
     {
@@ -335,7 +352,7 @@ export function buildKnowledgeSources(snapshot: KbSnapshot, limits: KnowledgeLim
       items: products.map((p) => renderProduct(p, shop)).filter((x): x is string => Boolean(x)),
       noun: "products",
       fetched: snapshot.products.length,
-      renderable: sellable.length,
+      renderable: products.length,
     },
     {
       id: "pages",
@@ -361,7 +378,7 @@ export function buildKnowledgeSources(snapshot: KbSnapshot, limits: KnowledgeLim
 
   // #2132 FAIL B — the order-help how-to is ALWAYS published first (a few hundred
   // chars, reserved before the store sections share the rest of the budget).
-  const orderHelp = renderOrderHelp(shop, storeName);
+  const orderHelp = renderOrderHelp(shop, storeName, snapshot.policies);
   if (orderHelp.length <= Math.min(limits.perSourceChars, remaining) && sources.length < limits.maxSources) {
     sources.push({ key: KNOWLEDGE_KEYS.orderHelp, label: "Order help in this chat", kind: "howto", content: orderHelp });
     remaining -= orderHelp.length;

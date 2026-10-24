@@ -68,20 +68,21 @@ export const TOOLS: ToolDef[] = [
   // ── identified (scoped to the launch-JWT customer) ─────────────────────────
   {
     name: "get_order_status",
-    description: "Get the status of the identified customer's order (WISMO).",
+    description: "Get the status of the signed-in customer's order (WISMO). Leave order_number out to get their most recent order (the result also lists their other recent orders).",
     tier: "identified",
     confirm: false,
     adminOnly: false,
-    inputSchema: obj({ order_number: str("Order name/number, e.g. #1001") }, ["order_number"]),
+    // src#2624 review S1 — optional: a signed-in shopper is never asked to type a number we can read.
+    inputSchema: obj({ order_number: str("Order name/number, e.g. #1001. Omit for the most recent order.") }),
     handler: getOrderStatus,
   },
   {
     name: "track_fulfillment",
-    description: "Get tracking numbers/links for the identified customer's order.",
+    description: "Get tracking numbers/links for the signed-in customer's order. Leave order_number out for their most recent order (the result also lists their other recent orders).",
     tier: "identified",
     confirm: false,
     adminOnly: false,
-    inputSchema: obj({ order_number: str("Order name/number") }, ["order_number"]),
+    inputSchema: obj({ order_number: str("Order name/number, e.g. #1002. Omit for the most recent order.") }),
     handler: trackFulfillment,
   },
   {
