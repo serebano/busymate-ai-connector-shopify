@@ -22,7 +22,7 @@
 import type { RuntimeReadiness } from "./runtimeReadiness";
 import { parseStoredDomains, storefrontHosts } from "./storefrontDomains";
 
-export type RepairReason = "orphaned" | "domains";
+export type RepairReason = "orphaned" | "domains" | "hosted_web";
 
 export interface RepairDecision {
   reason: RepairReason;
@@ -41,6 +41,12 @@ export function publishedTenantRepair(input: {
   tenantUnreachableAt?: Date | string | null;
   storedDomains?: string | null;
   freshHosts?: readonly string[] | null;
+  /**
+   * busymate-ai-src#2704 — the public page the store SHOULD have (hostedWebFor of
+   * the live storefront password state) vs the one it has published. A mismatch
+   * (the merchant added or removed the storefront password) re-publishes.
+   */
+  wantedHostedWeb?: boolean | null;
 }): RepairDecision | null {
   if (input.readiness?.state === "orphaned") {
     return { reason: "orphaned", detail: "the platform no longer resolves this shop's tenant" };
@@ -51,6 +57,15 @@ export function publishedTenantRepair(input: {
   const missing = missingStorefrontHosts(input.storedDomains, input.freshHosts);
   if (missing.length) {
     return { reason: "domains", detail: `storefront domain(s) not in the published allowlist: ${missing.join(", ")}` };
+  }
+  const published = input.readiness?.hostedWeb;
+  if (typeof input.wantedHostedWeb === "boolean" && typeof published === "boolean" && published !== input.wantedHostedWeb) {
+    return {
+      reason: "hosted_web",
+      detail: input.wantedHostedWeb
+        ? "the storefront is public now; publishing the assistant's public page"
+        : "the storefront is password-protected; removing the assistant's public page",
+    };
   }
   return null;
 }

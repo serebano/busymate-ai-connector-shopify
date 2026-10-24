@@ -42,6 +42,7 @@ export type ReconcileVerdict =
   | "stuck"
   | "orphaned"
   | "domains-missing"
+  | "hosted-web-drift"
   | "not-frameable"
   | "failed-install"
   | "uninstalled"
@@ -61,6 +62,8 @@ export interface ReconcileReads {
   frameable: Frameable;
   /** The store's storefront domains read now (null = could not read). */
   freshHosts?: readonly string[] | null;
+  /** busymate-ai-src#2704 — the public page the store should have now (null = unknown). */
+  wantedHostedWeb?: boolean | null;
 }
 
 export function planReconcile(
@@ -77,6 +80,7 @@ export function planReconcile(
     tenantUnreachableAt: row.tenantUnreachableAt,
     storedDomains: row.customDomain,
     freshHosts: reads.freshHosts,
+    wantedHostedWeb: reads.wantedHostedWeb,
   });
   if (repair?.reason === "orphaned") return { verdict: "orphaned", action: "reprovision", reason: repair.detail };
   const state = reads.readiness?.state ?? "unverified";
@@ -88,6 +92,7 @@ export function planReconcile(
       : { verdict: "unverified", action: "none", reason: "the tenant could not be read (a timeout or platform error, not a missing tenant) — re-run later, or with --reprovision-unverified" };
   }
   if (repair?.reason === "domains") return { verdict: "domains-missing", action: "reprovision", reason: repair.detail };
+  if (repair?.reason === "hosted_web") return { verdict: "hosted-web-drift", action: "reprovision", reason: repair.detail };
   if (reads.frameable === false) return { verdict: "not-frameable", action: "reprovision", reason: "live, but the storefront, a custom domain or the Theme Editor chain is refused" };
   return { verdict: "live", action: "none", reason: reads.frameable === null ? "live (frameability not answered)" : "live and frameable" };
 }

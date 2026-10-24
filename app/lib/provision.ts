@@ -32,6 +32,7 @@ import { brandingArgs, identityProviderArgs, publishArgs, type IdentityProviderR
 import type { KnowledgeBuild, KnowledgeCounts } from "./kbSnapshot";
 import { isKnowledgeRejection, publishOptionsFor, trainingPatch, type TrainingPatch } from "./kbTrain";
 import { formatStoredDomains, parseStoredDomains } from "./storefrontDomains";
+import { hostedWebFor } from "./storefrontPassword";
 
 export interface McpResult<T = unknown> {
   ok: boolean;
@@ -157,6 +158,14 @@ export interface ProvisionDeps {
    * falls back to the domain's handle.
    */
   shopName?: (shop: string) => Promise<string | null>;
+  /**
+   * busymate-ai-src#2704 (Shopify review S4) — is the Online Store open to the
+   * public (app/lib/storefrontPassword.ts)? true = public, false = password-
+   * protected, null = unknown. The publish carries `hosted_web` = public only when
+   * definitely public: a password-protected store gets NO public chat page, only
+   * the storefront widget. Optional (tests / ops): omitted = no `hosted_web` sent.
+   */
+  storefrontPublic?: (shop: string) => Promise<boolean | null>;
 }
 
 export interface TrainingSummary {
@@ -275,8 +284,12 @@ export async function runProvisionLifecycle(
   }
 
   // Storefront parent origins allowed to iframe-embed the assistant.
-  const origins = runtimeOrigins(shop, slug, customDomain);
+  const origins: ReturnType<typeof runtimeOrigins> & { hostedWeb?: boolean } = runtimeOrigins(shop, slug, customDomain);
   const storefrontOrigins = origins.embedOrigins;
+  if (deps.storefrontPublic) {
+    // Fail closed: an unknown answer publishes no public page (the widget still works).
+    origins.hostedWeb = hostedWebFor(await deps.storefrontPublic(shop).catch(() => null));
+  }
 
   // 2) Branding (proof-of-shop path — re-resolves tenant from the proven shop, so the
   //    provisioner needs NO platform-operator role; #1982 security follow-up #5).

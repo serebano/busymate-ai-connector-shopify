@@ -3,6 +3,17 @@ import type { McpResult } from "../bmai.server";
 export interface RuntimeReadiness {
   state: "ready" | "pending" | "error" | "unverified" | "orphaned";
   detail: string;
+  /**
+   * busymate-ai-src#2704 — the PUBLISHED `channels.hosted_web` (the public chat
+   * page), when the integration read carried it; undefined otherwise.
+   */
+  hostedWeb?: boolean;
+}
+
+/** The published `integration_config.channels.hosted_web`, when present. */
+export function publishedHostedWeb(result: McpResult): boolean | undefined {
+  const value = obj(obj(obj(obj(result.data).publication).integration_config).channels).hosted_web;
+  return typeof value === "boolean" ? value : undefined;
 }
 
 /**
@@ -67,7 +78,10 @@ export async function readRuntimeReadiness(
   call: <T = unknown>(name: string, args: Record<string, unknown>) => Promise<McpResult<T>>,
 ): Promise<RuntimeReadiness> {
   try {
-    return runtimeReadiness(tenantId, await call("get_tenant_integration", { tenant_id: tenantId }));
+    const result = await call("get_tenant_integration", { tenant_id: tenantId });
+    const readiness = runtimeReadiness(tenantId, result);
+    const hostedWeb = publishedHostedWeb(result);
+    return hostedWeb === undefined ? readiness : { ...readiness, hostedWeb };
   } catch {
     return runtimeReadiness(tenantId, { ok: false });
   }

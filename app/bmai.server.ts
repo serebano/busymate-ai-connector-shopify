@@ -39,6 +39,7 @@ import { resolveBusymateAiMcpUrl } from "./lib/bmaiSurface";
 import { readRuntimeReadiness } from "./lib/runtimeReadiness";
 import { platformPlanOf, type PlatformPlan } from "./lib/billingSync";
 import { checkPublishedTenant, createRepairGate, publishedTenantRepair, type RepairDecision } from "./lib/tenantRepair";
+import { hostedWebFor, storefrontIsPublic } from "./lib/storefrontPassword";
 
 // One product, one protocol surface. Partner proof-of-shop lifecycle and tenant
 // management are both Busymate AI operations and therefore use busymate.ai/mcp.
@@ -194,6 +195,8 @@ function liveProvisionDeps(): ProvisionDeps {
     // Soft: a failed read keeps the previously stored domains.
     storefrontHosts: async (shop) => fetchStorefrontHosts(await adminForShop(shop)),
     // The store's name for a NEW tenant's default branding ("<Store name> AI").
+    // busymate-ai-src#2704 — no public chat page while the storefront is password-protected.
+    storefrontPublic: storefrontPublicForShop,
     shopName: async (shop) => {
       const data = (await (await adminForShop(shop)).graphql(`#graphql
         query ShopName { shop { name } }`)) as { shop?: { name?: string | null } | null } | null;
@@ -270,7 +273,26 @@ export async function publishTenantRuntime(
   opts: PublishOptions,
 ): Promise<McpResult> {
   if (!tenantId) return { ok: false, error: "no provisioned tenant for this shop yet" };
-  return callMcpTool("publish_tenant_runtime", publishArgs(shopProof(shop), tenantId, opts));
+  // busymate-ai-src#2704 — EVERY publish states the public page (a re-train must
+  // never turn the page back on for a password-protected store).
+  const hostedWeb = typeof opts.hostedWeb === "boolean" ? opts.hostedWeb : hostedWebFor(await storefrontPublicForShop(shop));
+  return callMcpTool("publish_tenant_runtime", publishArgs(shopProof(shop), tenantId, { ...opts, hostedWeb }));
+}
+
+/**
+ * busymate-ai-src#2704 (Shopify review S4) — is this store's Online Store public?
+ * Admin `onlineStore.passwordProtection` through the offline session, else the
+ * public storefront. null = unknown (callers fail closed: no public page).
+ */
+export async function storefrontPublicForShop(shop: string): Promise<boolean | null> {
+  let graphql: ((q: string) => Promise<unknown>) | null = null;
+  try {
+    const admin = await adminForShop(shop);
+    graphql = (q) => admin.graphql(q);
+  } catch {
+    graphql = null;
+  }
+  return storefrontIsPublic(shop, graphql);
 }
 
 /**
