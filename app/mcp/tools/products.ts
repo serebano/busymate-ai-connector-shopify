@@ -1,5 +1,6 @@
 import type { ToolContext, ToolResult } from "./types";
 import { textResult } from "./types";
+import { ONLINE_STORE_QUERY, onOnlineStore, storefrontProductUrl } from "../../lib/onlineStore";
 
 /**
  * Public catalog reads — Admin GraphQL (2026-07) with the shop offline token. No
@@ -33,6 +34,7 @@ interface ProductNode {
   status: string;
   featuredImage?: { url: string } | null;
   onlineStoreUrl?: string | null;
+  publishedAt?: string | null;
   totalInventory?: number | null;
   priceRangeV2?: { minVariantPrice?: Money; maxVariantPrice?: Money } | null;
   compareAtPriceRange?: { minVariantCompareAtPrice?: Money | null; maxVariantCompareAtPrice?: Money | null } | null;
@@ -100,11 +102,11 @@ export function priceExtremes(products: readonly ProductSummary[]): { cheapest: 
   return { cheapest: priced[0]!, mostExpensive: priced[priced.length - 1]! };
 }
 
-function summarizeProduct(n: ProductNode): ProductSummary {
+function summarizeProduct(n: ProductNode, shop: string): ProductSummary {
   return {
     title: n.title,
     handle: n.handle,
-    url: n.onlineStoreUrl ?? null,
+    url: storefrontProductUrl(shop, n),
     price: money(n.priceRangeV2?.minVariantPrice),
     priceAmount: amountOf(n.priceRangeV2?.minVariantPrice),
     currency: n.priceRangeV2?.minVariantPrice?.currencyCode ?? null,
@@ -134,17 +136,19 @@ export async function searchProducts(
     query SearchProducts($q: String!, $n: Int!) {
       products(query: $q, first: $n) {
         nodes {
-          id title handle status onlineStoreUrl totalInventory
+          id title handle status onlineStoreUrl publishedAt totalInventory
           featuredImage { url }
           priceRangeV2 { minVariantPrice { amount currencyCode } }
           compareAtPriceRange { minVariantCompareAtPrice { amount currencyCode } }
         }
       }
     }`,
-    { q: `status:active ${query}`.trim(), n: first },
+    // src#2624 X2 — only products published to the Online Store: the search filter
+    // asks Shopify for them, and `onOnlineStore` re-checks every node in code.
+    { q: `${ONLINE_STORE_QUERY} ${query}`.trim(), n: first },
   )) as { products?: { nodes?: ProductNode[] } };
 
-  const all = (data.products?.nodes ?? []).map(summarizeProduct);
+  const all = (data.products?.nodes ?? []).filter(onOnlineStore).map((n) => summarizeProduct(n, ctx.shop));
   const matching = onSaleOnly ? all.filter((p) => p.onSale) : all;
   // Extremes over EVERY match fetched, before the page is cut to `first`.
   const extremes = priceExtremes(matching);
@@ -197,7 +201,7 @@ export async function getProduct(
     `#graphql
     query GetProduct($handle: String!) {
       productByHandle(handle: $handle) {
-        id title descriptionHtml status handle onlineStoreUrl
+        id title descriptionHtml status handle onlineStoreUrl publishedAt
         priceRangeV2 { minVariantPrice { amount currencyCode } maxVariantPrice { amount currencyCode } }
         variants(first: 50) { nodes { id title price compareAtPrice availableForSale inventoryQuantity sku } }
       }
@@ -211,13 +215,16 @@ export async function getProduct(
       status: string;
       handle: string;
       onlineStoreUrl?: string | null;
+      publishedAt?: string | null;
       priceRangeV2?: { minVariantPrice?: Money; maxVariantPrice?: Money } | null;
       variants?: { nodes?: VariantNode[] };
     } | null;
   };
 
   const p = data.productByHandle;
-  if (!p) return textResult(`No product found for “${handle}”.`, { handle, product: null });
+  // src#2624 X2 — a product that is not on the Online Store is answered exactly like a
+  // missing one: the shopper cannot open or buy it, and its details stay the merchant's.
+  if (!p || !onOnlineStore(p)) return textResult(`No product found for “${handle}”.`, { handle, product: null });
 
   const variants = (p.variants?.nodes ?? []).map((v) => ({
     title: v.title,
@@ -230,7 +237,7 @@ export async function getProduct(
   const product = {
     title: p.title,
     handle: p.handle,
-    url: p.onlineStoreUrl ?? null,
+    url: storefrontProductUrl(ctx.shop, p),
     description: plain(p.descriptionHtml),
     priceFrom: money(p.priceRangeV2?.minVariantPrice),
     onSale: variants.some((v) => v.compareAtPrice),

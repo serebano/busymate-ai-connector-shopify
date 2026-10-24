@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { saleOf, searchProducts } from "../app/mcp/tools/products";
 
 const m = (amount: string) => ({ amount, currencyCode: "USD" });
-const node = (title: string, price: string, was?: string) => ({ id: title, title, handle: title.toLowerCase().replace(/\s+/g, "-"), status: "ACTIVE", totalInventory: 5, onlineStoreUrl: null, featuredImage: null, priceRangeV2: { minVariantPrice: m(price) }, compareAtPriceRange: was ? { minVariantCompareAtPrice: m(was) } : null });
+const node = (title: string, price: string, was?: string) => ({ id: title, title, handle: title.toLowerCase().replace(/\s+/g, "-"), status: "ACTIVE", totalInventory: 5, onlineStoreUrl: null, publishedAt: "2026-10-01T00:00:00Z", featuredImage: null, priceRangeV2: { minVariantPrice: m(price) }, compareAtPriceRange: was ? { minVariantCompareAtPrice: m(was) } : null });
 const ctx = (nodes: unknown[], seen: string[] = []) => ({ admin: { graphql: async (_q: string, v?: { q: string }) => { seen.push(v?.q ?? ""); return { products: { nodes } }; } }, customer: null } as never);
 
 describe("src#2624 reviewer F13 — compare-at prices answer 'what is on sale?'", () => {

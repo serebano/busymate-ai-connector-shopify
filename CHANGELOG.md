@@ -4,6 +4,17 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-10-24 — shopper chat: Online Store products only, latest-order tracking, return-policy fact (src#2624 review X2/S1/S7)
+
+- **X2:** `search_products`, `get_product` and the trained catalog only include products published to the
+  Online Store (`onlineStoreUrl` or `publishedAt`; `published_status:published` in the search). "The Hidden
+  Snowboard" (active, published nowhere, in every generated test store) is no longer recommended or linked
+  (it was a 404). A re-train replaces the catalog source by key, which purges already-trained unpublished products.
+- **S1:** `track_fulfillment` / `get_order_status` take an optional `order_number`; without it a signed-in
+  shopper gets their most recent order plus a list of their other recent orders.
+- **S7:** the order-help knowledge states the store's return policy as a fact (published → under Store
+  policies; none → "the store has not published a return policy") instead of only offering a person.
+
 ## 2026-10-24 — independent-review round: billing truth, embed truth (src#2624 reviewer F24/F25)
 
 - **Billing (F24, 1.2.2):** the plan is read live from Shopify's `currentAppInstallation.activeSubscriptions`

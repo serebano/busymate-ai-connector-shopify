@@ -21,7 +21,7 @@ export const KB_INGEST_QUERY = `#graphql
     }
     products(first: 250) {
       nodes {
-        title handle status descriptionHtml onlineStoreUrl productType vendor
+        title handle status descriptionHtml onlineStoreUrl publishedAt productType vendor
         priceRangeV2 {
           minVariantPrice { amount currencyCode }
           maxVariantPrice { amount currencyCode }

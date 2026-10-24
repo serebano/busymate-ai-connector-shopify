@@ -3,7 +3,7 @@ import { priceExtremes, searchProducts, sortByPrice } from "../app/mcp/tools/pro
 import { toolByName } from "../app/mcp/tools/registry";
 
 const m = (amount: string) => ({ amount, currencyCode: "USD" });
-const node = (title: string, price: string | null) => ({ id: title, title, handle: title.toLowerCase().replace(/\s+/g, "-"), status: "ACTIVE", totalInventory: 5, onlineStoreUrl: null, featuredImage: null, priceRangeV2: price === null ? null : { minVariantPrice: m(price) }, compareAtPriceRange: null });
+const node = (title: string, price: string | null) => ({ id: title, title, handle: title.toLowerCase().replace(/\s+/g, "-"), status: "ACTIVE", totalInventory: 5, onlineStoreUrl: null, publishedAt: "2026-10-01T00:00:00Z", featuredImage: null, priceRangeV2: price === null ? null : { minVariantPrice: m(price) }, compareAtPriceRange: null });
 const ctx = (nodes: unknown[], seen: Array<{ q: string; n: number }> = []) => ({ admin: { graphql: async (_q: string, v?: { q: string; n: number }) => { seen.push(v ?? { q: "", n: 0 }); return { products: { nodes } }; } }, customer: null } as never);
 
 // The live Test 12 catalog the shopper asked about (src#2679), in Shopify's relevance order.

@@ -40,15 +40,47 @@ function orderStatusPayload(order: CustomerOrder) {
   };
 }
 
+/**
+ * src#2624 review S1 — "Where is my latest order?" → "tracking?" took THREE turns for a
+ * signed-in shopper: `order_number` was REQUIRED, the number the assistant had just read
+ * back (#1002) was not typed by the shopper, so the platform's argument-provenance guard
+ * withheld it and the shopper was asked to type it. The customer is identified, so their
+ * own orders are the context: with no number, the order is their MOST RECENT one, and the
+ * reply lists their other recent orders so they can pick another in the same turn.
+ */
+async function resolveOrder(
+  ctx: ToolContext,
+  orderNumber: unknown,
+): Promise<{ order: CustomerOrder | null; others: CustomerOrder[]; implicit: boolean }> {
+  if (String(orderNumber ?? "").trim()) {
+    return { order: await findCustomerOrder(ctx, orderNumber), others: [], implicit: false };
+  }
+  const recent = await listCustomerOrders(ctx, 5);
+  return { order: recent[0] ?? null, others: recent.slice(1), implicit: true };
+}
+
+function noOrders(): ToolResult {
+  return textResult("I don't see any orders on your account yet.", { order: null, orders: [] });
+}
+
+/** "Your other recent orders: #1001 · #999" — only when the order was picked for them. */
+function otherOrdersLine(others: CustomerOrder[]): string {
+  if (others.length === 0) return "";
+  return `\nYour other recent orders: ${others.map((o) => `${o.name} (${o.displayFulfillmentStatus.toLowerCase().replace(/_/g, " ")})`).join(" · ")}.`;
+}
+
 export async function getOrderStatus(
   args: Record<string, unknown>,
   ctx: ToolContext,
 ): Promise<ToolResult> {
   const guard = requireCustomer(ctx);
   if (guard) return guard;
-  const order = await findCustomerOrder(ctx, args.order_number);
-  if (!order) return notFound(args.order_number);
-  return textResult(summarizeOrder(order), { order: orderStatusPayload(order) });
+  const { order, others, implicit } = await resolveOrder(ctx, args.order_number);
+  if (!order) return implicit ? noOrders() : notFound(args.order_number);
+  return textResult(`${implicit ? "Your most recent order — " : ""}${summarizeOrder(order)}${otherOrdersLine(others)}`, {
+    order: orderStatusPayload(order),
+    ...(implicit ? { mostRecent: true, otherOrders: others.map((o) => o.name) } : {}),
+  });
 }
 
 export async function trackFulfillment(
@@ -57,24 +89,27 @@ export async function trackFulfillment(
 ): Promise<ToolResult> {
   const guard = requireCustomer(ctx);
   if (guard) return guard;
-  const order = await findCustomerOrder(ctx, args.order_number);
-  if (!order) return notFound(args.order_number);
+  const { order, others, implicit } = await resolveOrder(ctx, args.order_number);
+  if (!order) return implicit ? noOrders() : notFound(args.order_number);
+  const more = otherOrdersLine(others);
+  const recent = implicit ? { mostRecent: true, otherOrders: others.map((o) => o.name) } : {};
 
   const tracking = order.fulfillments.flatMap((f) =>
     f.trackingInfo.map((t) => ({ company: t.company, number: t.number, url: t.url })),
   );
   if (tracking.length === 0) {
     return textResult(
-      `${order.name} isn't showing tracking yet (status: ${order.displayFulfillmentStatus.toLowerCase().replace(/_/g, " ")}). I'll keep an eye on it.`,
-      { order: order.name, tracking: [] },
+      `${order.name} isn't showing tracking yet (status: ${order.displayFulfillmentStatus.toLowerCase().replace(/_/g, " ")}).${more}`,
+      { order: order.name, tracking: [], ...recent },
     );
   }
   const lines = tracking.map(
     (t) => `• ${t.company ?? "Carrier"} ${t.number ?? ""}${t.url ? ` — ${t.url}` : ""}`.trim(),
   );
-  return textResult(`Tracking for ${order.name}:\n${lines.join("\n")}`, {
+  return textResult(`Tracking for ${order.name}:\n${lines.join("\n")}${more}`, {
     order: order.name,
     tracking,
+    ...recent,
   });
 }
 

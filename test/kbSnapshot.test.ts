@@ -107,12 +107,12 @@ describe("buildKnowledgeSources — shape", () => {
     expect(empty.totalChars).toBe(empty.sources[0].content.length);
   });
 
-  it("puts published products (online-store URL or ACTIVE) before unpublished ones, API order within each group", () => {
-    const unpublished = { ...product(1, 40, true), onlineStoreUrl: null, status: null };
+  it("keeps Online Store products in API order and leaves every other product out", () => {
+    const unpublished = { ...product(1, 40, true), onlineStoreUrl: null, status: "ACTIVE", publishedAt: null };
     const out = buildKnowledgeSources(snapshot({ products: [unpublished, product(2, 40, true), product(3, 40, true)] }));
     const c = out.sources.find((s) => s.key === KNOWLEDGE_KEYS.products)!.content;
     expect(c.indexOf("Product 2")).toBeLessThan(c.indexOf("Product 3"));
-    expect(c.indexOf("Product 3")).toBeLessThan(c.indexOf("Product 1"));
+    expect(c).not.toContain("Product 1");
   });
 });
 
@@ -189,27 +189,31 @@ describe("buildKnowledgeSources — limits (deterministic, most-important first)
 // Drafts and archived products are merchant-internal — never knowledge.
 describe("buildKnowledgeSources — only sellable products are knowledge", () => {
   const base = { descriptionHtml: "<p>Board</p>", priceRangeV2: { minVariantPrice: { amount: "10.00", currencyCode: "USD" } } };
-  it("excludes DRAFT and ARCHIVED products but counts them as fetched", () => {
+  it("excludes DRAFT, ARCHIVED and every product that is not on the Online Store, but counts them as fetched", () => {
     const out = buildKnowledgeSources(
       snapshot({
         products: [
           { ...base, title: "Live board", handle: "live", status: "ACTIVE", onlineStoreUrl: "https://s.myshopify.com/products/live" },
+          // A password-protected store: onlineStoreUrl is null on every product, publishedAt tells them apart.
+          { ...base, title: "Password-store board", handle: "pw", status: "ACTIVE", onlineStoreUrl: null, publishedAt: "2026-10-01T00:00:00Z" },
           { ...base, title: "Draft board", handle: "draft", status: "DRAFT", onlineStoreUrl: null },
           { ...base, title: "Archived board", handle: "archived", status: "ARCHIVED", onlineStoreUrl: null },
-          { ...base, title: "POS-only board", handle: "pos", status: "ACTIVE", onlineStoreUrl: null },
+          { ...base, title: "POS-only board", handle: "pos", status: "ACTIVE", onlineStoreUrl: null, publishedAt: null },
+          // src#2624 review X2 — in every generated test store: ACTIVE, published nowhere.
+          { ...base, title: "The Hidden Snowboard", handle: "the-hidden-snowboard", status: "ACTIVE", onlineStoreUrl: null, publishedAt: null },
           { ...base, title: "Unknown-status board", handle: "unknown", status: null, onlineStoreUrl: "https://s.myshopify.com/products/unknown" },
         ],
       }),
     );
     const c = out.sources.find((s) => s.key === KNOWLEDGE_KEYS.products)!.content;
     expect(c).toContain("Live board");
-    expect(c).toContain("POS-only board");
+    expect(c).toContain("Password-store board");
+    expect(c).toContain("URL: https://acme.myshopify.com/products/pw");
     expect(c).toContain("Unknown-status board");
-    expect(c).not.toContain("Draft board");
-    expect(c).not.toContain("Archived board");
+    for (const hidden of ["Draft board", "Archived board", "POS-only board", "The Hidden Snowboard", "the-hidden-snowboard", "not published"]) expect(c).not.toContain(hidden);
     expect(out.counts.products).toBe(3);
-    expect(out.fetched.products).toBe(5);
-    // Excluding merchant-internal products is not a size truncation.
+    expect(out.fetched.products).toBe(7);
+    // Excluding products a shopper cannot open is not a size truncation.
     expect(out.truncated).toBe(false);
   });
 });
