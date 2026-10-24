@@ -11,6 +11,7 @@ import { failClosedClientAction } from "../lib/clientAction";
 import { AppRouteBoundary } from "../components/AppRouteError";
 import { LocalTime } from "../components/LocalTime";
 import { ConversationHistory } from "../components/ConversationHistory";
+import { handoffStatus } from "../lib/conversationStatus";
 
 export const ErrorBoundary = AppRouteBoundary;
 export const clientAction = failClosedClientAction;
@@ -66,7 +67,7 @@ export default function HandoffPage() {
         {handoff ? <>
           <Card>
             <BlockStack gap="300">
-              <InlineStack align="space-between"><Text as="h1" variant="headingLg">{handoff.title}</Text><Badge>{handoff.status}</Badge></InlineStack>
+              <InlineStack align="space-between"><Text as="h1" variant="headingLg">{handoff.title}</Text><Badge tone={handoffStatus(handoff.status).tone}>{handoffStatus(handoff.status).label}</Badge></InlineStack>
               {handoff.summary ? <Text as="p">{handoff.summary}</Text> : null}
               <Text as="p" tone="subdued">Requested <LocalTime iso={handoff.requestedAt} /></Text>
               {handoff.status === "requested" || handoff.status === "acknowledged" ? <>
