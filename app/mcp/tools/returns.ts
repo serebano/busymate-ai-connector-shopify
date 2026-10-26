@@ -210,25 +210,56 @@ export async function updateShippingAddress(
     return errorResult("Give me the new shipping address (street, city, postal code, country) and I'll update it.");
   }
 
+  // Shopify dev dashboard action item (2026-10-26): `orderUpdate` with a shipping
+  // address was called on 2026-07, flagged deprecated ("update by Jul 1"). From
+  // 2026-10 the same call recalculates the order's taxes for the new destination
+  // (changelog "updating-an-orders-shipping-address-returns-accurate-financial-data"),
+  // so it runs on ADDRESS_UPDATE_API_VERSION and reads the total before and after: a
+  // changed total is said plainly and left to the store's team (orders/edited tells
+  // the merchant), never charged or refunded by the assistant.
   const data = (await ctx.admin.graphql(
     `#graphql
     mutation OrderUpdate($input: OrderInput!) {
       orderUpdate(input: $input) {
-        order { id }
+        order { id ${ORDER_TOTALS} }
         ${USER_ERRORS}
       }
     }`,
     { input: { id: order.id, shippingAddress } },
-  )) as { orderUpdate?: { order?: { id: string } | null; userErrors?: Array<{ message?: string }> } };
+    { apiVersion: ADDRESS_UPDATE_API_VERSION },
+  )) as { orderUpdate?: { order?: ({ id: string } & OrderTotals) | null; userErrors?: Array<{ message?: string }> } };
 
   const err = firstError(data.orderUpdate?.userErrors);
   if (err || !data.orderUpdate?.order) {
     return errorResult(`I couldn't update the address on ${order.name}: ${err ?? "the update was rejected"}.`);
   }
-  return textResult(`Updated the shipping address on ${order.name}.`, {
+  const before = moneyOf({ presentmentMoney: order.totalPrice ?? null });
+  const after = moneyOf(data.orderUpdate.order.totalPriceSet);
+  const outstanding = moneyOf(data.orderUpdate.order.totalOutstandingSet);
+  const totalChanged = before !== null && after !== null && before.amount !== after.amount;
+  const note = totalChanged
+    ? ` The new address changes the tax, so the order total is now ${after.amount} ${after.currency} (was ${before.amount} ${before.currency}). The store's team will follow up about the difference.`
+    : "";
+  return textResult(`Updated the shipping address on ${order.name}.${note}`, {
     order: order.name,
     updated: Object.keys(shippingAddress),
+    ...(totalChanged ? { total_before: before, total_after: after } : {}),
+    ...(outstanding && Number(outstanding.amount) !== 0 ? { outstanding } : {}),
   });
+}
+
+/** The Admin API version the address change runs on (see updateShippingAddress). */
+export const ADDRESS_UPDATE_API_VERSION = "2026-10";
+
+const ORDER_TOTALS = `totalPriceSet { presentmentMoney { amount currencyCode } } totalOutstandingSet { presentmentMoney { amount currencyCode } }`;
+
+interface MoneyBag { presentmentMoney?: { amount?: string | null; currencyCode?: string | null } | null }
+interface OrderTotals { totalPriceSet?: MoneyBag | null; totalOutstandingSet?: MoneyBag | null }
+
+function moneyOf(bag: MoneyBag | null | undefined): { amount: string; currency: string } | null {
+  const m = bag?.presentmentMoney;
+  if (!m || typeof m.amount !== "string" || !m.amount) return null;
+  return { amount: m.amount, currency: m.currencyCode ?? "" };
 }
 
 export { DEFAULT_REFUND_CAP_CENTS };

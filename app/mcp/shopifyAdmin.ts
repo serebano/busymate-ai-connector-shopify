@@ -1,6 +1,7 @@
 export interface ShopifyAdminClient {
   shop: string;
-  graphql(query: string, variables?: Record<string, unknown>): Promise<unknown>;
+  /** `apiVersion` pins ONE call to a newer Admin API version than the app's default. */
+  graphql(query: string, variables?: Record<string, unknown>, opts?: { apiVersion?: string }): Promise<unknown>;
 }
 
 /**
@@ -37,9 +38,12 @@ export async function adminForShop(shop: string): Promise<ShopifyAdminClient> {
   await resolveAdmin(shop);
   return {
     shop,
-    async graphql(query, variables) {
+    async graphql(query, variables, opts) {
       const { admin } = await resolveAdmin(shop);
-      const res = await admin.graphql(query, { variables: variables ?? {} });
+      const res = await admin.graphql(query, {
+        variables: variables ?? {},
+        ...(opts?.apiVersion ? { apiVersion: opts.apiVersion as never } : {}),
+      });
       if (!res.ok) throw new Error(`Shopify Admin ${res.status}`);
       const json = (await res.json()) as { data?: unknown; errors?: unknown };
       if (json.errors) throw new Error(`Shopify Admin GraphQL errors: ${JSON.stringify(json.errors)}`);
