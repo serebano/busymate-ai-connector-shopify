@@ -26,3 +26,18 @@ describe("completed handoff navigation", () => {
     expect(html).not.toContain("https://busymate.ai/console/inbox");
   });
 });
+
+// Review re-check 2026-10-26 (1600 px admin): IndexTable cells never wrap, so a long open-handoff
+// reason (shopper note + reply email) pushed "Open conversation" behind a horizontal scrollbar.
+describe("open handoff row keeps its action in view", () => {
+  it("wraps the reason (max three lines) instead of widening the table", () => {
+    const long = "Round 8 check: handoff only in this chat. Reply email: mr.serebano+bmir3r8@gmail.com and more words to make it long";
+    state.handoffs = { ok: true, rows: [{ id: "20000000-0000-4000-8000-000000000003", sessionId: "wrun_01OPEN", supportSessionId: null, status: "requested", reason: long, requestedAt: "2026-10-26T09:47:26Z" }] };
+    const html = renderToStaticMarkup(createElement(AppProvider, { i18n: translations, children: createElement(Conversations) }));
+    const cell = html.slice(html.indexOf(`title="${long}"`) - 5, html.indexOf(long, html.indexOf(`title="${long}"`) + long.length + 10) + long.length);
+    expect(cell).toContain("white-space:normal");
+    expect(cell).toContain("overflow-wrap:anywhere");
+    expect(cell).toContain("-webkit-line-clamp:3");
+    expect(html).toContain("/app/handoffs/20000000-0000-4000-8000-000000000003");
+  });
+});

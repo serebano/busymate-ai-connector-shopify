@@ -25,6 +25,19 @@ import { AppRouteBoundary } from "../components/AppRouteError";
 
 // Embedded-frame contract (#retrain-500): a route error recovers in-frame, never
 // the root 500 page.
+
+/** The handoff reason wraps (max three lines) so the row's action stays in view. */
+const REASON_CELL = {
+  whiteSpace: "normal",
+  overflowWrap: "anywhere",
+  minWidth: "10rem",
+  maxWidth: "22rem",
+  display: "-webkit-box",
+  WebkitLineClamp: 3,
+  WebkitBoxOrient: "vertical",
+  overflow: "hidden",
+} as const;
+
 export const ErrorBoundary = AppRouteBoundary;
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -103,7 +116,12 @@ export default function ConversationsPage() {
                         <IndexTable.Cell>
                           <Badge tone={handoffStatus(h.status).tone}>{handoffStatus(h.status).label}</Badge>
                         </IndexTable.Cell>
-                        <IndexTable.Cell>{h.reason ?? "—"}</IndexTable.Cell>
+                        <IndexTable.Cell>
+                          {/* Review re-check 2026-10-26: IndexTable cells never wrap, so a long reason
+                              (the shopper's note + reply email) pushed "Open conversation" off the card
+                              behind a horizontal scrollbar. Wrap it, at most three lines. */}
+                          <div title={h.reason ?? undefined} style={REASON_CELL}>{h.reason ?? "—"}</div>
+                        </IndexTable.Cell>
                         <IndexTable.Cell>
                           <Link url={`/app/handoffs/${encodeURIComponent(h.id)}`}>Open conversation</Link>
                         </IndexTable.Cell>
