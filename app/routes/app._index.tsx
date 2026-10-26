@@ -34,6 +34,7 @@ import { reconcileBilling } from "../lib/billingReconcile.server";
 import { planFor } from "../lib/plans";
 import { failClosedClientAction } from "../lib/clientAction";
 import { AppRouteBoundary } from "../components/AppRouteError";
+import { LocalTime } from "../components/LocalTime";
 
 // Embedded-frame contract (#retrain-500): a failed action FETCH renders an error
 // toast (never the root 500 page), and a route error recovers in-frame.
@@ -49,6 +50,7 @@ import {
   themeEditorActivateUrl,
   themeEditorAppEmbedsUrl,
   trainingSummary,
+  AT_MARKER,
 } from "../lib/themeEmbed";
 
 const APP_HANDLE = process.env.SHOPIFY_APP_HANDLE || "busymate-ai";
@@ -186,6 +188,20 @@ function stateBadge(state: string) {
   return <Badge tone="info" progress="partiallyComplete">Setting up</Badge>;
 }
 
+
+/** A checklist detail whose instant (AT_MARKER) shows in the merchant's local time (review N2). */
+function StepDetail({ detail, at }: { detail: string; at?: string }) {
+  const cut = at ? detail.indexOf(AT_MARKER) : -1;
+  if (cut < 0) return <>{detail.replace(AT_MARKER, "")}</>;
+  return (
+    <>
+      {detail.slice(0, cut)}
+      <LocalTime iso={at} />
+      {detail.slice(cut + AT_MARKER.length)}
+    </>
+  );
+}
+
 export default function Index() {
   const data = useLoaderData<typeof loader>();
   const embedSetup = embedSetupPresentation(data.embed, data.embedConfirmed);
@@ -265,7 +281,7 @@ export default function Index() {
                         )}
                       </InlineStack>
                       <Text as="p" tone="subdued">
-                        {s.detail}
+                        <StepDetail detail={s.detail} at={s.at} />
                       </Text>
                     </List.Item>
                   ))}

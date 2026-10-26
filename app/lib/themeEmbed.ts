@@ -16,7 +16,6 @@
  * confirmation exists any more. The public-storefront check stays only as the
  * fallback when the theme cannot be read (e.g. before the scope is granted).
  */
-import { formatServerTime } from "./formatTime";
 import { shopToSlug } from "./tenantSlug";
 
 /**
@@ -182,7 +181,16 @@ export interface SetupStep {
   detail: string;
   done: boolean;
   failed: boolean;
+  /**
+   * Review nit N2 (2026-10-24): Home printed "08:02 UTC" while every other page shows
+   * the merchant's local time. An instant in `detail` is written as AT_MARKER and the
+   * page renders it with <LocalTime> (SSR-safe), the same as Store connection.
+   */
+  at?: string;
 }
+
+/** Where a step's `at` instant goes inside its `detail` text. */
+export const AT_MARKER = "{at}";
 
 export interface TrainingCounts {
   products: number | null;
@@ -229,17 +237,6 @@ export function trainingSummary(counts: TrainingCounts | null | undefined, fetch
     return `${partial ? `${count} of ${total}` : `${count}`} ${countNoun(partial ? total : count, noun)}`;
   };
   return `${part(counts.products, fetched?.products, "products")}, ${part(counts.policies, fetched?.policies, "policies")}, ${part(counts.pages, fetched?.pages, "pages")}`;
-}
-
-/**
- * Human date for "last trained" (ISO → e.g. "2 Sep 2026, 10:00 UTC"). Delegates
- * to the shared deterministic formatter so the app has ONE time-zone-safe render
- * path (#retrain-500). This string is server-rendered into the Home checklist, so
- * it MUST stay UTC-fixed — a bare toLocaleString here would reintroduce the
- * hydration mismatch.
- */
-export function formatTrainedAt(iso: string): string {
-  return formatServerTime(iso, iso);
 }
 
 /** Written steps rendered next to the primary "Turn on" button. */
@@ -293,10 +290,11 @@ export function buildSetupChecklist(s: SetupInput): SetupStep[] {
       detail: s.trainError
         ? `Training failed: ${s.trainError} — fix the cause, then re-train from Store connection.`
         : trained
-          ? `Trained on ${trainingSummary(s.counts, s.fetched) ?? "your products, policies and pages"} · last trained ${formatTrainedAt(s.trainedAt!)} · product changes re-train automatically; re-train from Store connection after policy or page changes.`
+          ? `Trained on ${trainingSummary(s.counts, s.fetched) ?? "your products, policies and pages"} · last trained ${AT_MARKER} · product changes re-train automatically; re-train from Store connection after policy or page changes.`
           : "Not trained yet — the assistant answers from your products, pages and policies once training completes.",
       done: trained,
       failed: Boolean(s.trainError),
+      ...(trained && s.trainedAt ? { at: s.trainedAt } : {}),
     },
     {
       id: "plan",
