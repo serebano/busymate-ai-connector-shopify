@@ -199,3 +199,38 @@ describe("#2624 — update_shipping_address accepts a real address", () => {
     expect(schema.properties.address.required).toEqual(["address1", "city", "zip"]);
   });
 });
+
+// Shopify dev dashboard action item (2026-10-26): orderUpdate (shipping address) was
+// called on 2026-07 and flagged deprecated; from 2026-10 it recalculates taxes.
+describe("update_shipping_address runs on 2026-10 and says when the total changed", () => {
+  function addressAdmin(totalAfter: string) {
+    const calls: Array<{ query: string; opts?: { apiVersion?: string } }> = [];
+    const base = mockAdmin().admin;
+    const graphql = async (query: string, vars?: Record<string, unknown>, opts?: { apiVersion?: string }) => {
+      calls.push({ query, opts });
+      if (query.includes("OrderUpdate")) {
+        return { orderUpdate: { order: { id: "gid://shopify/Order/555", totalPriceSet: { presentmentMoney: { amount: totalAfter, currencyCode: "USD" } }, totalOutstandingSet: { presentmentMoney: { amount: totalAfter === "58.00" ? "0.0" : "3.50", currencyCode: "USD" } } }, userErrors: [] } };
+      }
+      return base.graphql(query, vars);
+    };
+    return { admin: { shop: "acme.myshopify.com", graphql }, calls };
+  }
+  const args = { order_number: "1001", address: { address1: "1 New St", city: "Denver", zip: "80014", countryCode: "US" } };
+
+  it("pins the address mutation to Admin API 2026-10 (and only that call)", async () => {
+    const { admin, calls } = addressAdmin("58.00");
+    const r = await toolByName("update_shipping_address")!.handler(args, ctx({ admin }));
+    expect(text(r)).toBe("Updated the shipping address on #1001.");
+    const update = calls.find((c) => c.query.includes("OrderUpdate"));
+    expect(update?.opts?.apiVersion).toBe("2026-10");
+    expect(calls.filter((c) => !c.query.includes("OrderUpdate")).every((c) => c.opts?.apiVersion === undefined)).toBe(true);
+  });
+
+  it("tells the shopper the new total when the tax changed, and charges nothing", async () => {
+    const { admin, calls } = addressAdmin("61.50");
+    const r = await toolByName("update_shipping_address")!.handler(args, ctx({ admin }));
+    expect(text(r)).toContain("the order total is now 61.50 USD (was 58.00 USD)");
+    expect(text(r)).toContain("The store's team will follow up about the difference.");
+    expect(calls.some((c) => /orderMarkAsPaid|refundCreate|orderInvoiceSend/.test(c.query))).toBe(false);
+  });
+});
