@@ -1,6 +1,7 @@
 import { verifyLaunchToken } from "../lib/identity";
 import { connectorAudience } from "../lib/connector";
 import { peekActorToken, verifyActorToken } from "./actorToken";
+import { ACTOR_V3_HEADER, ACTOR_V3_JWKS_URL, base64urlDecode, peekActorV3Header, verifyActorV3 } from "./actorTokenV3";
 
 export interface ConnectorCaller {
   shop: string;
@@ -8,6 +9,14 @@ export interface ConnectorCaller {
   confirmed: boolean;
   /** How the caller was resolved: the verified Busymate AI actor token, or the legacy header. */
   actor: "bmai" | "header";
+  /**
+   * busymate-ai-src#3103 — which actor token version established the identity: 3 when a
+   * verified ES256 `bmai.actor/3` token (Authorization or `X-Bmai-Actor`) decided it,
+   * 2 for the HS256 token alone. Absent for the legacy header caller.
+   */
+  actorVersion?: 2 | 3;
+  /** The v3 token's `jti` (for audit correlation). Never the token itself. */
+  actorJti?: string;
 }
 
 /**
@@ -26,6 +35,66 @@ export interface ResolveCallerDeps {
   now?: number;
   /** Whether the legacy `x-bmai-shop` header caller is accepted (dev/test only). */
   headerCallerAllowed: boolean;
+  /**
+   * busymate-ai-src#3103 — Busymate AI's PUBLIC actor key set (JWKS) for `bmai.actor/3`.
+   * Optional: absent ⇒ v3 tokens are never accepted (v2 behaviour unchanged).
+   */
+  actorJwks?: () => Promise<{ keys: readonly unknown[] }>;
+}
+
+/** Process-wide JWKS cache: 5 min, plus at most one refetch a minute on an unknown kid. */
+let jwksCache: { at: number; value: { keys: readonly unknown[] } } | null = null;
+export function actorJwksFetcher(
+  url: string = process.env.BMAI_ACTOR_JWKS_URL || ACTOR_V3_JWKS_URL,
+  fetchImpl: typeof fetch = fetch,
+): (kid?: string) => Promise<{ keys: readonly unknown[] }> {
+  return async (kid?: string) => {
+    const age = jwksCache ? Date.now() - jwksCache.at : Infinity;
+    const known = !kid || jwksCache?.value.keys.some((k) => (k as { kid?: unknown })?.kid === kid);
+    if (jwksCache && (age < 300_000 && known || age < 60_000)) return jwksCache.value;
+    const res = await fetchImpl(url, { headers: { accept: "application/jwk-set+json, application/json" }, signal: AbortSignal.timeout(5_000) });
+    if (!res.ok) throw new Error(`actor jwks ${res.status}`);
+    const body = (await res.json()) as { keys?: unknown };
+    jwksCache = { at: Date.now(), value: { keys: Array.isArray(body.keys) ? body.keys : [] } };
+    return jwksCache.value;
+  };
+}
+
+/** Test seam. */
+export function resetActorJwksCache(): void {
+  jwksCache = null;
+}
+
+/** The UNVERIFIED tenant/connector binding of a would-be v3 token (shop lookup only). */
+function peekV3Binding(token: string): { tenantId: string; connectorId: string } | null {
+  if (!peekActorV3Header(token)) return null;
+  try {
+    const payload = JSON.parse(new TextDecoder().decode(base64urlDecode(token.split(".")[1] ?? ""))) as Record<string, unknown>;
+    const { tenant_id: tenantId, connector_id: connectorId } = payload;
+    return typeof tenantId === "string" && tenantId && typeof connectorId === "string" && connectorId ? { tenantId, connectorId } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Verify a `bmai.actor/3` token (ES256 against the public JWKS) and resolve its shop.
+ * FAIL-CLOSED: any failure ⇒ null. A v3 token is identified by construction.
+ */
+async function resolveV3Caller(token: string, deps: ResolveCallerDeps): Promise<ConnectorCaller | null> {
+  if (!deps.actorJwks) return null;
+  const binding = peekV3Binding(token);
+  if (!binding) return null;
+  const shop = await deps.resolveShop(binding.tenantId, binding.connectorId);
+  if (!shop) return null;
+  const claims = await verifyActorV3(token, await deps.actorJwks().catch(() => ({ keys: [] })), {
+    audience: deps.audience,
+    tenantId: binding.tenantId,
+    connectorId: binding.connectorId,
+    ...(deps.now !== undefined ? { nowSeconds: deps.now } : {}),
+  });
+  if (!claims) return null;
+  return { shop, customerId: claims.sub, confirmed: claims.confirmed, actor: "bmai", actorVersion: 3, actorJti: claims.jti };
 }
 
 function bearerToken(request: Request): string | null {
@@ -65,6 +134,7 @@ function defaultDeps(): ResolveCallerDeps {
     master: process.env.BMAI_SUPPORT_ACTOR_MASTER || "",
     audience: connectorAudience(),
     headerCallerAllowed: headerCallerAllowed(),
+    actorJwks: actorJwksFetcher(),
   };
 }
 
@@ -90,6 +160,11 @@ export async function resolveCaller(
   deps: ResolveCallerDeps = defaultDeps(),
 ): Promise<ConnectorCaller | null> {
   const token = bearerToken(request);
+  // busymate-ai-src#3103 — a v3 token in Authorization (the MCP declared `actor: 3`):
+  // verified on its own, fail-closed, never downgraded to v2 or a header.
+  if (token && peekActorV3Header(token)) return resolveV3Caller(token, deps);
+  const v3Header = request.headers.get(ACTOR_V3_HEADER)?.trim() || null;
+  if (!token && v3Header && peekActorV3Header(v3Header)) return resolveV3Caller(v3Header, deps);
   if (token) {
     const peek = peekActorToken(token);
     if (peek) {
@@ -105,6 +180,16 @@ export async function resolveCaller(
       if (!claims || claims.tenantId !== peek.tenantId || claims.connectorId !== peek.connectorId) {
         return null;
       }
+      // busymate-ai-src#3103 dual-sign: v2 authenticated the call; a v3 token beside it
+      // upgrades the identity ONLY when it verifies AND names the same shop binding and,
+      // for an identified v2 actor, the same subject. A bad v3 header never breaks v2.
+      if (v3Header && peekActorV3Header(v3Header)) {
+        const v3 = await resolveV3Caller(v3Header, deps);
+        const v2Customer = claims.actorKind === "identified" ? claims.sub : null;
+        if (v3 && v3.shop === shop && (v2Customer === null || v2Customer === v3.customerId)) {
+          return { ...v3, confirmed: claims.confirmed && v3.confirmed };
+        }
+      }
       return {
         shop,
         // Anonymous tokens have a synthetic nonempty sub, not a customer ID.
@@ -115,6 +200,7 @@ export async function resolveCaller(
         // "Confirmation required" even after the customer approved it in chat.
         confirmed: claims.confirmed,
         actor: "bmai",
+        actorVersion: 2,
       };
     }
     // Bearer present but not an actor-shaped token → fall through (dev only).

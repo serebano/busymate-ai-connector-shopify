@@ -4,6 +4,20 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-10-29 — connector accepts the v3 signed customer token (busymate-ai-src#3103)
+
+- The MCP connector now also verifies Busymate AI's `bmai.actor/3` token: ES256 against the public key set
+  `https://busymate.ai/.well-known/bmai-actor-jwks.json` (cached 5 min), pinning `typ`, `iss`, exact `aud`,
+  `tenant_id`, `connector_id`, `idp`, `actor_kind: identified` and a lifetime of 120 s or less
+  (`app/mcp/actorTokenV3.ts`, vendored verbatim from the platform signer; the platform's public conformance
+  vector is pinned in `test/actorTokenV3.test.ts`).
+- Accepted in `Authorization` or `X-Bmai-Actor`. With both v2 and v3 present, v3 decides only when it verifies
+  and names the same shop and customer; a bad v3 header never breaks the v2 call. v2 HS256 is unchanged.
+- `/api/bmai/status` declares `actor: 3` / `actorVersions: [2, 3]`. The platform sends v3 only to workspaces
+  with its `actor_token_v3` switch on (default off); no live shop changes behaviour until then.
+- Known dependency: on a switched-on workspace guests get no identity token, and this connector binds the shop
+  from that token, so Shopify workspaces stay switched off until the connector binds guests another way.
+
 ## 2026-10-24 — shopper chat: Online Store products only, latest-order tracking, return-policy fact (src#2624 review X2/S1/S7)
 
 - **X2:** `search_products`, `get_product` and the trained catalog only include products published to the

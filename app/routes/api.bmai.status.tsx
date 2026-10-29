@@ -20,6 +20,10 @@ export const loader = async () => {
     actorVerifier: masterSecretUsable(process.env.BMAI_SUPPORT_ACTOR_MASTER),
     // true iff the ES256 launch signing key is configured.
     launchIdentity: launchIdentityConfigured(),
+    // busymate-ai-src#3103 — this host verifies `bmai.actor/3` (ES256, Busymate AI's public
+    // JWKS), so the platform may send v3 in Authorization; v2 stays accepted.
+    actor: 3,
+    actorVersions: [2, 3],
     // the MCP endpoint origin used for actor-token `aud` pinning.
     audience: connectorAudience(),
     apiVersion: process.env.SHOPIFY_API_VERSION || "2026-07",
