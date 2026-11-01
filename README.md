@@ -7,7 +7,7 @@ platform to Busymate AI.** Fork it, extend it, ship your own.
 [![Stack](https://img.shields.io/badge/stack-React_Router_7_·_Polaris_·_Prisma-black.svg)](#stack)
 [![Contributions welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg)](./CONTRIBUTING.md)
 
-Installing this app turns any Shopify store into **one [Busymate AI](https://busymate.ai)
+Installing this app turns any Shopify store into **one [Busymate AI](https://busymate.ai?utm_source=github&utm_medium=readme&utm_campaign=busymate-ai-connector-shopify)
 white-label tenant** — an AI support assistant (**your mate**): answers only from the store's
 own products, policies and content, with sources, and says when it is not sure ·
 signed-in shoppers get order status, tracking and confirm-gated order actions ·
@@ -99,7 +99,7 @@ See **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** ·
 **[docs/PROVISIONING.md](./docs/PROVISIONING.md)** ·
 **[docs/EXTENDING.md](./docs/EXTENDING.md)** ·
 **[docs/LISTING.md](./docs/LISTING.md)**.
-Canonical Busymate AI docs live at **[busymate.ai/docs](https://busymate.ai/docs)**.
+Canonical Busymate AI docs live at **[busymate.ai/docs](https://busymate.ai/docs?utm_source=github&utm_medium=readme&utm_campaign=busymate-ai-connector-shopify)**.
 
 ## Stack
 
