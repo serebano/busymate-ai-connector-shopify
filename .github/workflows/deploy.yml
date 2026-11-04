@@ -13,7 +13,8 @@ on:
 # this workflow. The Shopify extension step retains its existing secret guard.
 jobs:
   shopify-deploy:
-    runs-on: ubuntu-latest
+    # Our ephemeral k3s runner (scale set ci-connector-shopify); never GitHub-hosted (owner order 2026-11-04).
+    runs-on: ci-connector-shopify
     env:
       SHOPIFY_CLI_PARTNERS_TOKEN: ${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN }}
     steps:

@@ -6,23 +6,22 @@ on:
 
 jobs:
   build-test:
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: shopify_test
-          POSTGRES_PASSWORD: shopify_test
-          POSTGRES_DB: shopify_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U shopify_test"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
+    # Our ephemeral k3s runner (scale set ci-connector-shopify, class sdk: PostgreSQL 16 binaries on PATH, no
+    # docker, no sudo); never GitHub-hosted (owner order 2026-11-04). The hosted `services: postgres:16` container
+    # is replaced by a throwaway server this job starts itself on 127.0.0.1:5432 (same user/db, trust auth).
+    runs-on: ci-connector-shopify
     steps:
       - uses: actions/checkout@v4
+      - name: No GitHub-hosted runners (runs-on lint)
+        run: python3 .github/runs-on-lint.py
+      - name: Start a throwaway PostgreSQL for the token tests
+        run: |
+          PGBIN=$(printf '%s\n' /usr/lib/postgresql/*/bin | sort -V | tail -1)
+          PGD="$RUNNER_TEMP/pg"; mkdir -p "$PGD"
+          "$PGBIN/initdb" -D "$PGD/data" --auth=trust --username=shopify_test --no-locale --encoding=UTF8 >/dev/null
+          "$PGBIN/pg_ctl" -D "$PGD/data" -l "$PGD/pg.log" -o "-c listen_addresses=127.0.0.1 -p 5432 -k $PGD" -w start
+          "$PGBIN/createdb" -h 127.0.0.1 -p 5432 -U shopify_test shopify_test
+          "$PGBIN/pg_isready" -h 127.0.0.1 -p 5432 -U shopify_test
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -34,8 +33,8 @@ jobs:
       - run: npm test
         env:
           SHOPIFY_TOKEN_TEST_DATABASE_URL: postgresql://shopify_test:shopify_test@127.0.0.1:5432/shopify_test
-      - name: Install local PostgreSQL fixture binaries
-        run: sudo apt-get update && sudo apt-get install -y postgresql
+      - name: Local PostgreSQL fixture binaries are present (runner class sdk)
+        run: ls -d /usr/lib/postgresql/*/bin/initdb
       - name: Durable reingest exact-SQL concurrency and restart proof
         run: npm run test:reingest-sql
       # Advisory: compare the LIVE canonical store record (busymate.ai) against
@@ -55,8 +54,8 @@ jobs:
 
   ops-migration-script:
     # No npm/node dependency — pure bash + coreutils, so this runs even if the
-    # app build/test leg above is broken or skipped.
-    runs-on: ubuntu-latest
+    # app build/test leg above is broken or skipped. Our k3s runner, never GitHub-hosted.
+    runs-on: ci-connector-shopify
     steps:
       - uses: actions/checkout@v4
       - name: migrate-rename.sh self-test (syntax + stubbed dry-run)
