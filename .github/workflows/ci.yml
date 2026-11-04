@@ -10,6 +10,7 @@ jobs:
     # docker, no sudo); never GitHub-hosted (owner order 2026-11-04). The hosted `services: postgres:16` container
     # is replaced by a throwaway server this job starts itself on 127.0.0.1:5432 (same user/db, trust auth).
     runs-on: ci-connector-shopify
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: No GitHub-hosted runners (runs-on lint)
@@ -56,6 +57,7 @@ jobs:
     # No npm/node dependency — pure bash + coreutils, so this runs even if the
     # app build/test leg above is broken or skipped. Our k3s runner, never GitHub-hosted.
     runs-on: ci-connector-shopify
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: migrate-rename.sh self-test (syntax + stubbed dry-run)

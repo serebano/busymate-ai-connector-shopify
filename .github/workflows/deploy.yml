@@ -15,6 +15,7 @@ jobs:
   shopify-deploy:
     # Our ephemeral k3s runner (scale set ci-connector-shopify); never GitHub-hosted (owner order 2026-11-04).
     runs-on: ci-connector-shopify
+    timeout-minutes: 45
     env:
       SHOPIFY_CLI_PARTNERS_TOKEN: ${{ secrets.SHOPIFY_CLI_PARTNERS_TOKEN }}
     steps:
