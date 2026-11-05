@@ -1,0 +1,17 @@
+{
+  "$comment": "Shopify Admin API IP allowlist for the Busymate AI public app (Dev Dashboard > app > Settings > IP allowlist). This file is the source of truth: every entry here must be in the Dev Dashboard list and vice versa. A change in our egress (node move, NAT, new host) must update this file AND the Dev Dashboard BEFORE the traffic moves, or every Admin API call fails. GET /api/egress/health compares the live egress IP with this list (docs/operations/ip-allowlist.md).",
+  "measuredAt": "2026-11-05",
+  "entries": [
+    {
+      "cidr": "141.95.126.194/32",
+      "host": "efirs (OVH, k3s node, control-plane)",
+      "egress": "pod SNAT to the node public IPv4; no proxy, no IPv6 in pods",
+      "callers": [
+        "Deployment shopify-app (embedded admin, /mcp connector tools, webhooks, billing)",
+        "Deployment shopify-kb-reingest (durable knowledge re-train worker)",
+        "CronJob shopify-kb-freshness (72 h backstop)",
+        "CronJob shopify-meter (usage billing)"
+      ]
+    }
+  ]
+}
