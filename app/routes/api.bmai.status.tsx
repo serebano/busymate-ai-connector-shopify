@@ -24,6 +24,9 @@ export const loader = async () => {
     // JWKS), so the platform may send v3 in Authorization; v2 stays accepted.
     actor: 3,
     actorVersions: [2, 3],
+    // busymate-ai-src#3156 — a guest's public call may carry only the signed `X-Bmai-Binding`;
+    // this host binds the shop from it (guest: public tools only).
+    guestBinding: true,
     // the MCP endpoint origin used for actor-token `aud` pinning.
     audience: connectorAudience(),
     apiVersion: process.env.SHOPIFY_API_VERSION || "2026-07",

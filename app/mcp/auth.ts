@@ -1,7 +1,16 @@
 import { verifyLaunchToken } from "../lib/identity";
 import { connectorAudience } from "../lib/connector";
 import { peekActorToken, verifyActorToken } from "./actorToken";
-import { ACTOR_V3_HEADER, ACTOR_V3_JWKS_URL, base64urlDecode, peekActorV3Header, verifyActorV3 } from "./actorTokenV3";
+import {
+  ACTOR_V3_BINDING_HEADER,
+  ACTOR_V3_HEADER,
+  ACTOR_V3_JWKS_URL,
+  base64urlDecode,
+  peekActorV3BindingHeader,
+  peekActorV3Header,
+  verifyActorV3,
+  verifyActorV3Binding,
+} from "./actorTokenV3";
 
 export interface ConnectorCaller {
   shop: string;
@@ -17,6 +26,11 @@ export interface ConnectorCaller {
   actorVersion?: 2 | 3;
   /** The v3 token's `jti` (for audit correlation). Never the token itself. */
   actorJti?: string;
+  /**
+   * busymate-ai-src#3156 — true when the shop was bound from the signed guest BINDING
+   * (`X-Bmai-Binding`): a guest's public call on a v3 workspace. Never an identity.
+   */
+  binding?: true;
 }
 
 /**
@@ -65,9 +79,9 @@ export function resetActorJwksCache(): void {
   jwksCache = null;
 }
 
-/** The UNVERIFIED tenant/connector binding of a would-be v3 token (shop lookup only). */
-function peekV3Binding(token: string): { tenantId: string; connectorId: string } | null {
-  if (!peekActorV3Header(token)) return null;
+/** The UNVERIFIED tenant/connector of a would-be v3 token or guest binding (shop lookup only). */
+function peekV3Binding(token: string, peek: (t: string) => unknown = peekActorV3Header): { tenantId: string; connectorId: string } | null {
+  if (!peek(token)) return null;
   try {
     const payload = JSON.parse(new TextDecoder().decode(base64urlDecode(token.split(".")[1] ?? ""))) as Record<string, unknown>;
     const { tenant_id: tenantId, connector_id: connectorId } = payload;
@@ -95,6 +109,28 @@ async function resolveV3Caller(token: string, deps: ResolveCallerDeps): Promise<
   });
   if (!claims) return null;
   return { shop, customerId: claims.sub, confirmed: claims.confirmed, actor: "bmai", actorVersion: 3, actorJti: claims.jti };
+}
+
+/**
+ * busymate-ai-src#3156 — verify the signed guest BINDING (ES256, same JWKS, `typ:
+ * bmai-binding+jwt`) and resolve its shop. It carries no subject, so the caller is a
+ * guest: `customerId` null, never confirmed (public tools only). FAIL-CLOSED: any
+ * failure ⇒ null.
+ */
+async function resolveBindingCaller(token: string, deps: ResolveCallerDeps): Promise<ConnectorCaller | null> {
+  if (!deps.actorJwks) return null;
+  const binding = peekV3Binding(token, peekActorV3BindingHeader);
+  if (!binding) return null;
+  const shop = await deps.resolveShop(binding.tenantId, binding.connectorId);
+  if (!shop) return null;
+  const claims = await verifyActorV3Binding(token, await deps.actorJwks().catch(() => ({ keys: [] })), {
+    audience: deps.audience,
+    tenantId: binding.tenantId,
+    connectorId: binding.connectorId,
+    ...(deps.now !== undefined ? { nowSeconds: deps.now } : {}),
+  });
+  if (!claims) return null;
+  return { shop, customerId: null, confirmed: false, actor: "bmai", actorVersion: 3, actorJti: claims.jti, binding: true };
 }
 
 function bearerToken(request: Request): string | null {
@@ -148,6 +184,10 @@ function defaultDeps(): ResolveCallerDeps {
  * (tenant,connector). A token that peeks as an actor token but fails verification
  * is REFUSED (fail-closed) — it is never downgraded to a header.
  *
+ * GUEST (busymate-ai-src#3156): a v3 workspace sends a guest's public call with no
+ * credential and only `X-Bmai-Binding` — a signed, subject-less binding of
+ * (tenant_id, connector_id). Verified against the same JWKS; the caller is a guest.
+ *
  * FALLBACK (dev/test only, gated by `BMAI_ALLOW_HEADER_CALLER`): the legacy
  * `x-bmai-shop` (+ optional `x-bmai-identity` ES256 launch JWT) header path. OFF
  * in production, so production trusts the verified actor token ONLY.
@@ -165,6 +205,11 @@ export async function resolveCaller(
   if (token && peekActorV3Header(token)) return resolveV3Caller(token, deps);
   const v3Header = request.headers.get(ACTOR_V3_HEADER)?.trim() || null;
   if (!token && v3Header && peekActorV3Header(v3Header)) return resolveV3Caller(v3Header, deps);
+  // busymate-ai-src#3156 — a guest's public call on a v3 workspace carries no credential,
+  // only the signed guest binding. Accepted ONLY alone (no Authorization, no v3 header), and
+  // fail-closed: a bad binding is refused, never downgraded to the header caller.
+  const bindingHeader = request.headers.get(ACTOR_V3_BINDING_HEADER)?.trim() || null;
+  if (!token && !v3Header && bindingHeader) return resolveBindingCaller(bindingHeader, deps);
   if (token) {
     const peek = peekActorToken(token);
     if (peek) {

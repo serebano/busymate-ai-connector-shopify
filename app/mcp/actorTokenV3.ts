@@ -1,8 +1,10 @@
 /**
  * VENDORED, byte-for-byte below this header, from busymate-ai-src
- * `packages/mcp-registry/src/actorV3/token.ts` (busymate-ai-src#3103) — the ONE
+ * `packages/mcp-registry/src/actorV3/token.ts` (busymate-ai-src#3103; re-copied for the
+ * #3156 guest binding, which also brings #3353's host-context claim checks) — the ONE
  * module the platform signs `bmai.actor/3` with. Do not edit here: re-copy it.
- * `test/actorTokenV3.test.ts` pins the platform's public conformance vector, so a
+ * `test/actorTokenV3.test.ts` + `test/guestBinding.test.ts` pin the platform's public
+ * conformance vectors (actor and binding), so a
  * drift between this copy and the signer fails the suite. Replaced by the
  * published verifier package (`@busymate/ai-verify`) when it ships.
  */
@@ -29,7 +31,9 @@
  * SECURITY RULES BAKED IN.
  *   - Identified visitors only: `actor_kind` is the literal "identified" and the
  *     builder refuses an empty subject or provider. An anonymous visitor is never
- *     given a v3 token (the caller sends no identity token at all).
+ *     given a v3 token (the caller sends no identity token at all). Its public
+ *     call may carry the guest BINDING instead (#3156, bottom of this file): own
+ *     `typ`, no subject, never an identity.
  *   - `aud` must be an exact origin (scheme://host[:port], no path).
  *   - Lifetime `exp - iat` <= 120 s; verifiers allow 10 s of clock skew.
  *   - The verifier pins `alg` and `typ` from constants and NEVER chooses an
@@ -68,6 +72,17 @@ export interface ActorV3Claims {
   readonly nbf: number;
   readonly exp: number;
   readonly jti: string;
+  /** #3353 — the host account context, echoed byte-identical from the verified launch; omitted when absent. */
+  readonly host_account?: string;
+  readonly host_env?: "live" | "sandbox";
+  readonly host_user?: string;
+}
+
+/** #3353 — the verified host account context of the session (identity contract `LaunchContext`). */
+export interface ActorV3HostContext {
+  readonly account?: string;
+  readonly env?: string;
+  readonly user?: string;
 }
 
 export interface ActorV3Input {
@@ -84,6 +99,8 @@ export interface ActorV3Input {
   readonly confirmed: boolean;
   /** The tool this token authorizes (one call, one tool). */
   readonly tool: string;
+  /** #3353 — the session's verified host context; each present key becomes its `host_*` claim. */
+  readonly hostContext?: ActorV3HostContext | null;
   readonly nowSeconds?: number;
   readonly jti?: string;
 }
@@ -138,6 +155,19 @@ function jsonPart(value: unknown): string {
   return base64urlEncode(enc.encode(JSON.stringify(value)));
 }
 
+/**
+ * #3353 — the host-context value rule. The identity contract (`LAUNCH_CONTEXT_ID_RE`,
+ * `LAUNCH_CONTEXT_ENVS`, `isLaunchContextValue`) is its home; this import-free module keeps a
+ * byte-identical copy, pinned to the contract by `hostContextParity.test.ts`.
+ */
+export const ACTOR_V3_HOST_ID_RE = /^[A-Za-z0-9:_-]{1,120}$/;
+export const ACTOR_V3_HOST_ENVS: readonly string[] = ["live", "sandbox"];
+export function isActorV3HostValue(key: "account" | "env" | "user", value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  return key === "env" ? ACTOR_V3_HOST_ENVS.includes(value) : ACTOR_V3_HOST_ID_RE.test(value);
+}
+const HOST_CLAIMS = [["account", "host_account"], ["env", "host_env"], ["user", "host_user"]] as const;
+
 function nonEmpty(value: unknown, max = 512): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= max;
 }
@@ -169,6 +199,14 @@ export function buildActorV3Claims(input: ActorV3Input): ActorV3Claims {
     throw new Error("actor v3: tenant, connector and session are required");
   }
   if (!nonEmpty(input.tool, 256)) throw new Error("actor v3: tool is required");
+  // #3353 — echo the verified host context; a value that fails the contract rule is a wrong token.
+  const host: Record<string, string> = {};
+  for (const [key, claim] of HOST_CLAIMS) {
+    const value = input.hostContext?.[key];
+    if (value === undefined) continue;
+    if (!isActorV3HostValue(key, value)) throw new Error("actor v3: host context is malformed");
+    host[claim] = value;
+  }
   const now = input.nowSeconds ?? Math.floor(Date.now() / 1000);
   return {
     iss: ACTOR_V3_ISSUER,
@@ -185,6 +223,7 @@ export function buildActorV3Claims(input: ActorV3Input): ActorV3Claims {
     nbf: now,
     exp: now + ACTOR_V3_TTL_SECONDS,
     jti: input.jti ?? randomJti(),
+    ...host,
   };
 }
 
@@ -214,6 +253,10 @@ export function validateActorV3Claims(payload: unknown, expect: ActorV3Expectati
   if (iat > now + ACTOR_V3_CLOCK_SKEW_SECONDS || nbf > now + ACTOR_V3_CLOCK_SKEW_SECONDS) return null;
   if (exp <= now - ACTOR_V3_CLOCK_SKEW_SECONDS) return null;
   if (exp <= iat || exp - iat > ACTOR_V3_MAX_TTL_SECONDS) return null;
+  // #3353 — host context claims are optional, and shape-checked when present (fail closed).
+  for (const [key, claim] of HOST_CLAIMS) {
+    if (p[claim] !== undefined && !isActorV3HostValue(key, p[claim])) return null;
+  }
   return p as unknown as ActorV3Claims;
 }
 
@@ -249,12 +292,16 @@ export async function actorV3PublicJwk(privateKey: ActorV3CryptoKey, kid: string
 
 // ── sign ─────────────────────────────────────────────────────────────────────
 
-export async function signActorV3(claims: ActorV3Claims, key: ActorV3SigningKey): Promise<string> {
+async function signTyped(claims: object, key: ActorV3SigningKey, typ: string): Promise<string> {
   if (!nonEmpty(key.kid, 128)) throw new Error("actor v3: kid is required");
-  const header = jsonPart({ alg: ACTOR_V3_ALG, typ: ACTOR_V3_TYP, kid: key.kid });
+  const header = jsonPart({ alg: ACTOR_V3_ALG, typ, kid: key.kid });
   const unsigned = `${header}.${jsonPart(claims)}`;
   const sig = new Uint8Array(await crypto.subtle.sign(SIG, key.privateKey, enc.encode(unsigned)));
   return `${unsigned}.${base64urlEncode(sig)}`;
+}
+
+export async function signActorV3(claims: ActorV3Claims, key: ActorV3SigningKey): Promise<string> {
+  return signTyped(claims, key, ACTOR_V3_TYP);
 }
 
 /** Build + sign in one step (the mint path). */
@@ -265,30 +312,27 @@ export async function mintActorV3(input: ActorV3Input, key: ActorV3SigningKey): 
 
 // ── verify ───────────────────────────────────────────────────────────────────
 
-/** The unverified header, or null when the token is not shaped like a v3 token. */
-export function peekActorV3Header(token: string): { kid: string } | null {
+function peekTyped(token: string, typ: string): { kid: string } | null {
   const parts = String(token ?? "").split(".");
   if (parts.length !== 3 || !parts[0]) return null;
   try {
     const header = JSON.parse(dec.decode(base64urlDecode(parts[0]))) as Record<string, unknown>;
-    if (header.alg !== ACTOR_V3_ALG || header.typ !== ACTOR_V3_TYP || !nonEmpty(header.kid, 128)) return null;
+    if (header.alg !== ACTOR_V3_ALG || header.typ !== typ || !nonEmpty(header.kid, 128)) return null;
     return { kid: header.kid };
   } catch {
     return null;
   }
 }
 
-/**
- * Verify a v3 token against a published key set. Signature FIRST, then the
- * shared claim check. Any failure ⇒ `null`; never throws.
- */
-export async function verifyActorV3(
-  token: string,
-  jwks: { readonly keys: readonly unknown[] },
-  expect: ActorV3Expectation,
-): Promise<ActorV3Claims | null> {
+/** The unverified header, or null when the token is not shaped like a v3 token. */
+export function peekActorV3Header(token: string): { kid: string } | null {
+  return peekTyped(token, ACTOR_V3_TYP);
+}
+
+/** The signature-checked payload of a token of exactly `typ`, or null. Never throws. */
+async function verifiedPayload(token: string, jwks: { readonly keys: readonly unknown[] }, typ: string): Promise<unknown> {
   try {
-    const head = peekActorV3Header(token);
+    const head = peekTyped(token, typ);
     if (!head) return null;
     const jwk = jwks.keys.find((k): k is ActorV3PublicJwk =>
       !!k && typeof k === "object" && (k as { kid?: unknown }).kid === head.kid &&
@@ -306,9 +350,124 @@ export async function verifyActorV3(
     if (sig.length !== 64) return null;
     const ok = await crypto.subtle.verify(SIG, publicKey, sig, enc.encode(`${h}.${p}`));
     if (!ok) return null;
-    const payload = JSON.parse(dec.decode(base64urlDecode(p))) as unknown;
-    return validateActorV3Claims(payload, expect);
+    return JSON.parse(dec.decode(base64urlDecode(p))) as unknown;
   } catch {
     return null;
   }
+}
+
+/**
+ * Verify a v3 token against a published key set. Signature FIRST, then the
+ * shared claim check. Any failure ⇒ `null`; never throws.
+ */
+export async function verifyActorV3(
+  token: string,
+  jwks: { readonly keys: readonly unknown[] },
+  expect: ActorV3Expectation,
+): Promise<ActorV3Claims | null> {
+  const payload = await verifiedPayload(token, jwks, ACTOR_V3_TYP);
+  return payload === null ? null : validateActorV3Claims(payload, expect);
+}
+
+// ── guest binding (busymate-ai-src#3156) ─────────────────────────────────────
+//
+// A guest's PUBLIC tool call on a v3 workspace carries no identity token. A
+// connector shared by many workspaces (one URL, no static header) still has to
+// know WHICH workspace and connector row the call is for, from something it can
+// verify. The binding is that: ES256 with the same published keys, its own
+// `typ` (so no actor verifier can ever read it as an identity), and exactly the
+// claims below. No `sub`, `idp`, session, `confirmed` or host context: it names
+// a connector, never a person, and never authorizes a write. A verifier treats
+// the caller as a guest (public tools only, unconfirmed).
+
+export const ACTOR_V3_BINDING_TYP = "bmai-binding+jwt";
+/** The transport header (lower-case). Sent alone: a guest call has no `Authorization`. */
+export const ACTOR_V3_BINDING_HEADER = "x-bmai-binding";
+export const ACTOR_V3_BINDING_KIND = "anonymous";
+
+export interface ActorV3BindingClaims {
+  readonly iss: typeof ACTOR_V3_ISSUER;
+  readonly aud: string;
+  readonly tenant_id: string;
+  readonly connector_id: string;
+  readonly actor_kind: typeof ACTOR_V3_BINDING_KIND;
+  readonly tool: string;
+  readonly iat: number;
+  readonly nbf: number;
+  readonly exp: number;
+  readonly jti: string;
+}
+
+/** The ONLY claims a binding may carry; anything else (a `sub`, a session …) is a refusal. */
+const BINDING_CLAIMS: ReadonlySet<string> = new Set(["iss", "aud", "tenant_id", "connector_id", "actor_kind", "tool", "iat", "nbf", "exp", "jti"]);
+
+export interface ActorV3BindingInput {
+  readonly audience: string;
+  readonly tenantId: string;
+  readonly connectorId: string;
+  readonly tool: string;
+  readonly nowSeconds?: number;
+  readonly jti?: string;
+}
+
+/** Build the binding claim set. Throws on anything that would make a wrong token. */
+export function buildActorV3BindingClaims(input: ActorV3BindingInput): ActorV3BindingClaims {
+  if (!isExactOrigin(input.audience)) throw new Error("actor v3 binding: audience must be an exact origin");
+  if (!nonEmpty(input.tenantId) || !nonEmpty(input.connectorId)) throw new Error("actor v3 binding: tenant and connector are required");
+  if (!nonEmpty(input.tool, 256)) throw new Error("actor v3 binding: tool is required");
+  const now = input.nowSeconds ?? Math.floor(Date.now() / 1000);
+  return {
+    iss: ACTOR_V3_ISSUER,
+    aud: input.audience,
+    tenant_id: input.tenantId,
+    connector_id: input.connectorId,
+    actor_kind: ACTOR_V3_BINDING_KIND,
+    tool: input.tool,
+    iat: now,
+    nbf: now,
+    exp: now + ACTOR_V3_TTL_SECONDS,
+    jti: input.jti ?? randomJti(),
+  };
+}
+
+/** The binding claim check (signature first: `verifyActorV3Binding`). Returns the claims or null. */
+export function validateActorV3BindingClaims(payload: unknown, expect: ActorV3Expectation): ActorV3BindingClaims | null {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const p = payload as Record<string, unknown>;
+  if (Object.keys(p).some((k) => !BINDING_CLAIMS.has(k))) return null;
+  const now = expect.nowSeconds ?? Math.floor(Date.now() / 1000);
+  if (p.iss !== ACTOR_V3_ISSUER) return null;
+  if (typeof p.aud !== "string" || p.aud !== expect.audience) return null;
+  if (!nonEmpty(p.tenant_id) || (expect.tenantId !== undefined && p.tenant_id !== expect.tenantId)) return null;
+  if (!nonEmpty(p.connector_id) || (expect.connectorId !== undefined && p.connector_id !== expect.connectorId)) return null;
+  if (p.actor_kind !== ACTOR_V3_BINDING_KIND) return null;
+  if (!nonEmpty(p.tool, 256) || !nonEmpty(p.jti)) return null;
+  const { iat, nbf, exp } = p;
+  if (!Number.isInteger(iat) || !Number.isInteger(nbf) || !Number.isInteger(exp)) return null;
+  const [i, n, e] = [iat as number, nbf as number, exp as number];
+  if (i > now + ACTOR_V3_CLOCK_SKEW_SECONDS || n > now + ACTOR_V3_CLOCK_SKEW_SECONDS) return null;
+  if (e <= now - ACTOR_V3_CLOCK_SKEW_SECONDS) return null;
+  if (e <= i || e - i > ACTOR_V3_MAX_TTL_SECONDS) return null;
+  return p as unknown as ActorV3BindingClaims;
+}
+
+/** The unverified header, or null when the token is not shaped like a binding. */
+export function peekActorV3BindingHeader(token: string): { kid: string } | null {
+  return peekTyped(token, ACTOR_V3_BINDING_TYP);
+}
+
+/** Build + sign a binding (the mint path). */
+export async function mintActorV3Binding(input: ActorV3BindingInput, key: ActorV3SigningKey): Promise<{ token: string; jti: string; kid: string }> {
+  const claims = buildActorV3BindingClaims(input);
+  return { token: await signTyped(claims, key, ACTOR_V3_BINDING_TYP), jti: claims.jti, kid: key.kid };
+}
+
+/** Verify a binding against the published key set. Signature FIRST, then the claims. Never throws. */
+export async function verifyActorV3Binding(
+  token: string,
+  jwks: { readonly keys: readonly unknown[] },
+  expect: ActorV3Expectation,
+): Promise<ActorV3BindingClaims | null> {
+  const payload = await verifiedPayload(token, jwks, ACTOR_V3_BINDING_TYP);
+  return payload === null ? null : validateActorV3BindingClaims(payload, expect);
 }

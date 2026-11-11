@@ -4,6 +4,20 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-11-11 — guests keep their tools on a v3 workspace: signed guest binding (busymate-ai-src#3156)
+
+- On a workspace with the `actor_token_v3` switch on, a guest's public call carries no identity token, only
+  the signed guest binding in `X-Bmai-Binding`: ES256 with the same public key set, its own
+  `typ: bmai-binding+jwt` (an actor verifier refuses it), exactly `iss aud tenant_id connector_id
+  actor_kind:"anonymous" tool iat nbf exp jti` and nothing else (no `sub`, `idp`, session or `confirmed`).
+- `app/mcp/auth.ts` verifies it only when the call carries no other credential, binds the shop from its
+  `(tenant_id, connector_id)` and resolves a guest (`customerId: null`, never confirmed), so only public tools
+  run. A bad binding is refused (-32001), never downgraded. The platform's binding vector is pinned in
+  `test/guestBinding.test.ts`.
+- `app/mcp/actorTokenV3.ts` is re-copied from the platform signer (adds the binding and #3353's host-context
+  claim checks). `/api/bmai/status` declares `guestBinding: true`.
+- After this release is live, Shopify workspaces can have `actor_token_v3` switched on.
+
 ## 2026-10-29 — connector accepts the v3 signed customer token (busymate-ai-src#3103)
 
 - The MCP connector now also verifies Busymate AI's `bmai.actor/3` token: ES256 against the public key set
