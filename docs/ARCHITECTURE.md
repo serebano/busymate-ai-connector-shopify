@@ -64,6 +64,13 @@ MULTI-TENANT, so it verifies as follows:
    call. Unsigned headers cannot promote it. Anonymous visitors remain blocked
    from customer/write tools even if their token carries confirmation.
 
+**Guest binding (busymate-ai-src#3156).** On a workspace with `actor_token_v3` on, a guest's
+public call carries no identity token, only the signed `X-Bmai-Binding` (ES256, the same public
+JWKS as v3, `typ: bmai-binding+jwt`, claims `iss aud tenant_id connector_id actor_kind tool iat
+nbf exp jti` and nothing else). It is read only when the call carries no other credential; the
+shop comes from its verified `(tenant_id, connector_id)` and the caller is a guest (no customer,
+never confirmed, public tools only).
+
 FAIL-CLOSED: an unset/short master, a bad signature, any failed pin, or an unknown
 `(tenant,connector)` ⇒ the caller is `null` and `tools/call` is refused. A token that
 peeks as an actor token but fails to verify is NEVER downgraded to a header caller.
