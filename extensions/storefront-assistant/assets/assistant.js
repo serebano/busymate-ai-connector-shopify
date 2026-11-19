@@ -77,7 +77,7 @@
     if (launcherMounted() || document.querySelector('[data-bm-fallback="' + slug + '"]')) return;
     var link = document.createElement("a");
     link.setAttribute("data-bm-fallback", slug);
-    link.href = origin + "/support/" + encodeURIComponent(slug) + (locale ? "?locale=" + encodeURIComponent(locale) : "");
+    link.href = origin + "/chat/w/" + encodeURIComponent(slug) + (locale ? "?locale=" + encodeURIComponent(locale) : "");
     link.target = "_blank";
     link.rel = "noopener";
     link.textContent = label || "Ask us";

@@ -203,7 +203,7 @@ describe("storefront loader (assistant.js)", () => {
     w.loaders()[0].onerror?.();
     const link = w.fallback();
     expect(link).toBeTruthy();
-    expect(link!.href).toBe("https://busymate.ai/support/shop-demo?locale=en");
+    expect(link!.href).toBe("https://busymate.ai/chat/w/shop-demo?locale=en");
     expect(link!.textContent).toBe("Ask us");
     expect(link!.target).toBe("_blank");
     expect(link!.rel).toBe("noopener");

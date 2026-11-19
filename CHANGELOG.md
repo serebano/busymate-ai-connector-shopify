@@ -72,6 +72,10 @@ it released (Dev Dashboard → Versions) and the host build serving
   Copy: no "start a return … or refund".
 - **Plurals:** "1 policy", "1 page", "1 product".
 
+## 2026-11-19 - theme extension: fallback link goes to /chat/w/<slug>
+
+The storefront fallback link (shown only when the launcher cannot mount) now opens `https://busymate.ai/chat/w/<slug>` instead of `/support/<slug>`, which Busymate redirects permanently (no user-visible /support address anywhere). The launcher, frame and App Proxy are unchanged. Released as a new Shopify app version (extension only).
+
 ## 2026-10-04 — 0.1.17: store knowledge never goes stale (#52)
 
 Re-training only happened on install, `products/*`, a scope grant or a manual Re-train, so 11 of 13
