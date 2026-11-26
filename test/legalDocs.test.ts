@@ -97,4 +97,52 @@ describe("#2624 — the app serves the listing's legal pages (no stale edge copy
     expect(legalPage("shopify-terms")).toContain("Terms");
     expect(legalPage("../etc/passwd")).toBeNull();
   });
+
+  it("L4: the FAQ italic assistant name renders as emphasis, not literal asterisks", () => {
+    const html = renderLegalHtml(read("docs/legal/faq.md"), "FAQ");
+    expect(html).toContain("<em>your store name</em> AI");
+    expect(html).not.toMatch(/\*your store name\*/);
+  });
+
+  it("L5: the privacy policy is not a draft and names what the app really reads", () => {
+    const privacy = read("docs/legal/privacy.md");
+    expect(privacy).not.toMatch(/DRAFT|Have counsel review/i);
+    // G2: no theme scope any more — the policy must not claim a theme read.
+    expect(privacy).not.toMatch(/read_themes|settings_data\.json/);
+    expect(privacy).toMatch(/name, address and phone/i);
+  });
+
+  it("L2: testing instructions use the live button label", () => {
+    const t = read("docs/review/testing-instructions.md");
+    expect(t).toContain('"Send to the team"');
+    expect(t).not.toContain("Send request");
+  });
+
+  it("testing instructions fit the Partner field and match busymate-ai-12", () => {
+    const t = read("docs/review/testing-instructions.md").split("-->\n")[1];
+    expect(Buffer.byteLength(t)).toBeLessThanOrEqual(2800);
+    expect(t).toContain('"AI support chat"');
+    for (const stale of ["It's switched on", "Busymate AI assistant", "shopify-test", "Send request"]) {
+      expect(t).not.toContain(stale);
+    }
+  });
+});
+
+describe("F3/F4 red-team 2026-11-26", () => {
+  it("privacy + terms name the legal entity and postal address", () => {
+    for (const f of ["docs/legal/privacy.md", "docs/legal/terms.md"]) {
+      const t = read(f);
+      expect(t, f).toContain("SERGIU TODERAȘCU");
+      expect(t, f).toContain("Nicolae Dimo");
+    }
+  });
+  it("privacy covers the install-screen data categories", () => {
+    const p = read("docs/legal/privacy.md");
+    for (const w of ["Geolocation", "App events", "Blog contributors", "read_content"]) expect(p).toContain(w);
+  });
+  it("every admin page carries a support entry", () => {
+    const a = read("app/routes/app.tsx");
+    expect(a).toContain("mailto:hi@busymate.ai");
+    expect(a).toContain("/legal/faq");
+  });
 });

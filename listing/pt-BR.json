@@ -3,12 +3,12 @@
   "app_name": "Busymate AI",
   "tagline": "Suporte com IA para sua loja, ciente dos pedidos",
   "intro": "Suporte com IA que responde só com o conteúdo da sua loja. Resolve solicitações de pedidos e reduz tickets.",
-  "details": "A Busymate AI adiciona um assistente de suporte com IA à sua loja online. Ele responde aos compradores usando apenas seus próprios produtos, políticas e conteúdo da loja, mostra as fontes e avisa quando não tem certeza em vez de adivinhar. Compradores conectados podem consultar o status e o rastreamento do pedido e pedir para atualizar, cancelar, devolver ou reembolsar um pedido; cada ação é confirmada antes, e reembolsos maiores ou conversas de baixa confiança são encaminhados à sua equipe. Ele responde no idioma do comprador, incluindo escritas da direita para a esquerda.",
+  "details": "A Busymate AI adiciona um assistente de suporte com IA à sua loja online. Ele responde usando apenas seus próprios produtos, políticas e conteúdo da loja e avisa quando não tem certeza. Compradores conectados podem consultar o status e o rastreamento do pedido, cancelar um pedido não enviado ou alterar o endereço de entrega de um pedido não enviado; cada ação é confirmada primeiro. Devoluções, reembolsos e conversas incertas vão para a sua equipe. Responde no idioma do comprador, incluindo escritas da direita para a esquerda.",
   "feature_bullets": [
     "Responde apenas com seus próprios produtos, políticas e conteúdo da loja, com fontes",
     "Avisa quando não tem certeza e oferece um humano em vez de adivinhar",
     "Compradores conectados recebem status do pedido, rastreamento e ações confirmadas",
-    "Cancelamentos, devoluções e reembolsos são confirmados antes; reembolsos maiores vão para você",
+    "Cancelamentos e mudanças de endereço são sempre confirmados primeiro pelo comprador",
     "Responde no idioma do comprador, incluindo escritas da direita para a esquerda"
   ],
   "pricing_summary": "Planos mensais com resoluções de IA incluídas e depois uma cobrança por resolução até o seu limite de gastos mensal. Há um plano gratuito; os planos pagos começam com um teste grátis de 14 dias.",

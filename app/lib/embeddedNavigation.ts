@@ -16,3 +16,18 @@ export function embeddedAppUrl(destination: string, context: EmbeddedNavigation 
   url.searchParams.set("embedded", "1");
   return `${url.pathname}${url.search}${url.hash}`;
 }
+
+/**
+ * The embedded Home URL for a document that has no authenticated context (the
+ * root error page): rebuilt from the frame's own `shop` + `host` query, both
+ * shape-checked. A document load of it re-enters the session-token bounce, so no
+ * stale credential is carried. Null when the query cannot name a shop: the page
+ * then shows no link rather than one the embedded auth cannot serve.
+ */
+export function embeddedHomeFromSearch(search: string): string | null {
+  const params = new URLSearchParams(search);
+  const shop = params.get("shop") ?? "";
+  const host = params.get("host") ?? "";
+  if (!/^[a-z0-9][a-z0-9-]*\.myshopify\.com$/.test(shop) || !/^[A-Za-z0-9+/_-]+={0,2}$/.test(host)) return null;
+  return embeddedAppUrl("/app", { shop, host });
+}

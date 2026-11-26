@@ -16,6 +16,83 @@ it released (Dev Dashboard → Versions) and the host build serving
   and retried hourly (no behaviour change, no error to the merchant).
 - Tests: `test/freeLimit.test.ts`, `test/usageBilling.test.ts` (Free limit suite).
 
+## 2026-11-26 — admin layout shift and App Bridge loaded once (red-team F5)
+
+Server-rendered admin only: no Shopify app version, no extension or config change, no migration.
+
+- **App Bridge once, no parser-blocking body scripts:** the admin layout no longer uses the SDK's `AppProvider`.
+  It rendered a second `app-bridge.js` tag and a `polaris.js` tag (Polaris web components, 149 KB br) as
+  parser-blocking scripts at the top of `<body>`. The admin document now has ONE script tag (was 3): `app-bridge.js`,
+  first in `<head>` (`root.tsx`), only on `/app/…` (public legal/landing/login pages skip it). App Bridge still
+  preloads `polaris.js` itself, asynchronously (measured live 2026-11-26); that load is Shopify's, not ours. Admin nav
+  clicks still route client-side (`AppBridgeNavigation`, the `shopify:navigate` listener).
+- **Home no longer shifts when App Bridge answers:** the embed card and the checklist rendered "Checking your
+  theme" first and grew when `shopify.app.extensions()` answered (CLS 0.128 at 390 px; live after: 0 on Home, at most 0.002 on any admin page). Home now renders the last
+  known answer (`ShopTenant.embedConfirmedAt`, set = on) and reports a changed answer once
+  (`POST /api/embed-status`, session token, shop from the session). Test: `test/appBridgeOnce.test.ts`.
+
+## 2026-11-26 — embedded admin accessibility: document title, main landmark, h1; Conversations on a phone (audit G5, inventory F8–F10)
+
+Server-rendered admin only: no Shopify app version, no extension or config change.
+
+- **G5 (axe 0 violations wanted on every admin page):** the embedded document now has a `<title>` ("Conversations ·
+  Busymate AI"), one `main` landmark around the routed page and a visually hidden `h1` with the same words as the
+  TitleBar (the visible title stays in Shopify's chrome). One table, `app/lib/adminPageTitle.ts`, feeds the layout's
+  `meta` and the `h1`; a test keeps it equal to every route's TitleBar title.
+- **F8:** at 390px "Recent conversations" and its subtitle are stacked (they ran into each other), the table drops
+  "Started" and wraps its cells, so Status and the link fit without scrolling sideways.
+- **F9:** a quiet chat reads "No recent activity" (was "Inactive"). The hidden, unlabeled select-all checkbox Polaris
+  renders for a table with no bulk actions is removed from the tree.
+- **F10:** an unknown `/app/…` path renders "This page does not exist" inside the app with **Back to Home**
+  (`app/routes/app.$.tsx`, 404). The root error page links to the embedded Home when it shows inside `/app`; its
+  link and muted text now meet 4.5:1 in the light scheme (the green link was 1.99:1).
+## 2026-11-26 — billing: a late "cancelled" for the replaced plan no longer wipes the new plan
+
+- On a plan change Shopify cancels the old contract and activates the new one; both `app_subscriptions/update`
+  webhooks arrive within ~100 ms, often on different pods, in no guaranteed order (seen live on the billing matrix
+  store). `syncBillingState` now ignores a cancelled/declined event that names a different subscription than the
+  live one, so BillingState, metering and the platform plan report stay on the new plan. Server-only, no app version.
+
+## 2026-11-26 — Home reads the embed state Shopify really reports (G2 hotfix after busymate-ai-12)
+
+- Live `shopify.app.extensions()` names our theme extension `theme-app-extension`, not the toml handle
+  `storefront-assistant`, so Home showed "Check storefront assistant status" while the embed was on. The parser now
+  matches the theme extension by type and the embed by its block handle `assistant`. Server-only, no app version.
+
+## 2026-11-26 — embed state from App Bridge, no theme scope; embed renamed "AI support chat" (audit G2, G9)
+
+- **G2 (BFS 4.2.3, data minimization):** Home reads the app embed's state on the published theme with App Bridge
+  `shopify.app.extensions()` (no access scope, works on password-protected stores, re-checked when the merchant
+  returns from the theme editor). `read_themes` is dropped from `shopify.app.toml`; the server no longer reads
+  the theme or fetches the storefront on Home load. Needs a new app version: existing installs lose `read_themes`
+  on their next app open without a prompt (`app/scopes_update` fires).
+- **G9:** the app embed's theme-editor name is "AI support chat" (14 locales, each under 25 characters, no app
+  title), per the theme app extension configuration docs. The block handle (`assistant`) is unchanged, so
+  embeds that are already on stay on.
+
+## 2026-11-26 — embedded admin: save bar, back actions, inline errors (Built for Shopify 4.1.1, 4.1.4, 4.1.5, 4.2.4)
+
+Server-rendered admin only: no Shopify app version, no extension or config change.
+
+- **Assistant settings** uses Shopify's contextual save bar (App Bridge `<SaveBar>`): it shows while the
+  names differ from the saved ones, Save and Discard live there (the page's own Save button is gone), and
+  the admin holds navigation until the merchant decides. A failed save keeps the edit and the bar. The
+  app's own router is guarded with `shopify.saveBar.leaveConfirmation()` (`app/lib/useLeaveGuard.ts`).
+  Rules: `app/lib/unsavedChanges.ts`.
+- **Errors stay and sit by the field.** An empty or too-long name is refused in the browser and again on
+  the server (`brandingFieldErrors`), shown under that field in red; a failure no field explains is a
+  critical banner above the form. No error toast (a toast fades). The handoff reply field shows a refused
+  reply the same way.
+- **Pages under Conversations** moved to `/app/conversations/handoffs/:id` and
+  `/app/conversations/transcripts/:id`, so the admin keeps "Conversations" highlighted; the old
+  addresses redirect. Both have the back action in Shopify's title bar (breadcrumb) with Refresh next to
+  it (`app/components/ConversationTitleBar.tsx`); the 10 s background check no longer flickers Refresh.
+- **Loading and empty states.** Shopify's loading bar runs while any page of the app loads
+  (`AdminLoadingBar`, App Bridge Loading API). Cards share one empty state (`EmptyCardState`); the
+  Conversations empty state no longer renders an image element with an empty source.
+- Tests: `test/settingsSaveBar.test.ts` (save bar, inline errors, leave guard, in a DOM),
+  `test/unsavedChanges.test.ts`, `test/adminNavigation.test.ts`.
+
 ## 2026-11-26 — a signed actor credential runs ONE call of ONE tool (ECO-03, P1 security)
 
 - `app/mcp/auth.ts` now carries the verified v3 `tool` claim (actor token and guest binding) and the

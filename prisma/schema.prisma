@@ -78,9 +78,10 @@ model ShopTenant {
   /// backstop and from the freshness health check.
   inactiveAt      DateTime? @db.Timestamptz
   inactiveReason  String?
-  /// The merchant confirmed the app embed is switched on (#2618 follow-up). Only
-  /// used while the storefront is password-protected (we cannot see it); cleared
-  /// when a public storefront check finds the embed off.
+  /// Set while App Bridge's last answer (`shopify.app.extensions()` on Home) said
+  /// the app embed is ON; null = off / never checked. Home renders this last-known
+  /// state first so the page does not shift when App Bridge answers (F5, admin
+  /// CLS); written only when the answer changes (POST /api/embed-status).
   embedConfirmedAt DateTime? @db.Timestamptz
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt

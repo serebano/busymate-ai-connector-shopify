@@ -17,6 +17,8 @@ export const KB_INGEST_QUERY = `#graphql
   query KbIngest {
     shop {
       name
+      currencyCode
+      currencyFormats { moneyFormat }
       shopPolicies { type title body url }
     }
     products(first: 250) {
@@ -33,7 +35,7 @@ export const KB_INGEST_QUERY = `#graphql
   }`;
 
 interface KbIngestData {
-  shop?: { name?: string | null; shopPolicies?: KbPolicy[] | null } | null;
+  shop?: { name?: string | null; currencyCode?: string | null; currencyFormats?: { moneyFormat?: string | null } | null; shopPolicies?: KbPolicy[] | null } | null;
   products?: { nodes?: KbProduct[] | null } | null;
   pages?: { nodes?: KbPage[] | null } | null;
 }
@@ -45,6 +47,9 @@ export async function buildKbSnapshot(shop: string): Promise<KbSnapshot> {
   return {
     shop,
     shopName: data.shop?.name ?? null,
+    moneyFormat: data.shop?.currencyFormats?.moneyFormat
+      ? { moneyFormat: data.shop.currencyFormats.moneyFormat, currencyCode: data.shop.currencyCode ?? null }
+      : null,
     products: data.products?.nodes ?? [],
     policies: data.shop?.shopPolicies ?? [],
     pages: data.pages?.nodes ?? [],

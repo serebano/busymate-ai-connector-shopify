@@ -3,12 +3,12 @@
   "app_name": "Busymate AI",
   "tagline": "Grounded, order-aware AI support for your store",
   "intro": "AI support that answers only from your store content. It handles order requests and cuts tickets.",
-  "details": "Busymate AI adds an AI support assistant to your online store. It answers shoppers using only your own products, policies and store content, shows its sources, and says when it is not sure instead of guessing. Signed-in shoppers can check order status and tracking and ask to update, cancel, return or refund an order; each action is confirmed first, and larger refunds or low-confidence conversations are handed to your team. It replies in the shopper's language, including right-to-left scripts.",
+  "details": "Busymate AI adds an AI support assistant to your online store. It answers using only your own products, policies and store content and says when it is not sure. Signed-in shoppers can check order status and tracking, cancel an unfulfilled order or change an unshipped order's shipping address; each action is confirmed first. Returns, refunds and unsure conversations go to your team. Replies in the shopper's language, including right-to-left scripts.",
   "feature_bullets": [
     "Answers only from your own products, policies and store content, with sources",
     "Says when it is not sure and offers a human instead of guessing",
     "Signed-in shoppers get order status, tracking and confirmed order actions",
-    "Cancellations, returns and refunds are confirmed first; larger refunds go to you",
+    "Cancellations and address changes are always confirmed by the shopper first",
     "Replies in the shopper's own language, including right-to-left scripts"
   ],
   "pricing_summary": "Monthly plans with included AI resolutions, then a per-resolution charge up to your monthly spend cap. Free plan available; paid plans start with a 14-day free trial.",

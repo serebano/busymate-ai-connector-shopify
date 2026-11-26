@@ -3,12 +3,12 @@
   "app_name": "Busymate AI",
   "tagline": "KI-Support für deinen Shop, mit Bestellkontext",
   "intro": "KI-Support, der nur aus den Inhalten deines Shops antwortet. Er bearbeitet Bestellanfragen und senkt das Ticketaufkommen.",
-  "details": "Busymate AI fügt deinem Onlineshop einen KI-Support-Assistenten hinzu. Er antwortet Käufern ausschließlich auf Basis deiner eigenen Produkte, Richtlinien und Shop-Inhalte, zeigt seine Quellen und sagt, wenn er sich nicht sicher ist, statt zu raten. Angemeldete Käufer können Bestellstatus und Sendungsverfolgung abrufen und darum bitten, eine Bestellung zu ändern, zu stornieren, zurückzusenden oder zu erstatten; jede Aktion wird zuerst bestätigt, und größere Erstattungen oder Gespräche mit geringer Zuversicht werden an dein Team übergeben. Er antwortet in der Sprache des Käufers, auch in Schriften, die von rechts nach links laufen.",
+  "details": "Busymate AI fügt deinem Onlineshop einen KI-Support-Assistenten hinzu. Er antwortet ausschließlich auf Basis deiner eigenen Produkte, Richtlinien und Shop-Inhalte und sagt, wenn er sich nicht sicher ist. Angemeldete Käufer können Bestellstatus und Sendungsverfolgung abrufen, eine noch nicht versendete Bestellung stornieren oder die Lieferadresse einer noch nicht versendeten Bestellung ändern; jede Aktion wird zuerst bestätigt. Rücksendungen, Erstattungen und unsichere Gespräche gehen an dein Team. Er antwortet in der Sprache des Käufers, auch in Schriften, die von rechts nach links laufen.",
   "feature_bullets": [
     "Antwortet nur aus deinen eigenen Produkten, Richtlinien und Shop-Inhalten, mit Quellen",
     "Sagt, wenn er sich nicht sicher ist, und bietet einen Menschen an, statt zu raten",
     "Angemeldete Käufer erhalten Bestellstatus, Sendungsverfolgung und bestätigte Bestellaktionen",
-    "Stornierungen, Rücksendungen und Erstattungen werden zuerst bestätigt; größere Erstattungen gehen an dich",
+    "Stornierungen und Adressänderungen werden immer zuerst vom Käufer bestätigt",
     "Antwortet in der Sprache des Käufers, auch in Schriften von rechts nach links"
   ],
   "pricing_summary": "Monatliche Pläne mit inbegriffenen KI-Lösungen, danach ein Preis pro Lösung bis zu deinem monatlichen Ausgabenlimit. Kostenloser Plan verfügbar; bezahlte Pläne starten mit einer 14-tägigen kostenlosen Testphase.",

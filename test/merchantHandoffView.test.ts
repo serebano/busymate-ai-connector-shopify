@@ -20,7 +20,7 @@ describe("completed handoff navigation", () => {
   it("keeps the merchant's human transcript reachable after resolving", () => {
     const html = renderToStaticMarkup(createElement(AppProvider, { i18n: translations, children: createElement(Conversations) }));
     expect(html).toContain("Recent completed handoffs");
-    expect(html).toContain("/app/handoffs/20000000-0000-4000-8000-000000000002");
+    expect(html).toContain("/app/conversations/handoffs/20000000-0000-4000-8000-000000000002");
     expect(html).toContain("Help with my order");
     expect(html).toContain("0 open");
     expect(html).not.toContain("https://busymate.ai/console/inbox");
@@ -38,6 +38,6 @@ describe("open handoff row keeps its action in view", () => {
     expect(cell).toContain("white-space:normal");
     expect(cell).toContain("overflow-wrap:anywhere");
     expect(cell).toContain("-webkit-line-clamp:3");
-    expect(html).toContain("/app/handoffs/20000000-0000-4000-8000-000000000003");
+    expect(html).toContain("/app/conversations/handoffs/20000000-0000-4000-8000-000000000003");
   });
 });

@@ -279,7 +279,7 @@ it("MCP transport preserves customer identity and signed confirmation gates befo
   });
   try {
     const { handleMcpRequest } = await import("../app/mcp/route");
-    const call = (confirmed: boolean, actor_kind = "identified", name = "apply_discount") => handleMcpRequest(new Request(`${AUD}/mcp`, {
+    const call = (confirmed: boolean, actor_kind = "identified", name = "update_shipping_address") => handleMcpRequest(new Request(`${AUD}/mcp`, {
       method: "POST",
       headers: { authorization: `Bearer ${mint({ payload: { confirmed, actor_kind, sub: actor_kind === "anonymous" ? "anonymous:sess_1" : "cust_1" } })}`, "content-type": "application/json", "x-bmai-confirmed": "1" },
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: {} } }),
@@ -288,7 +288,7 @@ it("MCP transport preserves customer identity and signed confirmation gates befo
     expect(denied.result.structuredContent.requiresConfirm).toBe(true);
     expect(adminForShop).not.toHaveBeenCalled();
     expect(handler).not.toHaveBeenCalled();
-    for (const name of ["get_order_status", "apply_discount"]) {
+    for (const name of ["get_order_status", "update_shipping_address"]) {
       const anonymousDenied = await (await call(true, "anonymous", name)).json();
       expect(anonymousDenied.result.isError).toBe(true);
       expect(anonymousDenied.result.content[0].text).toContain("sign in");

@@ -30,6 +30,8 @@ export interface BrandingSaveDeps {
 export interface BrandingSaveResult {
   ok: boolean;
   error: string | null;
+  /** Per-field validation messages, shown inline next to the field (Built for Shopify 4.2.4). */
+  fieldErrors?: BrandingFieldErrors;
   /** True once the new names are in a PUBLISHED revision (what shoppers see). */
   published: boolean;
   /** Saved; a training pass already running publishes the new names in a minute (#2624). */
@@ -39,6 +41,28 @@ export interface BrandingSaveResult {
 
 export const ASSISTANT_NAME_MAX = 40;
 export const PRODUCT_NAME_MAX = 80;
+
+/** Field keys match the Assistant settings form (`name=` of each input). */
+export interface BrandingFieldErrors {
+  assistantName?: string;
+  displayName?: string;
+}
+
+/**
+ * One message per invalid field, each saying how to fix it. The settings form
+ * shows it next to the field; the same rule runs in the browser before a save and
+ * on the server (the server never trusts the browser). Empty object = valid.
+ */
+export function brandingFieldErrors(input: { assistantName: string; productName: string }): BrandingFieldErrors {
+  const assistantName = input.assistantName.trim();
+  const productName = input.productName.trim();
+  const errors: BrandingFieldErrors = {};
+  if (!assistantName) errors.assistantName = "Enter a name for your assistant.";
+  else if (assistantName.length > ASSISTANT_NAME_MAX) errors.assistantName = `Use ${ASSISTANT_NAME_MAX} characters or fewer.`;
+  if (!productName) errors.displayName = "Enter your store's display name.";
+  else if (productName.length > PRODUCT_NAME_MAX) errors.displayName = `Use ${PRODUCT_NAME_MAX} characters or fewer.`;
+  return errors;
+}
 
 /** Validate the two names; null when valid, else the merchant-facing error. */
 export function validateBranding(input: { assistantName: string; productName: string }): string | null {
@@ -59,7 +83,7 @@ export async function saveBrandingAndRepublish(
 ): Promise<BrandingSaveResult> {
   if (!tenantId) return { ok: false, error: "no provisioned tenant for this shop yet", published: false, revision: null };
   const invalid = validateBranding(branding);
-  if (invalid) return { ok: false, error: invalid, published: false, revision: null };
+  if (invalid) return { ok: false, error: invalid, fieldErrors: brandingFieldErrors(branding), published: false, revision: null };
 
   const set = await deps.setBranding(shop, tenantId, { productName: branding.productName.trim(), assistantName: branding.assistantName.trim() });
   if (!set.ok) return { ok: false, error: set.error ?? "set_tenant_branding failed", published: false, revision: null };

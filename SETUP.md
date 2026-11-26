@@ -32,7 +32,7 @@ account and credentials only you can create. This file is the exact checklist to
 ## 1. Create the Shopify Partner app (issues the API key/secret) 🔒
 
 1. Partner Dashboard → **Apps → Create app → Create app manually**.
-   - Name: **Busymate AI**. App URL: `https://shopify.busymate.ai`.
+   - Name: **Busymate AI**. App URL: `https://store.busymate.ai`.
 2. Copy the **Client ID** and **Client secret**.
 3. Link the config from this repo:
    ```bash
@@ -168,7 +168,7 @@ freshness backstop (§3c-quater), or **Store connection → Re-train**) the app 
 API and publishes them as `publish_tenant_runtime.knowledge_sources` (see
 `docs/PROVISIONING.md` step 7–8). The scope list therefore includes
 **`read_legal_policies`** (shop policies) — keep the host `SCOPES` env in sync with
-`shopify.app.toml` (`read_products,read_content,read_legal_policies,read_orders,read_customers,read_fulfillments,read_themes,write_orders`),
+`shopify.app.toml` (`read_products,read_content,read_legal_policies,read_orders,read_customers,read_fulfillments,write_orders`),
 and release the new app version so managed installation asks existing stores for the
 added scope on their next app open. Check in the app DB (never the platform DB):
 `ShopTenant.kbTrainedAt` / `kbProducts` / `kbPolicies` / `kbPages` set and `kbError` NULL;

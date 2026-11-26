@@ -19,10 +19,9 @@ shoppers' languages, and hands the conversation to your team when a shopper asks
 One click from the Shopify App Store. On install we provision your store's assistant and
 train it on your catalogue, pages and policies. Then switch the storefront assistant on:
 on the App's Home page, open **App embeds** (the button opens your theme editor), switch on
-**Busymate AI assistant** and click **Save**. (Manually: Online Store → Themes → Customize →
-App embeds → switch on **Busymate AI assistant** → Save.) No theme code editing. If your store
-is password-protected, Home cannot check the storefront from outside; choose
-**It's switched on** after saving and the step shows as done.
+**AI support chat** and click **Save**. (Manually: Online Store → Themes → Customize →
+App embeds → switch on **AI support chat** → Save.) No theme code editing. Home shows the
+embed's state from Shopify itself, also on a password-protected store; no confirmation needed.
 
 ## Where does the assistant get its answers?
 Only from **your** store: your products, pages and policies (re-trained automatically when
@@ -41,8 +40,8 @@ problem — goes to your team: the shopper asks for a person and you reply from
 ## Which permissions do you request, and why?
 Least-privilege Shopify scopes: read products, content, store policies, orders, customers
 and fulfilments (to answer and look up orders), and write orders (for the two confirmed
-order changes above). We do not request access to returns. We read your theme settings only to see whether the app
-embed is switched on (we never change your theme — you switch the embed on yourself in the theme editor). Orders older than 60 days are not read.
+order changes above). We do not request access to returns. We do not request access to your themes:
+Home asks Shopify whether the app embed is switched on, and we never change your theme (you switch the embed on yourself in the theme editor). Orders older than 60 days are not read.
 
 ## How does billing work?
 Through **Shopify App Pricing** on your Shopify invoice — never an external checkout.

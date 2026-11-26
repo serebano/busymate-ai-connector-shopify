@@ -5,7 +5,6 @@ import {
   Banner,
   BlockStack,
   Card,
-  EmptyState,
   IndexTable,
   InlineGrid,
   Layout,
@@ -22,6 +21,7 @@ import { storefrontPublicForShop } from "../bmai.server";
 import { hostedWebFor } from "../lib/storefrontPassword";
 import { LocalTime } from "../components/LocalTime";
 import { AppRouteBoundary } from "../components/AppRouteError";
+import { EmptyCardState } from "../components/EmptyCardState";
 
 // Embedded-frame contract (#retrain-500): a route error recovers in-frame, never
 // the root 500 page.
@@ -37,6 +37,16 @@ const REASON_CELL = {
   WebkitBoxOrient: "vertical",
   overflow: "hidden",
 } as const;
+
+/**
+ * The read-only tables (no bulk actions): Polaris still renders its select-all
+ * checkbox, unlabeled, in the hidden bulk-actions bar; with nothing to select it
+ * is removed from the tree (inventory F9). On a phone (inventory F8) the
+ * conversations table drops "Started" (the transcript shows it) and lets cells
+ * wrap, so Status and the link fit 390px without scrolling sideways.
+ */
+const TABLE_CSS = `.bm-readonly-table .Polaris-IndexTable__BulkActionsWrapper{display:none}
+@media (max-width:30.6em){.bm-conversations th:first-child,.bm-conversations td:first-child,.bm-conversations [data-index-table-sticky-heading]:first-child{display:none}.bm-conversations td{white-space:normal}}`;
 
 export const ErrorBoundary = AppRouteBoundary;
 
@@ -67,6 +77,7 @@ export default function ConversationsPage() {
   return (
     <Page>
       <TitleBar title="Conversations" />
+      <style dangerouslySetInnerHTML={{ __html: TABLE_CSS }} />
       <Layout>
         <Layout.Section>
           <BlockStack gap="400">
@@ -97,13 +108,12 @@ export default function ConversationsPage() {
                   </InlineGrid>
                 </div>
                 {open.length === 0 ? (
-                  <div style={{ padding: "0 var(--p-space-400) var(--p-space-400)" }}>
-                    <Text as="p" tone="subdued">
-                      No shopper is waiting for a human right now. When the assistant is not confident it offers a
-                      handoff; open a request here to read the conversation, claim it, and reply to the customer.
-                    </Text>
-                  </div>
+                  <EmptyCardState heading="No shopper is waiting for a person">
+                    When the assistant is not confident it offers a handoff. Open a request here to read the
+                    conversation, claim it, and reply to the customer.
+                  </EmptyCardState>
                 ) : (
+                  <div className="bm-readonly-table">
                   <IndexTable
                     resourceName={{ singular: "handoff", plural: "handoffs" }}
                     itemCount={open.length}
@@ -123,11 +133,12 @@ export default function ConversationsPage() {
                           <div title={h.reason ?? undefined} style={REASON_CELL}>{h.reason ?? "—"}</div>
                         </IndexTable.Cell>
                         <IndexTable.Cell>
-                          <Link url={`/app/handoffs/${encodeURIComponent(h.id)}`}>Open conversation</Link>
+                          <Link url={`/app/conversations/handoffs/${encodeURIComponent(h.id)}`}>Open conversation</Link>
                         </IndexTable.Cell>
                       </IndexTable.Row>
                     ))}
                   </IndexTable>
+                  </div>
                 )}
               </BlockStack>
             </Card>
@@ -136,9 +147,9 @@ export default function ConversationsPage() {
               <BlockStack gap="300">
                 <Text as="h2" variant="headingMd">Recent completed handoffs</Text>
                 <Text as="p" tone="subdued">Read the customer and team messages after a request is closed.</Text>
-                {closed.map((handoff) => <InlineGrid columns="1fr auto" key={handoff.id}>
+                {closed.map((handoff) => <InlineGrid columns="1fr auto" gap="300" alignItems="center" key={handoff.id}>
                   <BlockStack gap="100">
-                    <Link url={`/app/handoffs/${encodeURIComponent(handoff.id)}`}>{handoff.reason ?? "Customer conversation"}</Link>
+                    <Link url={`/app/conversations/handoffs/${encodeURIComponent(handoff.id)}`}>{handoff.reason ?? "Customer conversation"}</Link>
                     <Text as="p" tone="subdued"><LocalTime iso={handoff.requestedAt} /></Text>
                   </BlockStack>
                   <Badge>{handoffStatus(handoff.status).label}</Badge>
@@ -149,21 +160,21 @@ export default function ConversationsPage() {
             <Card padding="0">
               <BlockStack gap="0">
                 <div style={{ padding: "var(--p-space-400)" }}>
-                  <InlineGrid columns="1fr auto" alignItems="center">
+                  {/* Stacked (inventory F8): side by side the two texts ran into each other at 390px. */}
+                  <BlockStack gap="100">
                     <Text as="h2" variant="headingMd">
                       Recent conversations
                     </Text>
                     <Text as="p" tone="subdued">Read customer conversations here in Shopify.</Text>
-                  </InlineGrid>
+                  </BlockStack>
                 </div>
                 {convs.length === 0 ? (
-                  <EmptyState heading="No conversations yet" image="">
-                    <p>
-                      Once the storefront assistant is on, every shopper conversation is listed here with its start and
-                      last-activity time.
-                    </p>
-                  </EmptyState>
+                  <EmptyCardState heading="No conversations yet">
+                    Once the storefront assistant is on, every shopper conversation is listed here with its start and
+                    last-activity time.
+                  </EmptyCardState>
                 ) : (
+                  <div className="bm-readonly-table bm-conversations">
                   <IndexTable
                     resourceName={{ singular: "conversation", plural: "conversations" }}
                     itemCount={convs.length}
@@ -176,11 +187,12 @@ export default function ConversationsPage() {
                         <IndexTable.Cell><LocalTime iso={c.lastActiveAt} /></IndexTable.Cell>
                         <IndexTable.Cell><Badge tone={c.status.tone}>{c.status.label}</Badge></IndexTable.Cell>
                         <IndexTable.Cell>
-                          <Link url={`/app/transcripts/${encodeURIComponent(c.sessionId)}`}>Read assistant chat</Link>
+                          <Link url={`/app/conversations/transcripts/${encodeURIComponent(c.sessionId)}`}>Read assistant chat</Link>
                         </IndexTable.Cell>
                       </IndexTable.Row>
                     ))}
                   </IndexTable>
+                  </div>
                 )}
               </BlockStack>
             </Card>

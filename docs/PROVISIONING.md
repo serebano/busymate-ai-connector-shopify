@@ -21,7 +21,7 @@ is the single integration seam. Idempotent: safe to re-run on every re-auth.
 5. **Merchant admin** — NOT called at install: `add_tenant_admin` needs a bmai
    `user_id` a Shopify install lacks; the merchant is linked on first bmai sign-in.
 6. **Register the Shopify Admin connector** — `upsert_tenant_support_connector` with
-   `endpoint = https://shopify.busymate.ai/mcp`, `auth_mode:'none'`, and
+   `endpoint = https://store.busymate.ai/mcp`, `auth_mode:'none'`, and
    `delegation_mode:'signed_actor_token'` + the delegated write tools when the actor
    verifier is ready (`BMAI_SUPPORT_ACTOR_MASTER` set), else read-only `none`; the
    four-tier `mcp_connector_support_policies`.
