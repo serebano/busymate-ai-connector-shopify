@@ -110,8 +110,7 @@ been created through Shopify, "Manage apps" listed no billing options.
 
 **How to verify.** Open the app on a development store → **Billing** → "Choose a plan" →
 Shopify's plan-selection page renders (no 404) → pick a plan (free for dev stores) →
-redirected back to Billing showing the chosen plan → Shopify admin → **Settings → Apps and
-sales channels → Manage apps** lists Busymate AI with its plan.
+redirected back to Billing showing the chosen plan → Shopify admin → **Settings → Apps** lists Busymate AI with its plan.
 
 ## Expiring offline tokens
 
