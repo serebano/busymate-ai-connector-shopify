@@ -27,7 +27,7 @@ import { LocalTime } from "../components/LocalTime";
 import { failClosedClientAction, isTransportFailure } from "../lib/clientAction";
 import { AppRouteBoundary } from "../components/AppRouteError";
 import { useActivationRecheck } from "../lib/useActivationRecheck";
-import { connectionView } from "../lib/connectionView";
+import { connectionView, reconnectResultMessage, retrainResultMessage } from "../lib/connectionView";
 
 // Embedded-frame contract (#retrain-500): a failed action FETCH (network blip,
 // app restarting) renders an error toast + revalidates — never the root 500
@@ -106,28 +106,16 @@ export default function ConnectorPage() {
   const shopify = useAppBridge();
   const [showTech, setShowTech] = useState(false);
   const busy = (intent: string) => fetcher.state !== "idle" && fetcher.formData?.get("intent") === intent;
+  // D3b: the last result stays on the page (the toast fades after 5 s).
+  const result = fetcher.state === "idle" ? fetcher.data : undefined;
 
   const { revalidate } = useRevalidator();
 
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data) {
       const d = fetcher.data;
-      if (d.intent === "retrain")
-        shopify.toast.show(
-          d.ok
-            ? "queued" in d && d.queued
-              ? "Training is already running. Your assistant updates by itself in a minute or two."
-              : `Trained on ${"summary" in d && d.summary ? d.summary : "your store"}`
-            : (d.error ?? "Training didn't finish. Please try again."),
-          { isError: !d.ok },
-        );
-      if (d.intent === "reprovision")
-        shopify.toast.show(
-          d.ok
-            ? ("activating" in d && d.activating ? "Store connection is set up. Your assistant goes live in a moment." : "Store connection is live")
-            : (d.error ?? "Your store connection isn't live yet. Please try again."),
-          { isError: !d.ok },
-        );
+      if (d.intent === "retrain") shopify.toast.show(retrainResultMessage(d), { isError: !d.ok });
+      if (d.intent === "reprovision") shopify.toast.show(reconnectResultMessage(d), { isError: !d.ok });
       // The REQUEST failed (network blip / app restart) — the server may still have
       // finished the work, so refresh the loader to show the real state (#retrain-500).
       if (isTransportFailure(d)) revalidate();
@@ -188,6 +176,13 @@ export default function ConnectorPage() {
                     Technical details
                   </Button>
                 </InlineStack>
+                {result?.intent === "reprovision" ? (
+                  <div role="status">
+                    <Text as="p" tone={result.ok ? "success" : "critical"}>
+                      {reconnectResultMessage(result)}
+                    </Text>
+                  </div>
+                ) : null}
                 <Collapsible open={showTech} id="connector-technical-details">
                   <BlockStack gap="100">
                     <Text as="p" tone="subdued">
@@ -233,6 +228,13 @@ export default function ConnectorPage() {
                   <Text as="p" tone="critical">
                     {data.training.error}
                   </Text>
+                ) : null}
+                {result?.intent === "retrain" ? (
+                  <div role="status">
+                    <Text as="p" tone={result.ok ? "success" : "critical"}>
+                      {retrainResultMessage(result)}
+                    </Text>
+                  </div>
                 ) : null}
                 <fetcher.Form method="post">
                   <input type="hidden" name="intent" value="retrain" />

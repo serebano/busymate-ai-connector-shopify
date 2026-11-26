@@ -50,3 +50,19 @@ export function connectionView(input: {
   const settling = input.provisionState === "provisioning" || input.runtime === "orphaned" || input.runtime === "pending";
   return { connected: false, badge: { tone: "attention", label: "Not connected" }, note: null, noteTone: "caution", recheck: settling };
 }
+
+/**
+ * Review2 D3b (2026-11-26) — after Reconnect the reviewer never saw "Store connection is live":
+ * the only feedback was a 5-second toast (gone by the time the spinner stops and a screenshot is
+ * taken; on a fresh install the toast was the "goes live in a moment" variant). The result now
+ * also stays on the page under the button until the next action. One wording for both.
+ */
+export function reconnectResultMessage(d: { ok: boolean; activating?: boolean; error?: string | null }): string {
+  if (!d.ok) return d.error ?? "Your store connection isn't live yet. Please try again.";
+  return d.activating ? "Store connection is set up. Your assistant goes live in a moment." : "Store connection is live";
+}
+
+export function retrainResultMessage(d: { ok: boolean; queued?: boolean; summary?: string | null; error?: string | null }): string {
+  if (!d.ok) return d.error ?? "Training didn't finish. Please try again.";
+  return d.queued ? "Training is already running. Your assistant updates by itself in a minute or two." : `Trained on ${d.summary || "your store"}`;
+}
