@@ -117,6 +117,15 @@ describe("#2624 — the app serves the listing's legal pages (no stale edge copy
     expect(t).toContain('"Send to the team"');
     expect(t).not.toContain("Send request");
   });
+
+  it("testing instructions fit the Partner field and match busymate-ai-12", () => {
+    const t = read("docs/review/testing-instructions.md").split("-->\n")[1];
+    expect(Buffer.byteLength(t)).toBeLessThanOrEqual(2800);
+    expect(t).toContain('"AI support chat"');
+    for (const stale of ["It's switched on", "Busymate AI assistant", "shopify-test", "Send request"]) {
+      expect(t).not.toContain(stale);
+    }
+  });
 });
 
 describe("F3/F4 red-team 2026-11-26", () => {
