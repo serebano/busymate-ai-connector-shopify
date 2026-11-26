@@ -147,6 +147,103 @@ describe("meterShop (App Pricing usage events)", () => {
     });
   });
 
+  describe("lost reply: reporting is idempotent and reconciles with Shopify's quantity (never counted twice)", () => {
+    /** A fake App Events + Partner meter: permanent idempotency keys (a repeat replays, adds nothing). */
+    function fakeShopify() {
+      const byKey = new Map<string, number>();
+      let quantity = 0; // what Shopify's meter has applied
+      let visible = 0; // what the Partner API shows (may lag)
+      let loseNextReply = false;
+      return {
+        get quantity() { return quantity; },
+        sync() { visible = quantity; },
+        visible: () => visible,
+        loseNextReply() { loseNextReply = true; },
+        report(units: number, key: string): { ok: boolean; error?: string; replay?: boolean } {
+          if (byKey.has(key)) return { ok: false, replay: true, error: "replay" };
+          byKey.set(key, units);
+          quantity += units;
+          if (loseNextReply) { loseNextReply = false; return { ok: false, error: "socket hang up" }; }
+          return { ok: true };
+        },
+      };
+    }
+    /** One meter run for a Starter shop against the fake Shopify. */
+    async function run(shopify: ReturnType<typeof fakeShopify>, cursor: string | null, resolutions: number, nextCursor: string) {
+      let saved: string | null = null;
+      const out = await meterShop(SHOP, {
+        getBilling: async () => ({ status: "active", plan: "starter", lastMeteredCursor: cursor }),
+        getTenantId: async () => "t_1",
+        readResolutions: async () => ({ resolutions, cursor: nextCursor }),
+        readBillingCycle: async () => ({ key: CYCLE, shopId: "gid://shopify/Shop/1", reportedQuantity: shopify.visible() }),
+        reportUsage: async ({ units, idempotencyKey }) => shopify.report(units, idempotencyKey),
+        saveCursor: async (_s, raw) => { saved = raw; },
+        readFreeCycle: async () => FREE_CYCLE,
+        reportLimit: async () => true,
+      });
+      return { out, cursor: saved ?? cursor };
+    }
+
+    it("reply lost, new resolutions arrive, Shopify's quantity already shows the send → only the new ones are added", async () => {
+      const shopify = fakeShopify();
+      let c = (await run(shopify, null, 40, "b1")).cursor; // 40 reported, recorded
+      shopify.sync();
+      shopify.loseNextReply();
+      const lost = await run(shopify, c, 5, "b2"); // Shopify applied 5, we saw an error
+      expect(lost.out.error).toBe("socket hang up");
+      expect(lost.cursor).toBe(c); // held: nothing recorded
+      shopify.sync(); // the Partner API now shows 45
+      c = (await run(shopify, c, 8, "b3")).cursor; // the 5 again + 3 new, same hour
+      expect(shopify.quantity).toBe(48); // 40 + 5 + 3, not 40 + 5 + 8
+      expect(parseMeterCursor(c)).toMatchObject({ cycleResolutions: 48, cycleReported: 48 });
+      // Starter: 48 resolutions → 10 paid × $0.49 = $4.90, exactly the tier price.
+      expect(Math.max(0, shopify.quantity - 38) * 49).toBe(490);
+    });
+
+    it("reply lost and Shopify's quantity still lags → the retry reuses the key, Shopify replays, batch held, then exact", async () => {
+      const shopify = fakeShopify();
+      let c = (await run(shopify, null, 40, "b1")).cursor;
+      shopify.sync();
+      shopify.loseNextReply();
+      await run(shopify, c, 5, "b2"); // applied 5, reply lost
+      const replay = await run(shopify, c, 8, "b3"); // quantity still shows 40: same cumulative key
+      expect(replay.out.reportedUnits).toBe(0);
+      expect(replay.out.error).toBe("replay");
+      expect(replay.cursor).toBe(c);
+      expect(shopify.quantity).toBe(45); // the replay added nothing
+      shopify.sync();
+      c = (await run(shopify, c, 8, "b4")).cursor;
+      expect(shopify.quantity).toBe(48);
+      expect(parseMeterCursor(c)).toMatchObject({ cycleResolutions: 48, cycleReported: 48 });
+    });
+
+    it("cumulative keys: same (cycle, units so far) → same key whatever the batch; next position → new key", async () => {
+      const keys: string[] = [];
+      for (const [resolutions, nextCursor] of [[5, "x1"], [9, "x2"]] as const) {
+        const h = makeDeps({ plan: "starter", resolutions, nextCursor, cursor: cur(10, 10) });
+        h.deps.reportUsage = async ({ idempotencyKey }) => { keys.push(idempotencyKey); return { ok: true }; };
+        await meterShop(SHOP, h.deps);
+      }
+      expect(keys[0]).toBe(keys[1]);
+      const next = makeDeps({ plan: "starter", resolutions: 1, nextCursor: "x3", cursor: cur(15, 15) });
+      next.deps.reportUsage = async ({ idempotencyKey }) => { keys.push(idempotencyKey); return { ok: true }; };
+      await meterShop(SHOP, next.deps);
+      expect(keys[2]).not.toBe(keys[0]);
+      expect(keys.every((k) => k.length <= 64)).toBe(true);
+    });
+
+    it("Shopify holding more than we recorded (e.g. an earlier manual test event) is never re-sent; cap still holds", async () => {
+      const h = makeDeps({ plan: "starter", resolutions: 5, cursor: cur(440, 440), cycle: { key: CYCLE, shopId: "gid://shopify/Shop/1", reportedQuantity: 444 } });
+      await meterShop(SHOP, h.deps);
+      expect(h.reported.map((r) => r.units)).toEqual([1]); // count 445, Shopify already has 444 → 1, not 5
+      expect(parseMeterCursor(h.saved.at(-1))).toMatchObject({ cycleResolutions: 445, cycleReported: 445 });
+      const capped = makeDeps({ plan: "starter", resolutions: 9, cursor: cur(440, 440), cycle: { key: CYCLE, shopId: "gid://shopify/Shop/1", reportedQuantity: 444 } });
+      const out = await meterShop(SHOP, capped.deps);
+      expect(capped.reported.map((r) => r.units)).toEqual([2]); // stops at the 446 ceiling ($199.92)
+      expect(out.capped).toBe(true);
+    });
+  });
+
   describe("Shopify's live usage tier must match the plan", () => {
     const base = { key: CYCLE, shopId: "gid://shopify/Shop/1" };
     it("matching tier (Starter: first 38 free, then 49¢) reports", async () => {

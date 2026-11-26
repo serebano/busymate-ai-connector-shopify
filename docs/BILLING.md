@@ -183,6 +183,19 @@ never billed in the first paid cycle. A shop with no readable cycle after its tr
 in yet (was: last cycle's count until the next resolution). The Trial badge shows only while the
 trial runs; "extra resolutions billed" = Shopify's quantity − included.
 
+**Never counted twice (lost replies, crashes).** Shopify keeps billing-event idempotency keys
+for good and answers a repeated key with the original response plus `Idempotent-Replay: true`
+(the new payload is not applied). Each event is keyed by (shop, billing cycle, units already
+reported) — `cumulativeUsageKey` — not by the batch, so a retry after a lost reply reuses the key
+even when new resolutions joined the batch. Before reporting, the meter reconciles with Shopify:
+units already reported = max(our `cycleReported`, the Partner API `ai_resolution` usage quantity),
+so a send that landed is adopted, never repeated. A replay (Shopify has it, its quantity does not
+show it yet) holds the batch until it does. The cursor and the ledger commit in one transaction
+(`saveCursor`, and the outbox `accept` hook), so a crash can never leave an advanced count with
+uncommitted sessions that the next run would bill again. If Shopify's quantity already exceeds our
+record (e.g. a manual test event), it is trusted: the merchant is never charged above the tier.
+Tests: "lost reply" block in `test/usageBilling.test.ts` (fake Shopify with permanent keys).
+
 **Cursors written before this change** (no `cycleReported`): their in-cycle count may include
 trial backlog, and production never reported a unit (no App Events credential, 0 MeterDelivery
 rows, checked 2026-11-26). The meter treats that count as already settled (no catch-up), so the

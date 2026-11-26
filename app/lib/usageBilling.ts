@@ -3,9 +3,9 @@ import { adminForShop } from "../mcp/shopifyAdmin";
 import { FREE_PLAN_ID, PLANS, computeUsageReport, planFor, reportableUnitsCeiling, type Plan } from "./plans";
 import { freeLimitState, monthlyWindow, type CycleWindow, type FreeLimitState } from "./freeLimit";
 import { parseMeterCursor, serializeMeterCursor, type MeterCursor } from "./meterCursor";
-import { RESOLUTION_EVENT_HANDLE, createAppEventsClient, usageIdempotencyKey } from "./appEvents";
+import { RESOLUTION_EVENT_HANDLE, createAppEventsClient, cumulativeUsageKey } from "./appEvents";
 import { appGidFromEnv, fetchActiveSubscription, type ActiveSubscription } from "./partnerApi";
-import { commitCountedResolutions, liveResolutionLedgerDeps, readNewResolutions, type CountedSession } from "./resolutionLedger.server";
+import { liveResolutionLedgerDeps, readNewResolutions, type CountedSession } from "./resolutionLedger.server";
 import { createMeterOutbox, type PreparedMeterBatch } from "./meterOutbox";
 
 export { PLANS, planFor };
@@ -68,7 +68,7 @@ export interface MeterDeps {
     idempotencyKey: string;
     beforeCursor?: string | null;
     afterCursor?: string;
-  }) => Promise<{ ok: boolean; error?: string }>;
+  }) => Promise<{ ok: boolean; error?: string; replay?: boolean }>;
   /** Persist the advanced serialized cursor. */
   saveCursor: (shop: string, raw: string) => Promise<void>;
   /**
@@ -90,6 +90,12 @@ export interface BillingCycle {
   subscriptionId?: string | null;
   trialEndsAt?: string | null;
   tier?: { freeUnits: number | null; overageCents: number | null };
+  /**
+   * Units Shopify's `ai_resolution` meter already holds in this cycle (Partner API item
+   * `usage.quantity`; 0 when the item has no usage yet, null/absent when unknown). The meter
+   * never reports below it: a send whose reply was lost is adopted, not repeated.
+   */
+  reportedQuantity?: number | null;
 }
 
 export interface MeterOutcome {
@@ -189,7 +195,11 @@ export async function meterShop(shop: string, deps: MeterDeps = liveMeterDeps())
   // trial backlog (the old meter counted trial resolutions in the first paid cycle) and none of
   // it was ever reported (no App Events credential in production). Treat that count as settled
   // rather than catch it up: the merchant is never billed for usage we cannot prove billable.
-  const reportedBefore = sameCycle ? state.cycleReported ?? Math.min(cycleResolutions, reportableUnitsCeiling(plan)) : 0;
+  const recorded = sameCycle ? state.cycleReported ?? Math.min(cycleResolutions, reportableUnitsCeiling(plan)) : 0;
+  // Reconcile with Shopify first: if its meter already holds more than we recorded (a send whose
+  // reply was lost, then a crash/timeout), those units are reported — never send them again.
+  const shopifyHas = Number.isSafeInteger(cycle.reportedQuantity) && (cycle.reportedQuantity as number) > 0 ? (cycle.reportedQuantity as number) : 0;
+  const reportedBefore = Math.max(recorded, shopifyHas);
   const { units, capped } = computeUsageReport({ plan, cycleResolutions, reportedBefore, newResolutions: billable });
   const next = serializeMeterCursor({ cursor: usage.cursor, cycleKey: cycle.key, cycleResolutions: cycleResolutions + billable, cycleReported: reportedBefore + units });
 
@@ -198,12 +208,15 @@ export async function meterShop(shop: string, deps: MeterDeps = liveMeterDeps())
       shop,
       shopId: cycle.shopId,
       units,
-      idempotencyKey: usageIdempotencyKey(shop, usage.cursor),
+      // Keyed by the cycle's cumulative position, NOT by the batch: a retry after a lost reply
+      // (even with new resolutions added) reuses this key, and Shopify replays instead of adding.
+      idempotencyKey: cumulativeUsageKey(shop, cycle.key, reportedBefore),
       beforeCursor: billing.lastMeteredCursor ?? null,
       afterCursor: next,
     });
     if (!rec.ok) {
-      // Transient failure — hold the cursor so the batch is retried, not lost.
+      // Transient failure, or a replay of an earlier send whose units we cannot see yet — hold
+      // the cursor so the batch is retried (after reconciling with Shopify's quantity), not lost.
       return { metered: resolutions, reportedUnits: 0, capped, cursor: state.cursor, error: rec.error };
     }
   }
@@ -298,7 +311,7 @@ export function liveMeterDeps(): MeterDeps {
       }
       const { startTime, endTime } = live.currentBillingCycle;
       cycleInfo = { start: startTime, end: endTime ?? null, subscriptionId: live.legacySubscriptionId ?? null };
-      return { key: startTime, shopId, end: endTime, subscriptionId: cycleInfo.subscriptionId, trialEndsAt: live.trialEndsAt ?? null, tier: usageTierOf(live) };
+      return { key: startTime, shopId, end: endTime, subscriptionId: cycleInfo.subscriptionId, trialEndsAt: live.trialEndsAt ?? null, tier: usageTierOf(live), reportedQuantity: reportedQuantityOf(live) };
     },
     reportUsage: async ({ shop, shopId, units, idempotencyKey, beforeCursor, afterCursor }) => {
       const sendDirect = () => events.reportUsage({ shopId, units, idempotencyKey, timestamp: new Date().toISOString() });
@@ -343,7 +356,9 @@ export function liveMeterDeps(): MeterDeps {
           await outbox.release(claimed.id, claimed.leaseToken!);
           return sent;
         }
-        const accepted = await outbox.accept(claimed.id, claimed.leaseToken!);
+        const sessions = pending.sessions;
+        const tenantId = pending.tenantId;
+        const accepted = await outbox.accept(claimed.id, claimed.leaseToken!, (tx) => commitSessions(tx, tenantId, sessions));
         if (accepted.state === "reconciliation") {
           return { ok: false, error: "billing state changed mid-delivery — moved to reconciliation (dead-letter), needs manual review" };
         }
@@ -379,13 +394,36 @@ export function liveMeterDeps(): MeterDeps {
       return reportShopLimit(shop, input);
     },
     saveCursor: async (shop, raw) => {
-      await prisma.billingState.update({ where: { shop }, data: { lastMeteredCursor: raw } });
-      if (pending) {
-        await commitCountedResolutions(pending.tenantId, pending.sessions);
-        pending = null;
-      }
+      // One transaction: the cursor (cycle counters) and the ledger move together, so a crash
+      // between them can never leave counted-but-uncommitted sessions that the next run recounts.
+      const batch = pending;
+      await prisma.$transaction(async (tx) => {
+        await tx.billingState.update({ where: { shop }, data: { lastMeteredCursor: raw } });
+        if (batch) await commitSessions(tx, batch.tenantId, batch.sessions);
+      });
+      pending = null;
     },
   };
+}
+
+/** Ledger commit inside a caller's transaction (idempotent: skipDuplicates on [tenantId, sessionId]). */
+async function commitSessions(tx: Pick<typeof prisma, "meteredResolution">, tenantId: string, sessions: CountedSession[]): Promise<void> {
+  if (sessions.length === 0) return;
+  await tx.meteredResolution.createMany({
+    data: sessions.map((s) => ({ tenantId, sessionId: s.sessionId, occurredAt: new Date(s.occurredAt) })),
+    skipDuplicates: true,
+  });
+}
+
+/**
+ * Units Shopify's `ai_resolution` meter holds for the contract's current cycle: the item's
+ * `usage.quantity`, 0 when the item exists without usage yet, null when there is no such item.
+ */
+export function reportedQuantityOf(sub: Pick<ActiveSubscription, "items">): number | null {
+  const item = sub.items.find((i) => i.handle === RESOLUTION_EVENT_HANDLE);
+  if (!item) return null;
+  const q = item.usage?.quantity ?? 0;
+  return Number.isSafeInteger(q) && q >= 0 ? q : null;
 }
 
 /**

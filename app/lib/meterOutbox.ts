@@ -102,7 +102,7 @@ export function createMeterOutbox(db: Database) {
       });
     },
     /** Acknowledge API ingestion only. Does not assert processed billing. */
-    async accept(id: string, token: string): Promise<MeterDelivery> {
+    async accept(id: string, token: string, onAccepted?: (tx: Tx) => Promise<void>): Promise<MeterDelivery> {
       if (typeof token !== "string" || !token) throw new Error("delivery claim required");
       return db.$transaction(async tx => {
         const found = await tx.$queryRaw<MeterDelivery[]>`SELECT * FROM "MeterDelivery" WHERE "id"=${id}`;
@@ -113,7 +113,12 @@ export function createMeterOutbox(db: Database) {
         if (row.state !== "pending") return row;
         if (row.leaseToken !== token) throw new Error("delivery claim is stale");
         const state = matches(snapshot, row.payload) ? "accepted" : "reconciliation";
-        if (state === "accepted") await tx.$executeRaw`UPDATE "BillingState" SET "lastMeteredCursor"=${row.payload.afterCursor},"updatedAt"=clock_timestamp() WHERE "shop"=${row.shop}`;
+        if (state === "accepted") {
+          await tx.$executeRaw`UPDATE "BillingState" SET "lastMeteredCursor"=${row.payload.afterCursor},"updatedAt"=clock_timestamp() WHERE "shop"=${row.shop}`;
+          // The caller's ledger commit rides the SAME transaction: an advanced cursor without the
+          // batch's sessions in the ledger would let the next run count (and bill) them again.
+          if (onAccepted) await onAccepted(tx);
+        }
         const accepted = await tx.$queryRaw<MeterDelivery[]>`UPDATE "MeterDelivery" SET "state"=${state},"acceptedAt"=clock_timestamp(),"leaseToken"=NULL,"leaseUntil"=NULL WHERE "id"=${id} RETURNING *`;
         return accepted[0];
       });
