@@ -26,6 +26,7 @@ import { merchantError } from "../lib/merchantError";
 import { readStorefrontFrameable } from "../lib/embedFrameable";
 import { homeActivation } from "../lib/homeActivation";
 import { useActivationRecheck } from "../lib/useActivationRecheck";
+import { useAppEmbedStatus } from "../lib/useAppEmbedStatus";
 import { isSettingUp, useSetupPoll } from "../lib/useSetupPoll";
 import { publishedTenantRepair } from "../lib/tenantRepair";
 import { readTrainingState } from "../lib/retrain.server";
@@ -43,10 +44,8 @@ export const ErrorBoundary = AppRouteBoundary;
 import {
   EMBED_STEPS,
   buildSetupChecklist,
-  detectStorefrontEmbed,
   embedSetupPresentation,
-  readThemeEmbed,
-  type EmbedStatus,
+  embedStep,
   themeEditorActivateUrl,
   themeEditorAppEmbedsUrl,
   trainingSummary,
@@ -68,8 +67,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const slug = tenant?.slug ?? shopToSlug(shop);
   const training = readTrainingState(tenant);
   const access = resolveBillingAccess({ status: tenant?.billing?.status, plan: tenant?.billing?.plan, shop, appHandle: APP_HANDLE });
-  // Scope-free embed detection from the public storefront (unknown on a
-  // password-protected store — the written steps cover that case).
   const provisionState = tenant?.provisionState ?? "pending";
   // Both reads are independent network round-trips (the public storefront and the
   // Busymate AI integration record); run them concurrently so the Home loader —
@@ -80,8 +77,10 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const published = provisionState === "published" && Boolean(tenant?.bmaiTenantId);
   // busymate-ai-src#2704 — the fourth read: is the storefront public? A
   // password-protected store has no public assistant page (only the widget).
-  const [themeEmbed, runtime, frameable, storefrontPublic] = await Promise.all([
-    readThemeEmbed((q) => admin.graphql(q)),
+  // G2 — the app-embed state is NOT read here: Home asks App Bridge
+  // (`shopify.app.extensions()`, no scope, works on password stores) in the
+  // browser, so this loader carries no theme read at all.
+  const [runtime, frameable, storefrontPublic] = await Promise.all([
     published && tenant?.bmaiTenantId
       ? readRuntimeReadiness(tenant.bmaiTenantId, callMcpTool) : Promise.resolve(null),
     published ? readStorefrontFrameable({ platformOrigin: PLATFORM_ORIGIN, shop, slug }) : Promise.resolve(null),
@@ -89,10 +88,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   ]);
   const publicPage = hostedWebFor(storefrontPublic);
   const live = runtime?.state === "ready";
-  // src#2624 reviewer F25 — the theme is the truth (read_themes); the public
-  // storefront check is only the fallback. No stored confirmation any more.
-  const embed: EmbedStatus = themeEmbed ?? (await detectStorefrontEmbed(shop));
-  const embedConfirmed = false;
   // #3718 — an ORPHANED tenant (the platform answered that it is gone) is
   // repaired in the background right here, gated per shop; Home shows it as
   // activating and re-checks until the chat can be framed.
@@ -116,8 +111,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const steps = buildSetupChecklist({
     provisionState,
     connectorReady: live && Boolean(tenant?.connectorId) && !tenant?.provisionWarning,
-    embed,
-    embedConfirmed,
+    embed: "checking",
     trainedAt: training.trainedAt,
     trainError: training.error,
     counts: training.counts,
@@ -143,8 +137,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     provisionWarning: tenant?.provisionWarning ?? null,
     connectorReady: live && Boolean(tenant?.connectorId) && !tenant?.provisionWarning,
     training: { ...training, summary: trainingSummary(training.counts, training.fetched) },
-    embed,
-    embedConfirmed,
     steps,
     embedSteps: EMBED_STEPS,
     activateUrl: themeEditorActivateUrl(shop),
@@ -204,9 +196,12 @@ function StepDetail({ detail, at }: { detail: string; at?: string }) {
 
 export default function Index() {
   const data = useLoaderData<typeof loader>();
-  const embedSetup = embedSetupPresentation(data.embed, data.embedConfirmed);
+  // G2 — the embed state from App Bridge (published theme), re-checked on return.
+  const embed = useAppEmbedStatus();
+  const embedSetup = embedSetupPresentation(embed);
+  const steps = data.steps.map((s) => (s.id === "embed" ? embedStep(embed) : s));
   const retry = useFetcher<typeof action>();
-  const done = data.steps.filter((s) => s.done).length;
+  const done = steps.filter((s) => s.done).length;
   // #3718 — while the runtime is not yet ready (held CTA or not), re-check by
   // itself: every 5 s for 5 minutes, then every 30 s for as long as it is still
   // not ready (never a silent stop). The "taking longer" banner with Retry setup
@@ -254,7 +249,7 @@ export default function Index() {
                   </Text>
                   <InlineStack gap="200" blockAlign="center">
                     <Text as="span" tone="subdued">
-                      {done}/{data.steps.length} done
+                      {done}/{steps.length} done
                     </Text>
                     {stateBadge(data.provisionState)}
                   </InlineStack>
@@ -266,7 +261,7 @@ export default function Index() {
                   only with confirmation.
                 </Text>
                 <List type="number">
-                  {data.steps.map((s) => (
+                  {steps.map((s) => (
                     <List.Item key={s.id}>
                       <InlineStack gap="200" blockAlign="center" wrap={false}>
                         <Text as="span" fontWeight="semibold">
@@ -295,12 +290,10 @@ export default function Index() {
                   <Text as="h2" variant="headingMd">
                     {embedSetup.heading}
                   </Text>
-                  {data.embed === "on" ? (
+                  {embed === "on" ? (
                     <Badge tone="success">On</Badge>
-                  ) : data.embed === "off" ? (
+                  ) : embed === "off" ? (
                     <Badge tone="attention">Off</Badge>
-                  ) : data.embed === "password" ? (
-                    <Badge tone="info">Password-protected store</Badge>
                   ) : null}
                 </InlineGrid>
                 <Text as="p" tone="subdued">

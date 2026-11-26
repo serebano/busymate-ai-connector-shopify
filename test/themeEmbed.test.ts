@@ -1,11 +1,12 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import {
+  APP_EMBED_LABEL,
   STOREFRONT_ASSISTANT_BLOCK,
-  STOREFRONT_ASSISTANT_EXTENSION_UUID,
+  STOREFRONT_ASSISTANT_EXTENSION,
   buildSetupChecklist,
-  detectStorefrontEmbed,
+  embedFromExtensions,
   embedSetupPresentation,
-  storefrontLoadsOurEmbed,
+  embedStep,
   themeEditorActivateUrl,
   themeEditorAppEmbedsUrl,
 } from "../app/lib/themeEmbed";
@@ -16,13 +17,13 @@ describe("theme editor deep link", () => {
 
   it("activates the block using the deployed app client ID, never the CDN UUID", () => {
     vi.stubEnv("SHOPIFY_API_KEY", "test-app-client-id");
-    vi.stubEnv("STOREFRONT_ASSISTANT_EXTENSION_UUID", "different-cdn-id");
+
     const url = new URL(themeEditorActivateUrl("acme.myshopify.com"));
     expect(url.origin).toBe("https://acme.myshopify.com");
     expect(url.pathname).toBe("/admin/themes/current/editor");
     expect(url.searchParams.get("context")).toBe("apps");
     expect(url.searchParams.get("activateAppId")).toBe("test-app-client-id/assistant");
-    expect(url.href).not.toContain(STOREFRONT_ASSISTANT_EXTENSION_UUID);
+    expect(url.href).not.toContain("01a061be");
     expect(STOREFRONT_ASSISTANT_BLOCK).toBe("assistant");
   });
 
@@ -36,24 +37,6 @@ describe("theme editor deep link", () => {
     vi.stubEnv("SHOPIFY_API_KEY", "  ");
     expect(themeEditorActivateUrl("acme.myshopify.com")).toBe(themeEditorAppEmbedsUrl("acme.myshopify.com"));
     expect(themeEditorAppEmbedsUrl("acme.myshopify.com")).toBe("https://acme.myshopify.com/admin/themes/current/editor?context=apps");
-  });
-});
-
-describe("detectStorefrontEmbed (no read_themes scope — reads the public storefront HTML)", () => {
-  const html = (body: string, status = 200) =>
-    async () => new Response(body, { status, headers: { "content-type": "text/html" } });
-
-  it("reports 'on' when the storefront loads the extension asset", async () => {
-    const page = `<html><script src="https://cdn.shopify.com/extensions/${STOREFRONT_ASSISTANT_EXTENSION_UUID}/busymate-ai-4/assets/assistant.js" data-shop="acme.myshopify.com" data-slug="shop-acme" defer></script></html>`;
-    expect(await detectStorefrontEmbed("acme.myshopify.com", html(page))).toBe("on");
-  });
-  it("reports 'off' on a public storefront that does not load it", async () => {
-    expect(await detectStorefrontEmbed("acme.myshopify.com", html("<html><body>shop</body></html>"))).toBe("off");
-  });
-  it("reports 'password' behind a password page and 'unknown' on a non-200 (never a false 'off')", async () => {
-    expect(await detectStorefrontEmbed("acme.myshopify.com", html('<form action="/password"></form>'))).toBe("password");
-    expect(await detectStorefrontEmbed("acme.myshopify.com", html("", 503))).toBe("unknown");
-    expect(await detectStorefrontEmbed("acme.myshopify.com", async () => { throw new Error("net"); })).toBe("unknown");
   });
 });
 
@@ -140,8 +123,7 @@ describe("Home embed instructions", () => {
   it("does not tell merchants the embed is on when the storefront status is unknown", () => {
     const copy = embedSetupPresentation("unknown");
     expect(copy.heading).toBe("Check storefront assistant status");
-    expect(copy.detail).toMatch(/can't confirm/i);
-    expect(copy.detail).toMatch(/unconfirmed/i);
+    expect(copy.detail).toMatch(/couldn't read/i);
     expect(copy.detail).not.toMatch(/already switched on|is loading on your storefront/i);
     expect(copy.button).toBe("Check in App embeds");
     expect(copy.activationLink).toBe(false);
@@ -161,64 +143,6 @@ describe("Home embed instructions", () => {
   });
 });
 
-/**
- * #3718 — Shopify review 5.1.2 (2026-09-24): Home said "Not on yet" while the
- * embed WAS on, because detection matched a stale hard-coded CDN UUID
- * (`01a04ae4…`) and the live extension serves from `01a061be-…`.
- */
-describe("detectStorefrontEmbed matches the asset + this store's slug, never a CDN UUID (#3718)", () => {
-  const html = (body: string) => async () => new Response(body, { status: 200, headers: { "content-type": "text/html" } });
-  const tag = (uuid: string, slug: string) =>
-    `<script src="https://cdn.shopify.com/extensions/${uuid}/busymate-ai-5/assets/assistant.js" data-shop="x" data-slug="${slug}" data-origin="https://busymate.ai" defer></script>`;
-
-  it("the LIVE extension UUID (01a061be-…) reads 'on'", async () => {
-    const page = `<html><body>${tag("01a061be-71c0-7659-afb4-b5e0d5ef3c3e", "shop-acme")}</body></html>`;
-    expect(await detectStorefrontEmbed("acme.myshopify.com", html(page))).toBe("on");
-  });
-
-  it("ANY future extension registration still reads 'on' — the UUID is not the identity", async () => {
-    const page = `<html><body>${tag("99999999-0000-4000-8000-000000000000", "shop-acme")}</body></html>`;
-    expect(await detectStorefrontEmbed("acme.myshopify.com", html(page))).toBe("on");
-  });
-
-  it("another store's slug, or another app's assistant.js, is NOT ours", async () => {
-    expect(await detectStorefrontEmbed("acme.myshopify.com", html(`<html>${tag("01a061be", "shop-other")}</html>`))).toBe("off");
-    const foreign = `<html><script src="https://cdn.shopify.com/extensions/abc/other-app-1/assets/assistant.js"></script></html>`;
-    expect(await detectStorefrontEmbed("acme.myshopify.com", html(foreign))).toBe("off");
-  });
-
-  it("an explicit slug (the tenant's stored slug) is honoured", async () => {
-    const page = `<html>${tag("01a061be", "shop-custom-slug")}</html>`;
-    expect(await detectStorefrontEmbed("acme.myshopify.com", html(page), "shop-custom-slug")).toBe("on");
-  });
-
-  it("storefrontLoadsOurEmbed ignores a slug that only appears outside the script tag", () => {
-    const page = `<html><p>data-slug="shop-acme"</p><script src="https://cdn.shopify.com/extensions/u/v/assets/assistant.js"></script></html>`;
-    expect(storefrontLoadsOurEmbed(page, "shop-acme")).toBe(false);
-    expect(storefrontLoadsOurEmbed(page, "")).toBe(false);
-  });
-});
-
-describe("#2618 follow-up — password-protected storefront (Home step 2)", () => {
-  const base = { provisionState: "published", connectorReady: true, trainedAt: "2026-09-02T00:00:00Z", trainError: null, planId: "free", hasSubscription: false };
-  it("theme unreadable (fallback): To do with a clear action, no stored confirmation offered (reviewer F25)", () => {
-    const todo = buildSetupChecklist({ ...base, embed: "password" }).find((s) => s.id === "embed")!;
-    expect(todo.done).toBe(false);
-    expect(todo.detail).toMatch(/re-checks by itself/);
-    expect(todo.detail).not.toMatch(/It's switched on/);
-  });
-  it("a confirmation never overrides a public storefront that shows the embed OFF", () => {
-    const off = buildSetupChecklist({ ...base, embed: "off", embedConfirmed: true }).find((s) => s.id === "embed")!;
-    expect(off.done).toBe(false);
-  });
-  it("the Home card explains the password case and offers App embeds", () => {
-    const p = embedSetupPresentation("password");
-    expect(p.heading).toBe("Your store is password-protected");
-    expect(p.button).toBe("Open App embeds");
-    expect(embedSetupPresentation("password", true).heading).toMatch(/confirmed by you/);
-  });
-});
-
 describe("#2624 reviewer W3 — training summary plurals", () => {
   it("one policy, one page, one product read singular; others plural", async () => {
     const { trainingSummary } = await import("../app/lib/themeEmbed");
@@ -228,24 +152,48 @@ describe("#2624 reviewer W3 — training summary plurals", () => {
   });
 });
 
-describe("src#2624 reviewer F25 — embed state from the theme's settings_data.json", () => {
-  it("on when our block is present and not disabled; off when disabled or absent; header comment tolerated", async () => {
-    const { embedFromSettingsData } = await import("../app/lib/themeEmbed");
-    const t = "shopify://apps/busymate-ai/blocks/assistant/01a061be-71c0-7659-afb4-b5e0d5ef3c3e";
-    const doc = (blocks: object) => `/* auto-generated */\n${JSON.stringify({ current: { blocks } })}`;
-    expect(embedFromSettingsData(doc({ a: { type: t, disabled: false, settings: {} } }), "busymate-ai")).toBe("on");
-    expect(embedFromSettingsData(doc({ a: { type: t } }), "busymate-ai")).toBe("on");
-    expect(embedFromSettingsData(doc({ a: { type: t, disabled: true } }), "busymate-ai")).toBe("off");
-    expect(embedFromSettingsData(doc({ a: { type: "shopify://apps/other-app/blocks/assistant/x" } }), "busymate-ai")).toBe("off");
-    expect(embedFromSettingsData(doc({}), "busymate-ai")).toBe("off");
-    expect(embedFromSettingsData("not json", "busymate-ai")).toBeNull();
+describe("G2 — embed state from App Bridge shopify.app.extensions() (no read_themes)", () => {
+  const ours = (status: string) => [
+    { handle: "some-ui-ext", type: "ui_extension", activations: [] },
+    { handle: STOREFRONT_ASSISTANT_EXTENSION, type: "theme_app_extension", activations: [{ handle: STOREFRONT_ASSISTANT_BLOCK, name: APP_EMBED_LABEL, target: "body", status, activations: [] }] },
+  ];
+  it("active → on; available / unavailable → off (published theme only)", () => {
+    expect(STOREFRONT_ASSISTANT_EXTENSION).toBe("storefront-assistant");
+    expect(embedFromExtensions(ours("active"))).toBe("on");
+    expect(embedFromExtensions(ours("available"))).toBe("off");
+    expect(embedFromExtensions(ours("unavailable"))).toBe("off");
   });
-  it("readThemeEmbed reads the MAIN theme and returns null when unreadable", async () => {
-    const { readThemeEmbed } = await import("../app/lib/themeEmbed");
-    const content = JSON.stringify({ current: { blocks: { a: { type: "shopify://apps/busymate-ai/blocks/assistant/u", disabled: false } } } });
-    const ok = async () => new Response(JSON.stringify({ data: { themes: { nodes: [{ files: { nodes: [{ body: { content } }] } }] } } }));
-    expect(await readThemeEmbed(ok)).toBe("on");
-    expect(await readThemeEmbed(async () => new Response(JSON.stringify({ errors: [{ message: "Access denied" }] })))).toBeNull();
-    expect(await readThemeEmbed(async () => { throw new Error("x"); })).toBeNull();
+  it("null when the answer does not list OUR embed (never a false on/off)", () => {
+    expect(embedFromExtensions([])).toBeNull();
+    expect(embedFromExtensions(null)).toBeNull();
+    expect(embedFromExtensions([{ handle: "other-theme-ext", type: "theme_app_extension", activations: [{ handle: "assistant", status: "active" }] }])).toBeNull();
+    expect(embedFromExtensions([{ handle: STOREFRONT_ASSISTANT_EXTENSION, type: "theme_app_extension", activations: [{ handle: "other-block", status: "active" }] }])).toBeNull();
+    expect(embedFromExtensions([{ handle: STOREFRONT_ASSISTANT_EXTENSION, type: "ui_extension", activations: [] }])).toBeNull();
+  });
+  it("the checklist step is Done only on 'on'; no state asks the merchant to confirm by hand", () => {
+    expect(embedStep("on")).toMatchObject({ id: "embed", done: true, failed: false });
+    for (const st of ["off", "unknown", "checking"] as const) {
+      const step = embedStep(st);
+      expect(step.done).toBe(false);
+      expect(step.detail).not.toMatch(/It's switched on|confirm/i);
+      expect(embedSetupPresentation(st).detail).not.toMatch(/It's switched on|password/i);
+    }
+    expect(embedStep("checking").detail).toMatch(/Checking/);
+    expect(buildSetupChecklist({ provisionState: "published", connectorReady: true, embed: "checking", trainedAt: null, trainError: null, planId: null, hasSubscription: false })[1]).toEqual(embedStep("checking"));
+  });
+});
+
+describe("G9 — app embed name (theme editor) is short and has no app title", () => {
+  it("every locale's schema name is under 25 characters and never names the app", async () => {
+    const { readdirSync, readFileSync } = await import("node:fs");
+    const dir = "extensions/storefront-assistant/locales";
+    const files = readdirSync(dir).filter((f) => f.endsWith(".schema.json"));
+    expect(files).toHaveLength(14);
+    for (const f of files) {
+      const name = JSON.parse(readFileSync(`${dir}/${f}`, "utf8")).name as string;
+      expect([...name].length, f).toBeLessThan(25);
+      expect(name, f).not.toMatch(/busymate/i);
+    }
+    expect(JSON.parse(readFileSync(`${dir}/en.default.schema.json`, "utf8")).name).toBe(APP_EMBED_LABEL);
   });
 });

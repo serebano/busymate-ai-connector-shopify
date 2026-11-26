@@ -40,7 +40,6 @@ Contact: **hi@busymate.ai**.
 | Shopify store domain, shop + tenant identifiers | Run the integration; map the store to its assistant | Contract |
 | Shopify **offline access token** and its refresh token (both encrypted at rest) | Call the store's Admin API for the assistant's tools and knowledge-base training | Contract |
 | Staff email, when Shopify includes it in the admin session (encrypted at rest). We do not store staff names | Account operation, support | Contract / legitimate interest |
-| Theme setting **read only**: the main theme's `config/settings_data.json`, read on the App's Home page to tell whether our app embed is switched on (`read_themes`). Only the on/off state is used and shown; the file is not stored and nothing is written to your theme | Show the setup step as done or not done | Contract |
 | Store content you already publish: products, pages and policies (`read_products`, `read_content`, `read_legal_policies`) | Train the assistant so it answers only from your store | Contract |
 | Billing status + plan (no card data) | Plan and usage billing via Shopify App Pricing | Contract |
 

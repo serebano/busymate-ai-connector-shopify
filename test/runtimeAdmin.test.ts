@@ -8,9 +8,6 @@ vi.mock("../app/shopify.server", () => ({ authenticate: { admin: async () => ({ 
 vi.mock("../app/db.server", () => ({ default: { shopTenant: { findUnique: mocks.tenant } } }));
 vi.mock("../app/bmai.server", () => ({ callMcpTool: mocks.read, onAppInstalled: mocks.install, storefrontPublicForShop: async () => true }));
 vi.mock("../app/lib/retrain.server", () => ({ readTrainingState: () => ({ trainedAt: null, error: null, counts: null }), runRetrain: vi.fn() }));
-vi.mock("../app/lib/themeEmbed", async importOriginal => ({
-  ...await importOriginal<typeof import("../app/lib/themeEmbed")>(), detectStorefrontEmbed: async () => "on",
-}));
 // The Reconnect settle wait (#2618) runs without real sleeps here.
 vi.mock("../app/lib/runtimeReadiness", async importOriginal => {
   const real = await importOriginal<typeof import("../app/lib/runtimeReadiness")>();
