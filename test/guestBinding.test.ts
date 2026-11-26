@@ -79,6 +79,8 @@ describe("resolveCaller with the guest binding", () => {
     const caller = await resolveCaller(req({ "x-bmai-binding": await binding() }), deps());
     expect(caller).toEqual({
       shop: SHOP, customerId: null, confirmed: false, actor: "bmai", actorVersion: 3, actorJti: expect.any(String), binding: true,
+      signedTool: "search_products",
+      singleUse: [{ key: expect.stringMatching(/^binding:tnt_11111111:con_22222222:/), exp: NOW + 120, version: 3 }],
     });
   });
   it("fails closed: forged key, wrong audience, unknown shop binding, expired, no JWKS", async () => {

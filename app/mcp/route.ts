@@ -1,4 +1,5 @@
-import { resolveCaller } from "./auth";
+import { resolveCaller, type ConnectorCaller } from "./auth";
+import { consumeJti, type ConsumeJti } from "./jtiStore";
 import { adminForShop } from "./shopifyAdmin";
 import { TOOLS, toolByName, publicToolNames } from "./tools/registry";
 import { errorResult, type ToolContext } from "./tools/types";
@@ -35,11 +36,24 @@ function toolDescriptors() {
   }));
 }
 
+/** Injectable seams (tests run the real gates with no DB, no Shopify, no env). */
+export interface McpRouteDeps {
+  resolveCaller: (request: Request) => Promise<ConnectorCaller | null>;
+  consumeJti: ConsumeJti;
+  adminForShop: typeof adminForShop;
+}
+
+const DEFAULT_DEPS: McpRouteDeps = {
+  resolveCaller: (request) => resolveCaller(request),
+  consumeJti,
+  adminForShop,
+};
+
 /**
  * Handle the connector transport: OAuth 2.1 discovery (GET) + JSON-RPC (POST).
  * DISCOVERY (initialize/tools/list/ping) is pre-auth; tools/call is gated.
  */
-export async function handleMcpRequest(request: Request): Promise<Response> {
+export async function handleMcpRequest(request: Request, deps: McpRouteDeps = DEFAULT_DEPS): Promise<Response> {
   const url = new URL(request.url);
 
   // ── OAuth 2.1 discovery (DCR + PKCE + resource indicator + iss) ────────────
@@ -97,11 +111,16 @@ export async function handleMcpRequest(request: Request): Promise<Response> {
   }
 
   // ── tools/call — gated ─────────────────────────────────────────────────────
-  const caller = await resolveCaller(request);
+  const caller = await deps.resolveCaller(request);
   if (!caller) return rpcError(body.id, -32001, "unauthorized (fail-closed: no verified shop binding)");
 
   const name = String(body.params?.name ?? "");
   const args = (body.params?.arguments ?? {}) as Record<string, unknown>;
+  // ECO-03 — a v3 credential authorizes ONE tool (its signed `tool` claim). A credential the
+  // customer confirmed for tool A never runs tool B. Refused before any lookup or side effect.
+  if (caller.signedTool !== undefined && caller.signedTool !== name) {
+    return rpcError(body.id, -32001, "unauthorized (fail-closed: credential was signed for a different tool)");
+  }
   const tool = toolByName(name);
   if (!tool) return rpcError(body.id, -32602, `unknown tool: ${name}`);
 
@@ -116,9 +135,19 @@ export async function handleMcpRequest(request: Request): Promise<Response> {
     });
   }
 
+  // ECO-03 — burn the credential's single-use id(s) BEFORE any side effect, in the app's own
+  // Postgres (holds across replicas). v3 ids always (one token = one call); a v2 id only for a
+  // confirmed write (see `ConnectorCaller.singleUse`). Replay or store failure ⇒ refused.
+  for (const use of caller.singleUse ?? []) {
+    if (use.version === 2 && !tool.confirm) continue;
+    if (!(await deps.consumeJti(use.key, use.exp).catch(() => false))) {
+      return rpcError(body.id, -32001, "unauthorized (fail-closed: credential already used)");
+    }
+  }
+
   let admin;
   try {
-    admin = await adminForShop(caller.shop);
+    admin = await deps.adminForShop(caller.shop);
   } catch (err) {
     return rpcResult(body.id, errorResult(err instanceof Error ? err.message : "admin client error"));
   }

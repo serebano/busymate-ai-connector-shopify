@@ -27,9 +27,29 @@ scopes = "read_products,read_content,read_legal_policies,read_orders,read_custom
 [auth]
 redirect_urls = [
   "https://store.busymate.ai/auth/callback",
-  "https://store.busymate.ai/auth/shopify/callback",
-  "https://store.busymate.ai/api/auth/callback"
+  "https://store.busymate.ai/auth/shopify/callback"
 ]
+# (audit L3, 2026-11-26) /api/auth/callback was listed but no route serves it (404):
+# managed auth lives under authPathPrefix "/auth" (app/routes/auth.$.tsx).
+
+# --- Network access (storefront CSP declaration) ---
+# Required from 2026-12-01 for apps with a theme app extension or an app proxy:
+# https://shopify.dev/docs/apps/build/security/storefront/declare-network-access
+# Every external server the storefront PAGE contacts, measured on a dev store
+# (bmai Chrome CDP, 2026-11-26): busymate.ai serves /embed/v1.js + its core,
+# launcher, panel, pip, loading image, /api/embed-status, and the chat frame
+# document (/support/<slug>). The frame's own requests (api.busymate.ai) run in a
+# cross-origin document that the storefront's policy does not govern; listed anyway
+# so a same-page call from the SDK can never be blocked. The App Proxy identity call
+# (/apps/busymate-ai/identity) is same-origin, and assistant.js is served by Shopify.
+# Navigation: the loader-failure fallback link opens busymate.ai/chat/w/<slug>.
+# Contract test: test/appConfig.test.ts. Takes effect on `shopify app deploy`.
+[network_access]
+allowed_sources = [
+  "https://busymate.ai",
+  "https://api.busymate.ai"
+]
+allowed_navigation_hosts = [ "busymate.ai" ]
 
 # --- App Proxy (storefront → app) ---
 # The theme app-embed widget POSTs the logged-in customer signal to
