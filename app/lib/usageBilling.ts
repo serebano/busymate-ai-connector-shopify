@@ -1,7 +1,8 @@
 import prisma from "../db.server";
 import { adminForShop } from "../mcp/shopifyAdmin";
-import { PLANS, computeBillableUnits, planFor, type Plan } from "./plans";
-import { parseMeterCursor, serializeMeterCursor } from "./meterCursor";
+import { FREE_PLAN_ID, PLANS, computeBillableUnits, planFor, type Plan } from "./plans";
+import { freeLimitState, monthlyWindow, type CycleWindow, type FreeLimitState } from "./freeLimit";
+import { parseMeterCursor, serializeMeterCursor, type MeterCursor } from "./meterCursor";
 import { createAppEventsClient, usageIdempotencyKey } from "./appEvents";
 import { appGidFromEnv, fetchActiveSubscription } from "./partnerApi";
 import { commitCountedResolutions, liveResolutionLedgerDeps, readNewResolutions, type CountedSession } from "./resolutionLedger.server";
@@ -60,6 +61,16 @@ export interface MeterDeps {
   }) => Promise<{ ok: boolean; error?: string }>;
   /** Persist the advanced serialized cursor. */
   saveCursor: (shop: string, raw: string) => Promise<void>;
+  /**
+   * Free plan (and no plan selected): the shop's current allowance window — the Free contract's
+   * Partner API billing cycle when Shopify reports one, else monthly from the install date.
+   */
+  readFreeCycle: (shop: string) => Promise<CycleWindow>;
+  /**
+   * Free plan: record on the Busymate AI workspace that the allowance is used until `resetsAt`
+   * (reached) or lift that (`set_partner_shop_limit`). Resolves true when the platform recorded it.
+   */
+  reportLimit: (shop: string, input: { reached: boolean; resetsAt: string | null }) => Promise<boolean>;
 }
 
 export interface MeterOutcome {
@@ -70,6 +81,8 @@ export interface MeterOutcome {
   capped: boolean;
   cursor: string | null;
   error?: string;
+  /** Free plan (and no plan selected): the allowance this cycle and whether the team-routing hold is recorded. */
+  limit?: FreeLimitState & { held: boolean };
 }
 
 const noop = (cursor: string | null, extra: Partial<MeterOutcome> = {}): MeterOutcome => ({
@@ -81,15 +94,23 @@ const noop = (cursor: string | null, extra: Partial<MeterOutcome> = {}): MeterOu
 });
 
 /**
- * Meter one batch for a shop. Reports only for
- * an ACTIVE paid plan; a Free plan / no subscription counts nothing to Shopify.
+ * Meter one batch for a shop.
+ *   - a PAID plan (active): allowance → overage → App Events, clamped to the cap;
+ *   - the FREE plan, or NO plan selected yet (inactive/cancelled — Free-plan limits apply until the
+ *     merchant chooses, billingGate.ts): count against the 25-resolution monthly allowance and, at
+ *     the allowance, record the "conversations go to your team" hold on the workspace
+ *     (`meterFree`, docs/BILLING.md "Free plan limit");
+ *   - pending / frozen: nothing (the next run after Shopify settles counts the batch).
  * Holds the cursor on a refused batch/report. Concurrent delivery and durable
  * retry after a successful report need a separate serialized delivery contract.
  */
 export async function meterShop(shop: string, deps: MeterDeps = liveMeterDeps()): Promise<MeterOutcome> {
   const billing = await deps.getBilling(shop);
   const state = parseMeterCursor(billing?.lastMeteredCursor);
-  if (!billing || billing.status !== "active") return noop(state.cursor);
+  if (!billing) return noop(state.cursor);
+  const paid = billing.status === "active" && planFor(billing.plan).overageCents !== null;
+  const onFree = (billing.status === "active" && !paid) || !["active", "pending", "frozen"].includes(billing.status);
+  if (!paid && !onFree) return noop(state.cursor);
   const tenantId = await deps.getTenantId(shop);
   if (!tenantId) return noop(state.cursor);
 
@@ -100,18 +121,17 @@ export async function meterShop(shop: string, deps: MeterDeps = liveMeterDeps())
       (usage.resolutions > 0 && usage.cursor === state.cursor)) {
     return noop(state.cursor, { error: "invalid resolution batch — held" });
   }
+  if (onFree) return meterFree(shop, deps, state, usage);
+
   const resolutions = usage.resolutions;
   const plan = planFor(billing.plan);
+  // Upgraded from a held Free month: lift the hold (the platform already ignores it on a paid
+  // plan; this keeps the record honest). Best-effort — never blocks metering.
+  if (state.limitHeld) await deps.reportLimit(shop, { reached: false, resetsAt: null }).catch(() => false);
 
   if (resolutions === 0) {
-    await deps.saveCursor(shop, serializeMeterCursor({ ...state, cursor: usage.cursor }));
+    await deps.saveCursor(shop, serializeMeterCursor({ cursor: usage.cursor, cycleKey: state.cycleKey, cycleResolutions: state.cycleResolutions }));
     return noop(usage.cursor);
-  }
-
-  // Free (no overage) — count for the merchant's dashboard, report nothing.
-  if (plan.overageCents === null) {
-    await deps.saveCursor(shop, serializeMeterCursor({ cursor: usage.cursor, cycleKey: state.cycleKey, cycleResolutions: state.cycleResolutions + resolutions }));
-    return { metered: resolutions, reportedUnits: 0, capped: false, cursor: usage.cursor };
   }
 
   const cycle = await deps.readBillingCycle(shop);
@@ -142,6 +162,30 @@ export async function meterShop(shop: string, deps: MeterDeps = liveMeterDeps())
 }
 
 /**
+ * The Free allowance (docs/BILLING.md "Free plan limit"): count this cycle's resolutions (a new
+ * cycle starts from 0), and when the count reaches the plan's included resolutions record the
+ * hold that sends new shopper conversations to the team until the cycle ends. The hold is
+ * re-recorded when a new cycle reaches it again and lifted when the count is back under (a reset).
+ * A refused record keeps the previous state so the next run retries it; it never blocks counting.
+ */
+async function meterFree(shop: string, deps: MeterDeps, state: MeterCursor, usage: { resolutions: number; cursor: string }): Promise<MeterOutcome> {
+  const plan = planFor(FREE_PLAN_ID);
+  const cycle = await deps.readFreeCycle(shop);
+  const used = (state.cycleKey === cycle.key ? state.cycleResolutions : 0) + usage.resolutions;
+  const limit = freeLimitState({ included: plan.includedResolutions, used, resetsAt: cycle.end });
+  let held = state.limitHeld === true;
+  if (limit.reached !== held || (limit.reached && state.cycleEnd !== cycle.end)) {
+    const recorded = await deps.reportLimit(shop, { reached: limit.reached, resetsAt: limit.reached ? cycle.end : null }).catch(() => false);
+    if (recorded) held = limit.reached;
+  }
+  await deps.saveCursor(shop, serializeMeterCursor({
+    cursor: usage.cursor, cycleKey: cycle.key, cycleResolutions: used,
+    cycleEnd: cycle.end, limitHeld: held,
+  }));
+  return { metered: usage.resolutions, reportedUnits: 0, capped: false, cursor: usage.cursor, limit: { ...limit, held } };
+}
+
+/**
  * Live production deps: Prisma + Busymate AI MCP (the resolution ledger) +
  * Partner API + the App Events client, delivered through the durable
  * prepared-batch outbox (app/lib/meterOutbox.ts).
@@ -162,17 +206,20 @@ export function liveMeterDeps(): MeterDeps {
   const ledgerDeps = liveResolutionLedgerDeps();
   let pending: { tenantId: string; sessions: CountedSession[]; occurredFrom: string | null; occurredThrough: string | null; evidenceRef: string | null } | null = null;
   let plan: string | null = null;
+  let status: string | null = null;
   let cycleInfo: { start: string; end: string | null; subscriptionId: string | null } | null = null;
 
   return {
     getBilling: async (shop) => {
       const b = await prisma.billingState.findUnique({ where: { shop } });
       plan = b?.plan ?? null;
+      status = b?.status ?? null;
       return b ? { status: b.status, plan: b.plan, lastMeteredCursor: b.lastMeteredCursor } : null;
     },
     getTenantId: async (shop) => {
-      const t = await prisma.shopTenant.findUnique({ where: { shop }, select: { bmaiTenantId: true } });
-      return t?.bmaiTenantId ?? null;
+      // An uninstalled / deleted shop is not metered (and never gets a limit record).
+      const t = await prisma.shopTenant.findUnique({ where: { shop }, select: { bmaiTenantId: true, inactiveAt: true } });
+      return t && !t.inactiveAt ? t.bmaiTenantId ?? null : null;
     },
     readResolutions: async (tenantId, _cursor) => {
       // The real producer (#19/#2835): conversation + hand-off MCP events run
@@ -250,6 +297,30 @@ export function liveMeterDeps(): MeterDeps {
         // never blocks the widget — hold and retry, same as any other failure.
         return { ok: false, error: err instanceof Error ? err.message : String(err) };
       }
+    },
+    readFreeCycle: async (shop) => {
+      // The $0 Free plan is a real App Pricing contract: use its billing cycle when Shopify
+      // reports one (so "a month" is the merchant's own billing month) …
+      const appGid = appGidFromEnv();
+      if (status === "active" && appGid) {
+        try {
+          const admin = await adminForShop(shop);
+          const data = (await admin.graphql(`#graphql
+            query ShopId { shop { id } }`)) as { shop?: { id?: string } };
+          const sub = data.shop?.id ? await fetchActiveSubscription({ appGid, shopGid: data.shop.id }) : null;
+          const c = sub?.ok ? sub.subscription?.currentBillingCycle : null;
+          if (c?.startTime && c.endTime && Date.parse(c.endTime) > Date.now()) return { key: c.startTime, end: c.endTime };
+        } catch {
+          // fall through to the install-anchored month
+        }
+      }
+      // … otherwise (no plan selected yet, or the cycle is unreadable) monthly from the install date.
+      const t = await prisma.shopTenant.findUnique({ where: { shop }, select: { createdAt: true } });
+      return monthlyWindow(t?.createdAt ?? new Date(), new Date());
+    },
+    reportLimit: async (shop, input) => {
+      const { reportShopLimit } = await import("../bmai.server");
+      return reportShopLimit(shop, input);
     },
     saveCursor: async (shop, raw) => {
       await prisma.billingState.update({ where: { shop }, data: { lastMeteredCursor: raw } });

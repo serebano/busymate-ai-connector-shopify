@@ -118,6 +118,37 @@ Verifying live on the review store surfaced two more bugs, both fixed in 0.1.11:
   refusal reason still fails closed exactly as before (held, retried, never
   guessed as zero).
 
+## Free plan limit (2026-11-26)
+
+The listing, Shopify's pricing page and the Billing page promise: **Free = 25 AI resolutions a
+month, then conversations route to your team.** Until 2026-11-26 nothing enforced it (audit rows
+u28-u32: "26 of 25 used", shoppers still answered, the Free counter never reset, nothing counted
+before a plan was chosen). Behaviour now, exactly as the copy says:
+
+- **Who counts.** A shop on the $0 Free plan **and** a shop that has not selected a plan yet
+  ("No plan selected" — Free-plan limits apply until it chooses, `billingGate.ts`). Decision:
+  count before plan selection, so a store can never get unlimited AI answers by never choosing.
+  Pending and frozen states count nothing until Shopify settles them. Paid plans are unchanged
+  (allowance → overage → cap, the assistant keeps answering).
+- **The month.** The shop's billing cycle: the Partner API `currentBillingCycle` of its Free
+  contract when Shopify reports one; otherwise monthly windows anchored on the install date
+  (`app/lib/freeLimit.ts` `monthlyWindow`, day clamped to short months). A new cycle starts the
+  count from 0 — also when the run sees no new resolutions.
+- **At the allowance** (`meterFree` in `usageBilling.ts`, hourly timer + Billing visit) the app
+  calls the platform's proof-of-shop tool `set_partner_shop_limit { reached: true, resets_at:
+  <cycle end> }` (busymate-ai-src#6879). The platform then treats the workspace like a paused one:
+  the assistant answers no new message and every shopper conversation lands in the team's inbox
+  (embedded app → Conversations). The storefront chat stays on (`widgetEnabled()` is still
+  unconditionally true). The hold lifts on its own at `resets_at`, at once when the shop's
+  recorded plan becomes paid, and the app also records `reached: false` after a reset/upgrade.
+  A refused record is retried on the next run; counting never waits for it.
+- **The merchant sees** a warning banner on Home and Billing ("You've used this month's 25 free AI
+  resolutions … New shopper conversations now go to your team in Conversations … until your
+  allowance resets on <date>") with **Upgrade**, which opens Shopify's own plan page top-level
+  (Shopify App Pricing only — never busymate.ai pricing or Stripe).
+- **Lag.** A conversation counts once it is resolved and idle ≥ 24 h (the resolution definition
+  above) and the meter runs hourly, so the hold starts within about a day of the 25th resolution.
+
 ## Env / ops
 
 No new env vars. Reuses `SHOPIFY_APP_EVENTS_CLIENT_ID`/`_SECRET` (App Events),

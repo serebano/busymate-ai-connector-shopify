@@ -11,11 +11,13 @@ import { parseMeterCursor, serializeMeterCursor } from "../app/lib/meterCursor";
  * invariant that the widget is never disabled by billing.
  */
 const SHOP = "acme.myshopify.com";
+const FREE_CYCLE = { key: "2026-11-01T00:00:00.000Z", end: "2026-12-01T00:00:00.000Z" };
 
 interface Harness {
   deps: MeterDeps;
   reported: Array<{ units: number; idempotencyKey: string }>;
   saved: string[];
+  limits: Array<{ reached: boolean; resetsAt: string | null }>;
 }
 
 function makeDeps(over: {
@@ -26,9 +28,12 @@ function makeDeps(over: {
   cycle?: { key: string } | null;
   reportOk?: boolean;
   tenant?: string | null;
+  freeCycle?: { key: string; end: string };
+  limitOk?: boolean;
 } = {}): Harness {
   const reported: Harness["reported"] = [];
   const saved: string[] = [];
+  const limits: Harness["limits"] = [];
   const deps: MeterDeps = {
     getBilling: async () => ({ status: over.status ?? "active", plan: over.plan ?? "growth", lastMeteredCursor: over.cursor === undefined ? "c0" : over.cursor }),
     getTenantId: async () => (over.tenant === undefined ? "t_1" : over.tenant),
@@ -41,8 +46,13 @@ function makeDeps(over: {
     saveCursor: async (_shop, raw) => {
       saved.push(raw);
     },
+    readFreeCycle: async () => over.freeCycle ?? FREE_CYCLE,
+    reportLimit: async (_shop, input) => {
+      limits.push(input);
+      return over.limitOk !== false;
+    },
   };
-  return { deps, reported, saved };
+  return { deps, reported, saved, limits };
 }
 
 describe("meterShop (App Pricing usage events)", () => {
@@ -90,12 +100,71 @@ describe("meterShop (App Pricing usage events)", () => {
     expect(parseMeterCursor(h.saved.at(-1)).cycleResolutions).toBe(100);
   });
 
-  it("no subscription (inactive) ⇒ nothing reported, cursor untouched", async () => {
-    const h = makeDeps({ status: "inactive", resolutions: 100 });
+  it("no plan selected yet (inactive) ⇒ Free-plan limits apply: counted, never reported to Shopify", async () => {
+    const h = makeDeps({ status: "inactive", resolutions: 10 });
     const out = await meterShop(SHOP, h.deps);
     expect(h.reported).toEqual([]);
-    expect(out.metered).toBe(0);
-    expect(h.saved).toEqual([]);
+    expect(out.metered).toBe(10);
+    expect(parseMeterCursor(h.saved.at(-1))).toMatchObject({ cycleKey: FREE_CYCLE.key, cycleResolutions: 10 });
+    expect(h.limits).toEqual([]);
+  });
+
+  it("pending / frozen ⇒ nothing counted yet, cursor untouched", async () => {
+    for (const status of ["pending", "frozen"]) {
+      const h = makeDeps({ status, resolutions: 10 });
+      expect((await meterShop(SHOP, h.deps)).metered).toBe(0);
+      expect(h.saved).toEqual([]);
+    }
+  });
+
+  describe("Free plan limit (25, then conversations route to your team)", () => {
+    const at = (n: number, extra: Record<string, unknown> = {}) =>
+      serializeMeterCursor({ cursor: "c0", cycleKey: FREE_CYCLE.key, cycleResolutions: n, cycleEnd: FREE_CYCLE.end, ...extra });
+
+    it("reaching 25 records the hold until the cycle end, once", async () => {
+      const h = makeDeps({ plan: "free", resolutions: 3, cursor: at(23) });
+      const out = await meterShop(SHOP, h.deps);
+      expect(h.limits).toEqual([{ reached: true, resetsAt: FREE_CYCLE.end }]);
+      expect(out.limit).toEqual({ reached: true, used: 26, included: 25, resetsAt: FREE_CYCLE.end, held: true });
+      expect(parseMeterCursor(h.saved.at(-1))).toMatchObject({ cycleResolutions: 26, limitHeld: true, cycleEnd: FREE_CYCLE.end });
+      const again = makeDeps({ plan: "free", resolutions: 2, cursor: h.saved.at(-1)! });
+      await meterShop(SHOP, again.deps);
+      expect(again.limits).toEqual([]);
+    });
+
+    it("under the allowance nothing is recorded", async () => {
+      const h = makeDeps({ plan: "free", resolutions: 2, cursor: at(10) });
+      expect((await meterShop(SHOP, h.deps)).limit).toMatchObject({ reached: false, used: 12, held: false });
+      expect(h.limits).toEqual([]);
+    });
+
+    it("a refused record is retried on the next run (never marked held)", async () => {
+      const h = makeDeps({ plan: "free", resolutions: 5, cursor: at(24), limitOk: false });
+      expect((await meterShop(SHOP, h.deps)).limit?.held).toBe(false);
+      const retry = makeDeps({ plan: "free", resolutions: 0, cursor: h.saved.at(-1)! });
+      await meterShop(SHOP, retry.deps);
+      expect(retry.limits).toEqual([{ reached: true, resetsAt: FREE_CYCLE.end }]);
+    });
+
+    it("a new cycle resets the count and lifts the hold, even with no new resolutions", async () => {
+      const next = { key: "2026-12-01T00:00:00.000Z", end: "2027-01-01T00:00:00.000Z" };
+      const h = makeDeps({ plan: "free", resolutions: 0, cursor: at(30, { limitHeld: true }), freeCycle: next });
+      const out = await meterShop(SHOP, h.deps);
+      expect(h.limits).toEqual([{ reached: false, resetsAt: null }]);
+      expect(out.limit).toMatchObject({ reached: false, used: 0, held: false });
+      expect(parseMeterCursor(h.saved.at(-1))).toMatchObject({ cycleKey: next.key, cycleResolutions: 0 });
+      expect(parseMeterCursor(h.saved.at(-1)).limitHeld).toBeUndefined();
+    });
+
+    it("upgrading to a paid plan lifts a held Free month", async () => {
+      const h = makeDeps({ plan: "growth", resolutions: 1, cursor: at(30, { limitHeld: true }) });
+      await meterShop(SHOP, h.deps);
+      expect(h.limits).toEqual([{ reached: false, resetsAt: null }]);
+    });
+
+    it("the widget is still never disabled", () => {
+      expect(widgetEnabled()).toBe(true);
+    });
   });
 
   it("no active billing cycle (trial or Partner API unreachable) ⇒ hold, never charge blind", async () => {

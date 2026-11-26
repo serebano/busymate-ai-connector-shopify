@@ -4,6 +4,18 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-11-26 — Free plan: 25 resolutions a month, then conversations route to your team
+
+- The promise on the listing and pricing page is now built (docs/BILLING.md "Free plan limit"):
+  Free and "no plan selected" shops count against 25 resolutions per billing cycle (Partner API
+  cycle of the Free contract, else monthly from install); at 25 the meter records the
+  team-routing hold on the workspace (`set_partner_shop_limit`, busymate-ai-src#6879) until the
+  cycle ends; a reset or upgrade lifts it. Home and Billing show a limit banner with Upgrade
+  (Shopify's plan page). The meter timer now covers every installed shop, not only active plans.
+- Needs busymate-ai-src#6880 live for the hold to take effect; before that the record is refused
+  and retried hourly (no behaviour change, no error to the merchant).
+- Tests: `test/freeLimit.test.ts`, `test/usageBilling.test.ts` (Free limit suite).
+
 ## 2026-11-26 — a signed actor credential runs ONE call of ONE tool (ECO-03, P1 security)
 
 - `app/mcp/auth.ts` now carries the verified v3 `tool` claim (actor token and guest binding) and the
