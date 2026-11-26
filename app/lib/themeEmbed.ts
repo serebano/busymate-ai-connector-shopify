@@ -79,6 +79,23 @@ export function embedFromExtensions(extensions: ReadonlyArray<ExtensionInfoLike>
   return block.status === "active" ? "on" : "off";
 }
 
+/**
+ * The embed state Home renders FIRST (F5, admin CLS): the last App Bridge answer
+ * the app stored (`ShopTenant.embedConfirmedAt` set = on). Never "checking" —
+ * that placeholder changed the card's and checklist's height once App Bridge
+ * answered (CLS 0.13 on a 390 px admin). A never-checked shop starts "off",
+ * which is what a fresh install has.
+ */
+export function lastKnownEmbed(embedConfirmedAt: Date | string | null | undefined): "on" | "off" {
+  return embedConfirmedAt ? "on" : "off";
+}
+
+/** `POST /api/embed-status` body → a definite state, or null (refused, no write). */
+export function parseEmbedStatus(body: unknown): "on" | "off" | null {
+  const status = (body as { status?: unknown } | null)?.status;
+  return status === "on" || status === "off" ? status : null;
+}
+
 /** Home's embed card copy for each state. */
 export function embedSetupPresentation(status: EmbedStatus) {
   if (status === "on") {
