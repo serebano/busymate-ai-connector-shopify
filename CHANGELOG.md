@@ -4,6 +4,18 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-11-26 — ECO-03 v2 residual: a v2 actor token serves one call, reads included
+
+Connector host only: no Shopify app version, no extension or config change, no migration.
+
+- `/mcp` now burns the v2 jti on every `tools/call`, not only on confirmed writes. A replayed
+  v2 read is refused before any Admin GraphQL call (`-32001 … credential already used`), the
+  same as v3 and guest bindings. One signed token = one call, for every credential version.
+- Safe only with busymate-ai-src#6867 live: the platform's test-account checker, the last v2
+  token reuser, now mints one v2 token per call (the agent, support-tier and probe paths
+  already did).
+- Tests: `test/mcpSingleUse.test.ts` ("a replayed v2 read is refused").
+
 ## 2026-11-26 — Free plan: 25 resolutions a month, then conversations route to your team
 
 - The promise on the listing and pricing page is now built (docs/BILLING.md "Free plan limit"):
