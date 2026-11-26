@@ -4,6 +4,20 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-11-26 — admin layout shift and App Bridge loaded once (red-team F5)
+
+Server-rendered admin only: no Shopify app version, no extension or config change, no migration.
+
+- **App Bridge once, no unused Polaris web components:** the admin layout no longer uses the SDK's `AppProvider`.
+  It rendered a second `app-bridge.js` tag and `polaris.js` (Polaris web components, 149 KB br / 740 KB raw, never
+  used: the app renders Polaris React) as parser-blocking scripts at the top of `<body>`. `app-bridge.js` now loads
+  once, first in `<head>` (`root.tsx`), and only on `/app/…` (public legal/landing/login pages skip it). Admin nav
+  clicks still route client-side (`AppBridgeNavigation`, the `shopify:navigate` listener).
+- **Home no longer shifts when App Bridge answers:** the embed card and the checklist rendered "Checking your
+  theme" first and grew when `shopify.app.extensions()` answered (CLS 0.13 at 390 px). Home now renders the last
+  known answer (`ShopTenant.embedConfirmedAt`, set = on) and reports a changed answer once
+  (`POST /api/embed-status`, session token, shop from the session). Test: `test/appBridgeOnce.test.ts`.
+
 ## 2026-11-26 — embedded admin accessibility: document title, main landmark, h1; Conversations on a phone (audit G5, inventory F8–F10)
 
 Server-rendered admin only: no Shopify app version, no extension or config change.

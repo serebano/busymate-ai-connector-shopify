@@ -23,6 +23,9 @@ export const loader = () => ({ apiKey: process.env.SHOPIFY_API_KEY || "" });
 export function Layout({ children }: { children: ReactNode }) {
   const data = useRouteLoaderData<typeof loader>("root");
   const apiKey = data?.apiKey ?? "";
+  // App Bridge only where it is used: the embedded admin (/app/…). Public pages
+  // (legal, landing, login) skip its 31 KB.
+  const embedded = /^\/app(?:\/|$)/.test(useLocation().pathname);
   return (
     <html lang="en">
       <head>
@@ -30,9 +33,11 @@ export function Layout({ children }: { children: ReactNode }) {
           App Bridge (v4) MUST be the FIRST script in <head> for embedded apps —
           @shopify/app-bridge-react hooks are a thin layer over this global, and
           Built-for-Shopify checks that it loads from the Shopify CDN before any
-          other script. data-api-key initializes it.
+          other script. data-api-key initializes it. This is the ONLY App Bridge
+          tag (app.tsx deliberately does not use the SDK's AppProvider, which
+          adds a second one plus polaris.js; red-team F5).
         */}
-        <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js" data-api-key={apiKey} />
+        {embedded ? <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js" data-api-key={apiKey} /> : null}
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width,initial-scale=1" />
         <link rel="icon" href="/favicon.ico" sizes="any" />

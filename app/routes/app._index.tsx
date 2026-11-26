@@ -26,7 +26,7 @@ import { merchantError } from "../lib/merchantError";
 import { readStorefrontFrameable } from "../lib/embedFrameable";
 import { homeActivation } from "../lib/homeActivation";
 import { useActivationRecheck } from "../lib/useActivationRecheck";
-import { useAppEmbedStatus } from "../lib/useAppEmbedStatus";
+import { useAppEmbedStatus, useReportEmbedStatus } from "../lib/useAppEmbedStatus";
 import { isSettingUp, useSetupPoll } from "../lib/useSetupPoll";
 import { publishedTenantRepair } from "../lib/tenantRepair";
 import { readTrainingState } from "../lib/retrain.server";
@@ -46,6 +46,7 @@ import {
   buildSetupChecklist,
   embedSetupPresentation,
   embedStep,
+  lastKnownEmbed,
   themeEditorActivateUrl,
   themeEditorAppEmbedsUrl,
   trainingSummary,
@@ -107,11 +108,15 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   // re-checking while the runtime is not yet ready even when the CTA is already
   // offered on the platform's frameable:true, so the "Activating" badge and the
   // "Assistant provisioned" step never sit stale until a manual reload.
+  // F5 (admin CLS): render the embed card + checklist from the LAST KNOWN App
+  // Bridge answer, so the first paint already has its final shape; App Bridge
+  // still re-checks in the browser and a change is reported back.
+  const embedLastKnown = lastKnownEmbed(tenant?.embedConfirmedAt);
   const { embedReady, activating, recheck } = homeActivation({ provisionState, published, runtime: runtime?.state ?? null, frameable });
   const steps = buildSetupChecklist({
     provisionState,
     connectorReady: live && Boolean(tenant?.connectorId) && !tenant?.provisionWarning,
-    embed: "checking",
+    embed: embedLastKnown,
     trainedAt: training.trainedAt,
     trainError: training.error,
     counts: training.counts,
@@ -146,6 +151,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     embedReady,
     activating,
     recheck,
+    embedLastKnown,
   };
 };
 
@@ -197,7 +203,8 @@ function StepDetail({ detail, at }: { detail: string; at?: string }) {
 export default function Index() {
   const data = useLoaderData<typeof loader>();
   // G2 — the embed state from App Bridge (published theme), re-checked on return.
-  const embed = useAppEmbedStatus();
+  const embed = useAppEmbedStatus(data.embedLastKnown);
+  useReportEmbedStatus(embed, data.embedLastKnown);
   const embedSetup = embedSetupPresentation(embed);
   const steps = data.steps.map((s) => (s.id === "embed" ? embedStep(embed) : s));
   const retry = useFetcher<typeof action>();

@@ -1,7 +1,6 @@
 import type { HeadersFunction, LoaderFunctionArgs, MetaFunction } from "react-router";
 import { Link, Outlet, useLoaderData, useLocation, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { AppProvider as PolarisAppProvider, Box, InlineStack, Link as PLink, Text } from "@shopify/polaris";
 import enPolarisTranslations from "@shopify/polaris/locales/en.json";
 import { NavMenu } from "@shopify/app-bridge-react";
@@ -11,6 +10,7 @@ import { PolarisLink } from "../components/PolarisLink";
 import { AppRouteErrorView } from "../components/AppRouteError";
 import { EmbeddedNavigationContext } from "../components/EmbeddedNavigation";
 import { AdminLoadingBar } from "../components/AdminLoadingBar";
+import { AppBridgeNavigation } from "../components/AppBridgeNavigation";
 import { describeTransportError } from "../lib/clientAction";
 import { embeddedAppUrl, embeddedNavigationForShop } from "../lib/embeddedNavigation";
 import { isRouteControlFlow, reloadEmbeddedFrame } from "../lib/layoutError";
@@ -20,7 +20,7 @@ export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
-  return { apiKey: process.env.SHOPIFY_API_KEY || "", navigation: embeddedNavigationForShop(session.shop) };
+  return { navigation: embeddedNavigationForShop(session.shop) };
 };
 
 // Accessibility (WCAG 2.4.2, axe document-title): the embedded document names
@@ -28,10 +28,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 export const meta: MetaFunction = ({ location }) => [{ title: adminDocumentTitle(location.pathname) }];
 
 export default function App() {
-  const { apiKey, navigation } = useLoaderData<typeof loader>();
+  const { navigation } = useLoaderData<typeof loader>();
   const { pathname } = useLocation();
+  // App Bridge itself loads ONCE, first in <head> (root.tsx); no AppProvider
+  // here — it would load app-bridge.js a second time plus the unused
+  // polaris.js web-components bundle (red-team F5).
   return (
-    <AppProvider apiKey={apiKey}>
+    <>
+      <AppBridgeNavigation />
       <EmbeddedNavigationContext.Provider value={navigation}>
       {/* linkComponent: Polaris <Link url>/<Button url> must stay client-side inside the
           admin iframe (app/components/PolarisLink.tsx) — a raw anchor reloads a bare URL
@@ -67,7 +71,7 @@ export default function App() {
         </footer>
       </PolarisAppProvider>
       </EmbeddedNavigationContext.Provider>
-    </AppProvider>
+    </>
   );
 }
 

@@ -18,6 +18,7 @@ vi.mock("react-router", async () => ({
   useLocation: () => ({ pathname: h.pathname, search: h.search }),
   useRouteError: () => h.error,
   useNavigation: () => ({ state: "idle" }),
+  useNavigate: () => () => undefined,
   Outlet: () => createElement("div", { "data-outlet": "" }),
   Link: ({ to, children }: { to: string; children?: ReactNode }) => createElement("a", { href: to }, children),
   Meta: () => null, Links: () => null, Scripts: () => null, ScrollRestoration: () => null,
@@ -27,7 +28,6 @@ vi.mock("@shopify/app-bridge-react", () => ({
   TitleBar: ({ title }: { title: string }) => createElement("ui-title-bar", { title }),
   useAppBridge: () => ({ loading: vi.fn() }),
 }));
-vi.mock("@shopify/shopify-app-react-router/react", () => ({ AppProvider: ({ children }: { children?: ReactNode }) => children }));
 vi.mock("@shopify/shopify-app-react-router/server", () => ({ boundary: { error: vi.fn(), headers: vi.fn() } }));
 vi.mock("@shopify/polaris/build/esm/styles.css?url", () => ({ default: "/polaris.css" }));
 vi.mock("../app/shopify.server", () => ({ authenticate: { admin: vi.fn(async () => ({ session: { shop: "acme.myshopify.com" } })) } }));
