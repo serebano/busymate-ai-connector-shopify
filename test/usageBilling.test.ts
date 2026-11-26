@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { meterShop, planFor, usageTierOf, widgetEnabled, type BillingCycle, type MeterDeps } from "../app/lib/usageBilling";
+import { CYCLE_CLOSE_GUARD_MS, meterShop, planFor, sameCycleKey, usageTierOf, widgetEnabled, type BillingCycle, type MeterDeps, type MeterWatch } from "../app/lib/usageBilling";
 import { parseMeterCursor, serializeMeterCursor } from "../app/lib/meterCursor";
 
 /**
@@ -50,6 +50,7 @@ function makeDeps(over: {
       saved.push(raw);
     },
     readFreeCycle: async () => over.freeCycle ?? FREE_CYCLE,
+    now: () => Date.parse("2026-10-25T00:00:00Z"), // fixed clock, inside every fixture cycle
     reportLimit: async (_shop, input) => {
       limits.push(input);
       return over.limitOk !== false;
@@ -118,7 +119,7 @@ describe("meterShop (App Pricing usage events)", () => {
       expect(h.reported).toEqual([]);
       expect(out).toMatchObject({ metered: 12, reportedUnits: 0, cursor: "c1" });
       expect(out.error).toBeUndefined();
-      expect(parseMeterCursor(h.saved.at(-1))).toEqual({ cursor: "c1", cycleKey: `trial:${TRIAL_END}`, cycleResolutions: 12, cycleReported: 0 });
+      expect(parseMeterCursor(h.saved.at(-1))).toEqual({ cursor: "c1", cycleKey: `trial:${TRIAL_END}`, cycleResolutions: 12, cycleReported: 0, trialEnd: TRIAL_END });
     });
 
     it("first paid cycle: resolutions that ended during the trial are dropped, the rest start from 0", async () => {
@@ -132,7 +133,7 @@ describe("meterShop (App Pricing usage events)", () => {
       const out = await meterShop(SHOP, h.deps);
       expect(h.reported.map((r) => r.units)).toEqual([2]);
       expect(out).toMatchObject({ metered: 5, reportedUnits: 2 });
-      expect(parseMeterCursor(h.saved.at(-1))).toEqual({ cursor: "c1", cycleKey: TRIAL_END, cycleResolutions: 2, cycleReported: 2 });
+      expect(parseMeterCursor(h.saved.at(-1))).toEqual({ cursor: "c1", cycleKey: TRIAL_END, cycleResolutions: 2, cycleReported: 2, trialEnd: TRIAL_END });
     });
 
     it("a batch made only of trial resolutions reports nothing and still commits", async () => {
@@ -241,6 +242,129 @@ describe("meterShop (App Pricing usage events)", () => {
       const out = await meterShop(SHOP, capped.deps);
       expect(capped.reported.map((r) => r.units)).toEqual([2]); // stops at the 446 ceiling ($199.92)
       expect(out.capped).toBe(true);
+    });
+  });
+
+  describe("independent review fixes: cycle boundary, trial fallback, holds and alerts", () => {
+    const END = "2026-10-01T00:00:00Z";
+    const cyc = (extra: Partial<BillingCycle> = {}): BillingCycle => ({ key: CYCLE, shopId: "gid://shopify/Shop/1", end: END, ...extra });
+    /** A Starter shop with persisted watch/alert state carried between runs. */
+    function shopState() {
+      const st = { cursor: cur(40, 40) as string, watch: null as MeterWatch | null, alert: null as string | null, sent: [] as Array<{ units: number; key: string }> };
+      const runOnce = async (o: { resolutions?: number; next?: string; cycle?: BillingCycle; now?: number; report?: (u: number, k: string) => { ok: boolean; error?: string; replay?: boolean; serverError?: boolean } }) => {
+        const out = await meterShop(SHOP, {
+          getBilling: async () => ({ status: "active", plan: "starter", lastMeteredCursor: st.cursor, watch: st.watch, alert: st.alert }),
+          getTenantId: async () => "t_1",
+          readResolutions: async () => ({ resolutions: o.resolutions ?? 2, cursor: o.next ?? `n${Math.random()}` }),
+          readBillingCycle: async () => o.cycle ?? cyc(),
+          reportUsage: async ({ units, idempotencyKey }) => { st.sent.push({ units, key: idempotencyKey }); return o.report ? o.report(units, idempotencyKey) : { ok: true }; },
+          saveCursor: async (_s, raw) => { st.cursor = raw; },
+          readFreeCycle: async () => FREE_CYCLE,
+          reportLimit: async () => true,
+          writeWatch: async (_s, w, alert) => { st.watch = w; st.alert = alert; },
+          now: () => o.now ?? Date.parse("2026-09-15T00:00:00Z"),
+        });
+        return out;
+      };
+      return { st, runOnce };
+    }
+
+    it("cycle boundary: no send in the last 15 min of a cycle (held, not alerted); 16 min before sends", async () => {
+      const a = shopState();
+      const held = await a.runOnce({ now: Date.parse(END) - CYCLE_CLOSE_GUARD_MS + 60_000 });
+      expect(a.st.sent).toEqual([]);
+      expect(held.error).toMatch(/cycle ends/);
+      expect(a.st.watch?.hold).toMatchObject({ kind: "cycle-closing", runs: 1 });
+      expect(a.st.alert).toBeNull();
+      expect(a.st.cursor).toBe(cur(40, 40));
+      const b = shopState();
+      await b.runOnce({ now: Date.parse(END) - CYCLE_CLOSE_GUARD_MS - 60_000 });
+      expect(b.st.sent.map((x) => x.units)).toEqual([2]);
+      // after the rollover the held batch is counted + reported in the new cycle
+      const after = await a.runOnce({ now: Date.parse(END) + 60_000, cycle: { key: END, shopId: "gid://shopify/Shop/1", end: "2026-10-31T00:00:00Z" } });
+      expect(after.reportedUnits).toBe(2);
+      expect(parseMeterCursor(a.st.cursor)).toMatchObject({ cycleKey: END, cycleResolutions: 2, cycleReported: 2 });
+      expect(a.st.watch?.hold).toBeUndefined();
+    });
+
+    it("cycle keys compare as instants: '…00Z' and '….000Z' are the same cycle (counters continue)", async () => {
+      expect(sameCycleKey("2026-09-01T00:00:00Z", "2026-09-01T00:00:00.000Z")).toBe(true);
+      expect(sameCycleKey("2026-09-01T00:00:00Z", "2026-09-01T00:00:00+00:00")).toBe(true);
+      expect(sameCycleKey("2026-09-01T00:00:00Z", "2026-10-01T00:00:00Z")).toBe(false);
+      expect(sameCycleKey("trial:x", "trial:x")).toBe(true);
+      expect(sameCycleKey(null, "2026-09-01T00:00:00Z")).toBe(false);
+      const h = makeDeps({ plan: "starter", resolutions: 3, cursor: cur(440, 440, "2026-09-01T00:00:00.000Z") });
+      await meterShop(SHOP, h.deps);
+      expect(h.reported.map((r) => r.units)).toEqual([3]); // 443 ≤ 446: same cycle, not a fresh 0
+      expect(parseMeterCursor(h.saved.at(-1))).toMatchObject({ cycleResolutions: 443, cycleReported: 443 });
+    });
+
+    it("trial fallback: Shopify stops returning trialEndsAt → the stored trial end still keeps last-day trial resolutions free", async () => {
+      const T = "2026-10-23T17:36:35Z";
+      const fromTrialKey = serializeMeterCursor({ cursor: "c0", cycleKey: `trial:${T}`, cycleResolutions: 9, cycleReported: 0 });
+      const h = makeDeps({
+        plan: "starter", resolutions: 3, cursor: fromTrialKey,
+        occurredAt: ["2026-10-23T08:00:00Z", "2026-10-23T17:36:00Z", "2026-10-24T09:00:00Z"],
+        cycle: { key: T, shopId: "gid://shopify/Shop/1" }, // no trialEndsAt
+      });
+      await meterShop(SHOP, h.deps);
+      expect(h.reported.map((r) => r.units)).toEqual([1]);
+      const saved = parseMeterCursor(h.saved.at(-1));
+      expect(saved).toMatchObject({ cycleKey: T, cycleResolutions: 1, cycleReported: 1, trialEnd: T });
+      // A later run (cursor now on the paid cycle) still knows the trial end from `trialEnd`.
+      const later = makeDeps({ plan: "starter", resolutions: 2, cursor: h.saved.at(-1)!, nextCursor: "c9", occurredAt: ["2026-10-23T12:00:00Z", "2026-10-25T12:00:00Z"], cycle: { key: T, shopId: "gid://shopify/Shop/1" } });
+      await meterShop(SHOP, later.deps);
+      expect(later.reported.map((r) => r.units)).toEqual([1]);
+    });
+
+    it("replay hold alerts only once it lasts more than 2 runs, and clears on success", async () => {
+      const a = shopState();
+      const replay = () => ({ ok: false, replay: true, error: "replay" });
+      await a.runOnce({ report: replay });
+      await a.runOnce({ report: replay });
+      expect(a.st.watch?.hold).toMatchObject({ kind: "replay", runs: 2 });
+      expect(a.st.alert).toBeNull();
+      await a.runOnce({ report: replay });
+      expect(a.st.alert).toMatch(/replay hold for 3 run/);
+      await a.runOnce({ cycle: cyc({ reportedQuantity: 42 }) }); // Shopify now shows the earlier send
+      expect(a.st.alert).toBeNull();
+      expect(a.st.watch?.hold).toBeUndefined();
+    });
+
+    it("a Shopify server error is never resent: alert at once, every later run holds without sending, released when the meter shows it", async () => {
+      const a = shopState();
+      await a.runOnce({ report: () => ({ ok: false, serverError: true, error: "App Events 500: INTERNAL_ERROR" }) });
+      expect(a.st.sent).toHaveLength(1);
+      expect(a.st.alert).toMatch(/not resent/);
+      expect(a.st.watch?.hold?.attempt).toMatchObject({ cycleKey: CYCLE, from: 40, units: 2 });
+      const blocked = await a.runOnce({ resolutions: 5, cycle: cyc({ reportedQuantity: 40 }) });
+      expect(a.st.sent).toHaveLength(1); // NOT resent
+      expect(blocked.error).toMatch(/not resent/);
+      expect(a.st.alert).toMatch(/server-error hold/);
+      expect(a.st.cursor).toBe(cur(40, 40));
+      // Shopify's meter shows the 2 units after all: hold released, the rest is reported once.
+      const ok = await a.runOnce({ resolutions: 5, cycle: cyc({ reportedQuantity: 42 }) });
+      expect(ok.reportedUnits).toBe(3); // count 45, Shopify has 42
+      expect(a.st.watch?.hold).toBeUndefined();
+      expect(a.st.alert).toBeNull();
+    });
+
+    it("periodic check: with no new resolutions, our count vs Shopify's meter alerts after more than 2 mismatched runs", async () => {
+      const a = shopState();
+      for (let i = 0; i < 2; i++) await a.runOnce({ resolutions: 0, cycle: cyc({ reportedQuantity: 37 }) });
+      expect(a.st.watch?.mismatch).toMatchObject({ runs: 2, ours: 40, shopify: 37 });
+      expect(a.st.alert).toBeNull();
+      await a.runOnce({ resolutions: 0, cycle: cyc({ reportedQuantity: 37 }) });
+      expect(a.st.alert).toMatch(/usage mismatch for 3 runs.*shows 37.*recorded 40.*Dev Dashboard/);
+      await a.runOnce({ resolutions: 0, cycle: cyc({ reportedQuantity: 40 }) });
+      expect(a.st.alert).toBeNull();
+      expect(a.st.watch?.mismatch).toBeUndefined();
+    });
+
+    it("usageTierOf refuses a non-USD tier (the plan catalog is USD)", () => {
+      const eur = { items: [{ handle: "ai_resolution", description: null, usage: null, price: { __typename: "TieredPrice" as const, active: true, currency: "EUR", tiersMode: "GRADUATED" as const,
+        tiers: [{ upTo: 38, amountPerUnit: "0.0", amount: null }, { upTo: null, amountPerUnit: "0.49", amount: null }] } }] };
+      expect(usageTierOf(eur)).toEqual({ freeUnits: null, overageCents: null });
     });
   });
 

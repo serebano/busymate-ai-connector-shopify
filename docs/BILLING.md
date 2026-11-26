@@ -196,6 +196,37 @@ uncommitted sessions that the next run would bill again. If Shopify's quantity a
 record (e.g. a manual test event), it is trusted: the merchant is never charged above the tier.
 Tests: "lost reply" block in `test/usageBilling.test.ts` (fake Shopify with permanent keys).
 
+**Holds and alerts (independent review, 2026-11-26).** Nothing stalls silently:
+- *Cycle boundary.* No send in the last 15 min of a billing cycle (`CYCLE_CLOSE_GUARD_MS`): it
+  could land in the next cycle while the cursor credits this one (and pass its cap). The batch is
+  held and, after the rollover, counted, capped and reported in the new cycle. Cycle keys compare
+  as instants (`sameCycleKey`), never as raw strings.
+- *Trial end kept.* The cursor keeps `trialEnd` (and the trial key `trial:<end>`), so a Partner
+  API read without `trialEndsAt` still never bills a resolution that ended during the trial.
+- *Replay / failing report.* Each hold is counted in `BillingState.meterWatch` (out of the cursor,
+  which is the outbox snapshot); a replay or other failure that lasts more than 2 runs raises an
+  alert.
+- *Shopify server error (5xx / INTERNAL_ERROR).* Shopify's usage-charges guide: never resend it,
+  not even with a new key. The meter alerts at once and holds every later send in that cycle until
+  Shopify's meter shows those units (then it continues exactly) or the cycle ends (logged as
+  possibly unbilled). Operator: Dev Dashboard → Logs → App billing event, Partner Support with the
+  idempotency key from the alert.
+- *Quantity check.* Every run compares our `cycleReported` with Shopify's `ai_resolution` usage
+  quantity for the same cycle (also on runs with no new resolutions, for shops that reported this
+  cycle); a mismatch lasting more than 2 runs raises an alert.
+- *A 202 is not "billed".* Shopify validates billing events asynchronously; a rejection after 202
+  (PERIOD_CLOSED, NO_SUBSCRIPTION, INTERNAL_ERROR …) is visible ONLY in the Dev Dashboard → Logs →
+  App billing event (no sync error, no webhook). The quantity check is how it surfaces here.
+- *Reconciliation stop.* A delivery whose shop billing state changed between claim and accept was
+  already sent to Shopify; it moves to `reconciliation`, is never superseded, and metering for that
+  shop stops (alert + Billing banner) until an operator resolves it.
+- *Superseded deliveries.* A newer batch replaces an unclaimed older pending outbox row (state
+  `superseded`); safe because sends are keyed by cumulative position, not batch.
+- Alerts are written to `BillingState.meterAlert`, logged as `[billing-alert]`, and served by
+  `GET /api/billing/health` (503 while any installed shop has one; counts only in public, shop +
+  text with the meter secret). Hook it into the same dead-man as `/api/kb/health`.
+- `usageTierOf` refuses a non-USD tier (the plan catalog is USD) → hold.
+
 **Cursors written before this change** (no `cycleReported`): their in-cycle count may include
 trial backlog, and production never reported a unit (no App Events credential, 0 MeterDelivery
 rows, checked 2026-11-26). The meter treats that count as already settled (no catch-up), so the

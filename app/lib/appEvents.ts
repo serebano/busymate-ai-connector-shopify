@@ -18,6 +18,10 @@
  * (the new payload is not applied). The meter keys each event by (shop, billing
  * cycle, units already reported) — `cumulativeUsageKey` — so a retry after a lost
  * reply can never add the same units twice, and treats a replay as "held".
+ * A 202 only means "received": a billing rejection Shopify decides later
+ * (PERIOD_CLOSED, NO_SUBSCRIPTION, INTERNAL_ERROR …) is visible ONLY in the Dev
+ * Dashboard → Logs → App billing event (no sync error, no webhook); the meter's
+ * quantity check (usageBilling.ts) is what surfaces it here.
  */
 import { createHash } from "node:crypto";
 
@@ -77,7 +81,7 @@ export interface ReportUsageInput {
  * already received (a reply we lost). Its units are unknown here, so the caller holds the batch
  * until Shopify's reported quantity shows them (usageBilling.meterShop reconciles first).
  */
-export type ReportResult = { ok: true } | { ok: false; error: string; replay?: boolean };
+export type ReportResult = { ok: true } | { ok: false; error: string; replay?: boolean; serverError?: boolean };
 
 export interface AppEventsClient {
   reportUsage(input: ReportUsageInput): Promise<ReportResult>;
@@ -139,7 +143,10 @@ export function createAppEventsClient(deps: AppEventsDeps = {}): AppEventsClient
         }
         const body = (await res.json().catch(() => ({}))) as { success?: boolean; error?: string };
         if (!res.ok || body.success === false) {
-          return { ok: false, error: `App Events ${res.status}: ${body.error ?? "rejected"}` };
+          // A Shopify-side error (5xx / INTERNAL_ERROR): Shopify's usage-charges guide says never
+          // resend it, not even with a new key — the meter holds and alerts instead.
+          const serverError = res.status >= 500 || /INTERNAL_ERROR/i.test(body.error ?? "");
+          return { ok: false, error: `App Events ${res.status}: ${body.error ?? "rejected"}`, ...(serverError ? { serverError: true } : {}) };
         }
         return { ok: true };
       } catch (err) {

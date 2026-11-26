@@ -21,9 +21,16 @@ export function measuredCycleResolutions(raw: string | null | undefined, error?:
     // A new billing cycle has started (Shopify's live `currentBillingCycle.startTime` differs from
     // the cycle the stored count belongs to) and the meter has not counted anything in it yet:
     // the current cycle's usage is 0, not last cycle's count (review-test-7, 2026-11-26).
-    if (liveCycleKey && typeof value.cycleKey === "string" && value.cycleKey && value.cycleKey !== liveCycleKey) return 0;
+    if (liveCycleKey && typeof value.cycleKey === "string" && value.cycleKey && !sameInstant(value.cycleKey, liveCycleKey)) return 0;
     return value.cycleResolutions as number;
   } catch {
     return null;
   }
+}
+
+/** Same instant whatever the ISO spelling; non-dates (e.g. `trial:<end>`) compare as strings. */
+function sameInstant(a: string, b: string): boolean {
+  if (a === b) return true;
+  const ta = Date.parse(a);
+  return Number.isFinite(ta) && ta === Date.parse(b);
 }

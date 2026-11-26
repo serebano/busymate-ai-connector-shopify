@@ -29,7 +29,7 @@ export interface MeterDelivery {
   shop: string;
   payloadHash: string;
   payload: Payload;
-  state: "pending" | "accepted" | "reconciliation";
+  state: "pending" | "accepted" | "reconciliation" | "superseded";
   leaseToken: string | null;
   leaseUntil: Date | null;
   acceptedAt: Date | null;
@@ -74,9 +74,24 @@ export function createMeterOutbox(db: Database) {
       const frozen = freezePayload(batch);
       return db.$transaction(async tx => {
         const snapshot = await lockShop(tx, batch.shop);
-        const pending = await tx.$queryRaw<MeterDelivery[]>`SELECT * FROM "MeterDelivery" WHERE "shop"=${batch.shop} AND "state" <> 'accepted'`;
-        if (pending[0]) return pending[0]; // Never replace a retry with a newer reader batch.
+        const pending = await tx.$queryRaw<MeterDelivery[]>`SELECT * FROM "MeterDelivery" WHERE "shop"=${batch.shop} AND "state" NOT IN ('accepted','superseded')`;
+        if (pending[0]) {
+          // Same batch (a retry) or a dead-letter that needs a human: keep it.
+          if (pending[0].payloadHash === frozen.hash || pending[0].state === "reconciliation") return pending[0];
+          // A newer batch (more resolutions joined) replaces an UNCLAIMED older one. Safe because the
+          // send is keyed by the cycle's cumulative position (appEvents.cumulativeUsageKey), never by
+          // the batch: if the old row's event did reach Shopify, the new send replays it instead of
+          // adding units. A live claim (lease not expired, DB clock) is left alone.
+          const superseded = await tx.$queryRaw<Array<{ id: string }>>`UPDATE "MeterDelivery" SET "state"='superseded',"leaseToken"=NULL,"leaseUntil"=NULL WHERE "id"=${pending[0].id} AND "state"='pending' AND ("leaseUntil" IS NULL OR "leaseUntil" <= clock_timestamp()) RETURNING "id"`;
+          if (!superseded[0]) return pending[0];
+        }
         const existing = await tx.$queryRaw<MeterDelivery[]>`SELECT * FROM "MeterDelivery" WHERE "shop"=${batch.shop} AND "payloadHash"=${frozen.hash}`;
+        if (existing[0]?.state === "superseded") {
+          if (!matches(snapshot, existing[0].payload)) throw new Error("prepared batch snapshot is stale");
+          // The batch went back to an earlier identical payload: revive that row (payload immutable).
+          const revived = await tx.$queryRaw<MeterDelivery[]>`UPDATE "MeterDelivery" SET "state"='pending' WHERE "id"=${existing[0].id} RETURNING *`;
+          return revived[0];
+        }
         if (existing[0]) return existing[0];
         if (!matches(snapshot, frozen.payload)) throw new Error("prepared batch snapshot is stale");
         const id = randomUUID();

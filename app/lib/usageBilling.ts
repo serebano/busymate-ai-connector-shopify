@@ -35,7 +35,7 @@ export type { Plan };
  */
 export interface MeterDeps {
   /** Stored billing state for the shop (status + plan drive whether we report). */
-  getBilling: (shop: string) => Promise<{ status: string; plan: string; lastMeteredCursor: string | null } | null>;
+  getBilling: (shop: string) => Promise<{ status: string; plan: string; lastMeteredCursor: string | null; watch?: MeterWatch | null; alert?: string | null } | null>;
   /** The Busymate AI tenant id for the shop, or null (not provisioned). */
   getTenantId: (shop: string) => Promise<string | null>;
   /**
@@ -68,7 +68,7 @@ export interface MeterDeps {
     idempotencyKey: string;
     beforeCursor?: string | null;
     afterCursor?: string;
-  }) => Promise<{ ok: boolean; error?: string; replay?: boolean }>;
+  }) => Promise<{ ok: boolean; error?: string; replay?: boolean; serverError?: boolean; reconciliation?: boolean }>;
   /** Persist the advanced serialized cursor. */
   saveCursor: (shop: string, raw: string) => Promise<void>;
   /**
@@ -81,6 +81,41 @@ export interface MeterDeps {
    * (reached) or lift that (`set_partner_shop_limit`). Resolves true when the platform recorded it.
    */
   reportLimit: (shop: string, input: { reached: boolean; resetsAt: string | null }) => Promise<boolean>;
+  /**
+   * Persist the shop's hold/mismatch bookkeeping and its open operator alert (null = healthy).
+   * Optional: without it nothing is tracked (tests); production writes BillingState.meterWatch /
+   * meterAlert and logs `[billing-alert]` (surfaced by GET /api/billing/health).
+   */
+  writeWatch?: (shop: string, watch: MeterWatch, alert: string | null) => Promise<void>;
+  /** Clock (ms) — injectable for the cycle-boundary guard in tests. */
+  now?: () => number;
+}
+
+/** A send is never made this close to the cycle end: it could land in the next cycle. */
+export const CYCLE_CLOSE_GUARD_MS = 15 * 60 * 1000;
+/** A replay hold / failing report / quantity mismatch alerts once it lasts MORE than this many runs. */
+export const ALERT_AFTER_RUNS = 2;
+
+/** Per-shop usage-meter bookkeeping, kept out of the cursor (the outbox's snapshot identity). */
+export interface MeterWatch {
+  hold?: {
+    kind: "replay" | "server-error" | "cycle-closing" | "reconciliation" | "error";
+    runs: number;
+    since: string;
+    error?: string;
+    /** server-error only: the unconfirmed send, never resent (Shopify: don't resend INTERNAL_ERROR). */
+    attempt?: { cycleKey: string; from: number; units: number; key: string };
+  };
+  /** Our recorded units vs Shopify's ai_resolution meter for the same cycle. */
+  mismatch?: { runs: number; since: string; ours: number; shopify: number };
+}
+
+/** Same billing-cycle instant, whatever the ISO spelling ("…Z" vs "….000Z" vs "+00:00"). */
+export function sameCycleKey(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const ta = Date.parse(a);
+  return Number.isFinite(ta) && ta === Date.parse(b);
 }
 
 export interface BillingCycle {
@@ -150,13 +185,31 @@ export async function meterShop(shop: string, deps: MeterDeps = liveMeterDeps())
 
   const resolutions = usage.resolutions;
   const plan = planFor(billing.plan);
-  const keep = { cursor: usage.cursor, cycleKey: state.cycleKey, cycleResolutions: state.cycleResolutions, ...(state.cycleReported !== undefined ? { cycleReported: state.cycleReported } : {}) };
+  const keep: MeterCursor = { cursor: usage.cursor, cycleKey: state.cycleKey, cycleResolutions: state.cycleResolutions, ...(state.cycleReported !== undefined ? { cycleReported: state.cycleReported } : {}) };
   // Upgraded from a held Free month: lift the hold (the platform already ignores it on a paid
   // plan; this keeps the record honest). Best-effort — never blocks metering.
   if (state.limitHeld) await deps.reportLimit(shop, { reached: false, resetsAt: null }).catch(() => false);
 
+  const now = deps.now?.() ?? Date.now();
+  const nowIso = new Date(now).toISOString();
+  const watch: MeterWatch = billing.watch ?? {};
+  // The trial end survives in the cursor (`trialEnd`, or the trial key `trial:<end>`), so a later
+  // Partner API read without `trialEndsAt` still never bills a resolution from the trial.
+  const keyTrialEnd = state.cycleKey?.startsWith("trial:") ? state.cycleKey.slice(6) : null;
+  const storedTrialEnd = state.trialEnd ?? (keyTrialEnd && Number.isFinite(Date.parse(keyTrialEnd)) ? keyTrialEnd : null);
+  if (storedTrialEnd) keep.trialEnd = storedTrialEnd;
+
   if (resolutions === 0) {
     await deps.saveCursor(shop, serializeMeterCursor(keep));
+    // Periodic check (every run with nothing new): a shop that reported this cycle compares our
+    // count with Shopify's meter, so a 202 Shopify later rejected cannot stay silent.
+    if (deps.writeWatch && (state.cycleReported ?? 0) > 0 && state.cycleKey && !keyTrialEnd) {
+      const cycle = await deps.readBillingCycle(shop).catch(() => null);
+      if (cycle && !("trial" in cycle) && sameCycleKey(state.cycleKey, cycle.key)) {
+        const checked = checkWatch(watch, cycle, state.cycleReported ?? 0, true, nowIso);
+        await persistWatch(deps, shop, billing, checked.watch, checked.alert);
+      }
+    }
     return noop(usage.cursor);
   }
 
@@ -171,57 +224,137 @@ export async function meterShop(shop: string, deps: MeterDeps = liveMeterDeps())
     // (cycle key `trial:<end>`, so the first paid cycle starts from 0) and commit them to the
     // ledger, so they are never reported in the first paid cycle either.
     const key = `trial:${cycle.trialEndsAt}`;
-    const used = (state.cycleKey === key ? state.cycleResolutions : 0) + resolutions;
-    await deps.saveCursor(shop, serializeMeterCursor({ cursor: usage.cursor, cycleKey: key, cycleResolutions: used, cycleReported: 0 }));
+    const used = (keyTrialEnd !== null && sameCycleKey(keyTrialEnd, cycle.trialEndsAt) ? state.cycleResolutions : 0) + resolutions;
+    await deps.saveCursor(shop, serializeMeterCursor({ cursor: usage.cursor, cycleKey: key, cycleResolutions: used, cycleReported: 0, trialEnd: cycle.trialEndsAt }));
     return { metered: resolutions, reportedUnits: 0, capped: false, cursor: usage.cursor };
   }
   if (cycle.tier && (cycle.tier.freeUnits !== plan.includedResolutions || (cycle.tier.overageCents !== plan.overageCents && cycle.tier.overageCents !== 0))) {
-    // Shopify's usage tier is not the one this plan promises (Partner pricing edited, or the
-    // stored plan is behind the contract): reporting now could charge a wrong amount. Hold.
+    // Shopify's usage tier is not the one this plan promises (Partner pricing edited, the stored
+    // plan is behind the contract, or not USD): reporting now could charge a wrong amount. Hold.
     return {
       metered: resolutions, reportedUnits: 0, capped: false, cursor: state.cursor,
-      error: `Shopify usage tier (first ${cycle.tier.freeUnits ?? "?"} free, then ${cycle.tier.overageCents ?? "?"}¢) does not match the ${plan.name} plan (${plan.includedResolutions} included, then ${plan.overageCents}¢) — held`,
+      error: `Shopify usage tier (first ${cycle.tier.freeUnits ?? "?"} free, then ${cycle.tier.overageCents ?? "?"}¢ USD) does not match the ${plan.name} plan (${plan.includedResolutions} included, then ${plan.overageCents}¢) — held`,
     };
   }
   // Resolutions whose conversation ended before the trial ended are trial usage: never billed.
-  const trialEnd = cycle.trialEndsAt ? Date.parse(cycle.trialEndsAt) : NaN;
+  const trialEndIso = cycle.trialEndsAt ?? storedTrialEnd;
+  const trialEnd = trialEndIso ? Date.parse(trialEndIso) : NaN;
   const trialUsage = Number.isFinite(trialEnd) && usage.occurredAt
     ? usage.occurredAt.filter((t) => Date.parse(t) < trialEnd).length
     : 0;
   const billable = resolutions - trialUsage;
-  const sameCycle = state.cycleKey === cycle.key;
+  const sameCycle = sameCycleKey(state.cycleKey, cycle.key);
   const cycleResolutions = sameCycle ? state.cycleResolutions : 0;
   // A cursor from before 2026-11-26 has no `cycleReported`. Its in-cycle count may include
   // trial backlog (the old meter counted trial resolutions in the first paid cycle) and none of
   // it was ever reported (no App Events credential in production). Treat that count as settled
   // rather than catch it up: the merchant is never billed for usage we cannot prove billable.
   const recorded = sameCycle ? state.cycleReported ?? Math.min(cycleResolutions, reportableUnitsCeiling(plan)) : 0;
+  const checked = checkWatch(watch, cycle, recorded, sameCycle, nowIso);
   // Reconcile with Shopify first: if its meter already holds more than we recorded (a send whose
   // reply was lost, then a crash/timeout), those units are reported — never send them again.
   const shopifyHas = Number.isSafeInteger(cycle.reportedQuantity) && (cycle.reportedQuantity as number) > 0 ? (cycle.reportedQuantity as number) : 0;
   const reportedBefore = Math.max(recorded, shopifyHas);
   const { units, capped } = computeUsageReport({ plan, cycleResolutions, reportedBefore, newResolutions: billable });
-  const next = serializeMeterCursor({ cursor: usage.cursor, cycleKey: cycle.key, cycleResolutions: cycleResolutions + billable, cycleReported: reportedBefore + units });
+  const next = serializeMeterCursor({
+    cursor: usage.cursor, cycleKey: cycle.key, cycleResolutions: cycleResolutions + billable, cycleReported: reportedBefore + units,
+    ...(trialEndIso ? { trialEnd: trialEndIso } : {}),
+  });
+
+  /** Hold this batch (cursor unchanged), count the hold, alert per policy. */
+  const holdBatch = async (kind: NonNullable<MeterWatch["hold"]>["kind"], error: string, opts: { alertNow?: boolean; attempt?: NonNullable<MeterWatch["hold"]>["attempt"] } = {}): Promise<MeterOutcome> => {
+    const prev = checked.watch.hold;
+    const runs = prev?.kind === kind ? prev.runs + 1 : 1;
+    const hold: NonNullable<MeterWatch["hold"]> = { kind, runs, since: prev?.kind === kind ? prev.since : nowIso, error, ...(opts.attempt ?? prev?.attempt ? { attempt: opts.attempt ?? prev?.attempt } : {}) };
+    const alerts = [checked.alert, opts.alertNow || runs > ALERT_AFTER_RUNS ? `${kind} hold for ${runs} run(s) since ${hold.since}: ${error}` : null].filter(Boolean);
+    await persistWatch(deps, shop, billing, { ...checked.watch, hold }, alerts.length ? alerts.join(" | ") : null);
+    return { metered: resolutions, reportedUnits: 0, capped, cursor: state.cursor, error };
+  };
+
+  // An unconfirmed server error blocks every send in its cycle until Shopify's meter shows it.
+  if (checked.blocked) return holdBatch("server-error", checked.blocked, { alertNow: true });
 
   if (units > 0) {
+    const end = cycle.end ? Date.parse(cycle.end) : NaN;
+    if (Number.isFinite(end) && now >= end - CYCLE_CLOSE_GUARD_MS) {
+      // A send now could be timestamped/processed in the NEXT cycle while this cursor credits the
+      // current one (and could pass that cycle's cap). Wait: after the rollover the batch is
+      // counted, capped and reported in the new cycle.
+      return holdBatch("cycle-closing", `billing cycle ends ${cycle.end}: usage held for the next cycle`);
+    }
+    const idempotencyKey = cumulativeUsageKey(shop, cycle.key, reportedBefore);
     const rec = await deps.reportUsage({
       shop,
       shopId: cycle.shopId,
       units,
       // Keyed by the cycle's cumulative position, NOT by the batch: a retry after a lost reply
       // (even with new resolutions added) reuses this key, and Shopify replays instead of adding.
-      idempotencyKey: cumulativeUsageKey(shop, cycle.key, reportedBefore),
+      idempotencyKey,
       beforeCursor: billing.lastMeteredCursor ?? null,
       afterCursor: next,
     });
     if (!rec.ok) {
-      // Transient failure, or a replay of an earlier send whose units we cannot see yet — hold
-      // the cursor so the batch is retried (after reconciling with Shopify's quantity), not lost.
-      return { metered: resolutions, reportedUnits: 0, capped, cursor: state.cursor, error: rec.error };
+      const error = rec.error ?? "usage report failed";
+      if (rec.serverError) {
+        // Shopify: never resend an INTERNAL_ERROR event, not even with a new key. Hold + alert;
+        // released only when Shopify's meter shows these units (or the cycle ends).
+        return holdBatch("server-error", `${error} — not resent (Shopify guidance); waiting for Shopify's meter to show ${units} units from ${reportedBefore}; Dev Dashboard → Logs → App billing event, key ${idempotencyKey}`, {
+          alertNow: true, attempt: { cycleKey: cycle.key, from: reportedBefore, units, key: idempotencyKey },
+        });
+      }
+      if (rec.reconciliation) return holdBatch("reconciliation", error, { alertNow: true });
+      // A replay of an earlier send whose units Shopify's quantity does not show yet, or a
+      // transient failure: hold the cursor so the batch is retried after reconciling, never lost.
+      return holdBatch(rec.replay ? "replay" : "error", error);
     }
   }
+  const { hold: _done, ...rest } = checked.watch;
+  await persistWatch(deps, shop, billing, rest, checked.alert);
   await deps.saveCursor(shop, next);
   return { metered: resolutions, reportedUnits: units, capped, cursor: usage.cursor };
+}
+
+/**
+ * Compare our recorded units with Shopify's meter for the same cycle (alert when they differ for
+ * more than ALERT_AFTER_RUNS runs) and decide whether an unconfirmed server-error send still
+ * blocks reporting. Pure.
+ */
+export function checkWatch(prev: MeterWatch, cycle: BillingCycle, recorded: number, sameCycle: boolean, nowIso: string): { watch: MeterWatch; alert: string | null; blocked: string | null } {
+  const watch: MeterWatch = { ...prev };
+  const alerts: string[] = [];
+  let blocked: string | null = null;
+  const q = typeof cycle.reportedQuantity === "number" && Number.isSafeInteger(cycle.reportedQuantity) ? cycle.reportedQuantity : null;
+  if (sameCycle && q !== null) {
+    if (q !== recorded) {
+      const runs = (prev.mismatch?.runs ?? 0) + 1;
+      watch.mismatch = { runs, since: prev.mismatch?.since ?? nowIso, ours: recorded, shopify: q };
+      if (runs > ALERT_AFTER_RUNS) {
+        alerts.push(`usage mismatch for ${runs} runs: Shopify's ai_resolution meter shows ${q} units this cycle, we recorded ${recorded} (a 202 that Shopify later rejected is visible only in Dev Dashboard → Logs → App billing event)`);
+      }
+    } else {
+      delete watch.mismatch;
+    }
+  } else if (!sameCycle) {
+    delete watch.mismatch;
+  }
+  const hold = prev.hold;
+  if (hold?.kind === "server-error" && hold.attempt) {
+    if (!sameCycleKey(hold.attempt.cycleKey, cycle.key)) {
+      console.error(`[billing-alert] server-error send (key ${hold.attempt.key}, ${hold.attempt.units} units from ${hold.attempt.from}) was never confirmed before its cycle ended — check Dev Dashboard logs; released for the new cycle`);
+      delete watch.hold;
+    } else if (q !== null && q >= hold.attempt.from + hold.attempt.units) {
+      delete watch.hold; // Shopify recorded it after all
+    } else {
+      blocked = `earlier usage event (key ${hold.attempt.key}) got a Shopify server error and is not resent; reporting held until Shopify's meter shows ${hold.attempt.from + hold.attempt.units} units (now ${q ?? "unknown"})`;
+    }
+  }
+  return { watch, alert: alerts.length ? alerts.join(" | ") : null, blocked };
+}
+
+async function persistWatch(deps: MeterDeps, shop: string, billing: { watch?: MeterWatch | null; alert?: string | null }, watch: MeterWatch, alert: string | null): Promise<void> {
+  if (!deps.writeWatch) return;
+  if (JSON.stringify(billing.watch ?? {}) === JSON.stringify(watch) && (billing.alert ?? null) === alert) return;
+  await deps.writeWatch(shop, watch, alert);
 }
 
 /**
@@ -277,7 +410,7 @@ export function liveMeterDeps(): MeterDeps {
       const b = await prisma.billingState.findUnique({ where: { shop } });
       plan = b?.plan ?? null;
       status = b?.status ?? null;
-      return b ? { status: b.status, plan: b.plan, lastMeteredCursor: b.lastMeteredCursor } : null;
+      return b ? { status: b.status, plan: b.plan, lastMeteredCursor: b.lastMeteredCursor, watch: (b.meterWatch as MeterWatch | null) ?? null, alert: b.meterAlert ?? null } : null;
     },
     getTenantId: async (shop) => {
       // An uninstalled / deleted shop is not metered (and never gets a limit record).
@@ -347,6 +480,9 @@ export function liveMeterDeps(): MeterDeps {
           evidenceRef: pending.evidenceRef ?? idempotencyKey,
         };
         const delivery = await outbox.prepare(batch);
+        if (delivery.state === "reconciliation") {
+          return { ok: false, reconciliation: true, error: "an earlier usage delivery for this shop is in reconciliation (it was sent to Shopify, but the shop's billing state changed before it was recorded) — metering for this shop is stopped until an operator resolves it (Billing page, Dev Dashboard logs)" };
+        }
         const claimed = await outbox.claim(shop);
         if (!claimed || claimed.id !== delivery.id) {
           return { ok: false, error: "meter delivery claimed by a concurrent run — held for retry" };
@@ -360,7 +496,7 @@ export function liveMeterDeps(): MeterDeps {
         const tenantId = pending.tenantId;
         const accepted = await outbox.accept(claimed.id, claimed.leaseToken!, (tx) => commitSessions(tx, tenantId, sessions));
         if (accepted.state === "reconciliation") {
-          return { ok: false, error: "billing state changed mid-delivery — moved to reconciliation (dead-letter), needs manual review" };
+          return { ok: false, reconciliation: true, error: `${units} units were reported to Shopify, but the shop's billing state changed before they were recorded — delivery moved to reconciliation; metering for this shop is stopped until an operator resolves it` };
         }
         return { ok: true };
       } catch (err) {
@@ -368,6 +504,15 @@ export function liveMeterDeps(): MeterDeps {
         // never blocks the widget — hold and retry, same as any other failure.
         return { ok: false, error: err instanceof Error ? err.message : String(err) };
       }
+    },
+    writeWatch: async (shop, watch, alert) => {
+      const b = await prisma.billingState.findUnique({ where: { shop }, select: { meterAlert: true } });
+      if (alert && alert !== b?.meterAlert) console.error(`[billing-alert] ${shop}: ${alert}`);
+      if (!alert && b?.meterAlert) console.log(`[billing] ${shop}: usage-meter alert cleared`);
+      await prisma.billingState.update({
+        where: { shop },
+        data: { meterWatch: watch as object, meterAlert: alert, meterAlertAt: alert ? (alert === b?.meterAlert ? undefined : new Date()) : null },
+      });
     },
     readFreeCycle: async (shop) => {
       // The $0 Free plan is a real App Pricing contract: use its billing cycle when Shopify
@@ -436,6 +581,8 @@ export function usageTierOf(sub: Pick<ActiveSubscription, "items">): { freeUnits
   const item = sub.items.find((i) => i.handle === RESOLUTION_EVENT_HANDLE && i.price.__typename === "TieredPrice")
     ?? sub.items.find((i) => i.price.__typename === "TieredPrice");
   if (!item || item.price.__typename !== "TieredPrice") return { freeUnits: null, overageCents: null };
+  // The plan catalog is USD; a tier in another currency cannot be checked against it.
+  if (String(item.price.currency).toUpperCase() !== "USD") return { freeUnits: null, overageCents: null };
   const tiers = [...item.price.tiers].sort((a, b) => (a.upTo ?? Infinity) - (b.upTo ?? Infinity));
   const first = tiers[0];
   const rest = tiers.find((t) => t.upTo === null);

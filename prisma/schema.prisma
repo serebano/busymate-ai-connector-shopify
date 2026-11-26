@@ -100,6 +100,12 @@ model BillingState {
   cappedAmountCents    Int      @default(5000) // merchant spend cap; widget NEVER disabled at cap
   currency             String   @default("USD")
   lastMeteredCursor    String?  // idempotent cursor into bmai usage_events
+  /// Usage-meter holds + Shopify quantity mismatch counters (usageBilling.ts MeterWatch). Kept
+  /// out of lastMeteredCursor, which is the outbox snapshot identity.
+  meterWatch           Json?
+  /// Open operator alert for this shop's usage metering (null = healthy); /api/billing/health.
+  meterAlert           String?
+  meterAlertAt         DateTime? @db.Timestamptz
   updatedAt            DateTime @updatedAt
 
   tenant ShopTenant @relation(fields: [shop], references: [shop], onDelete: Cascade)
@@ -154,7 +160,7 @@ model MeterDelivery {
   shop        String
   payloadHash String
   payload     Json
-  state       String @default("pending")
+  state       String @default("pending") // pending | accepted | reconciliation | superseded
   leaseToken  String?
   leaseUntil  DateTime? @db.Timestamptz
   acceptedAt  DateTime? @db.Timestamptz
