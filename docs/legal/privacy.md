@@ -39,7 +39,7 @@ Contact: **hi@busymate.ai**.
 |---|---|---|
 | Shopify store domain, shop + tenant identifiers | Run the integration; map the store to its assistant | Contract |
 | Shopify **offline access token** and its refresh token (both encrypted at rest) | Call the store's Admin API for the assistant's tools and knowledge-base training | Contract |
-| Staff name and email, when Shopify includes them in the admin session (the email is encrypted at rest) | Account operation, support | Contract / legitimate interest |
+| Staff email, when Shopify includes it in the admin session (encrypted at rest). We do not store staff names | Account operation, support | Contract / legitimate interest |
 | Theme setting **read only**: the main theme's `config/settings_data.json`, read on the App's Home page to tell whether our app embed is switched on (`read_themes`). Only the on/off state is used and shown; the file is not stored and nothing is written to your theme | Show the setup step as done or not done | Contract |
 | Store content you already publish: products, pages and policies (`read_products`, `read_content`, `read_legal_policies`) | Train the assistant so it answers only from your store | Contract |
 | Billing status + plan (no card data) | Plan and usage billing via Shopify App Pricing | Contract |
@@ -87,7 +87,8 @@ A current sub-processor list is available on request.
 |---|---|---|
 | Session / access token | While the App is installed | On uninstall (immediate purge) |
 | Store↔tenant + billing records | While installed, then ≤ 48 hours | On Shopify `shop/redact` (full purge) |
-| Assistant tenant data (conversations, KB) | While installed | Uninstall → suspended; `shop/redact` → deleted |
+| Assistant tenant data: knowledge base | While installed | Uninstall → suspended; `shop/redact` → deleted |
+| Shopper conversations (messages, handoff notes) | 90 days after the last activity by default; the merchant can set 1 to 3,650 days in the Busymate AI Console | By the platform retention sweep after that window; also on a `customers/redact` request, on `shop/redact`, or when the merchant deletes the conversation |
 | A shopper's data in the tenant | Until erased | On a `customers/redact` request |
 
 Full detail: see the App's data-retention notes.
