@@ -8,13 +8,14 @@ it released (Dev Dashboard → Versions) and the host build serving
 
 Server-rendered admin only: no Shopify app version, no extension or config change, no migration.
 
-- **App Bridge once, no unused Polaris web components:** the admin layout no longer uses the SDK's `AppProvider`.
-  It rendered a second `app-bridge.js` tag and `polaris.js` (Polaris web components, 149 KB br / 740 KB raw, never
-  used: the app renders Polaris React) as parser-blocking scripts at the top of `<body>`. `app-bridge.js` now loads
-  once, first in `<head>` (`root.tsx`), and only on `/app/…` (public legal/landing/login pages skip it). Admin nav
+- **App Bridge once, no parser-blocking body scripts:** the admin layout no longer uses the SDK's `AppProvider`.
+  It rendered a second `app-bridge.js` tag and a `polaris.js` tag (Polaris web components, 149 KB br) as
+  parser-blocking scripts at the top of `<body>`. The admin document now has ONE script tag (was 3): `app-bridge.js`,
+  first in `<head>` (`root.tsx`), only on `/app/…` (public legal/landing/login pages skip it). App Bridge still
+  preloads `polaris.js` itself, asynchronously (measured live 2026-11-26); that load is Shopify's, not ours. Admin nav
   clicks still route client-side (`AppBridgeNavigation`, the `shopify:navigate` listener).
 - **Home no longer shifts when App Bridge answers:** the embed card and the checklist rendered "Checking your
-  theme" first and grew when `shopify.app.extensions()` answered (CLS 0.13 at 390 px). Home now renders the last
+  theme" first and grew when `shopify.app.extensions()` answered (CLS 0.128 at 390 px; live after: 0 on Home, at most 0.002 on any admin page). Home now renders the last
   known answer (`ShopTenant.embedConfirmedAt`, set = on) and reports a changed answer once
   (`POST /api/embed-status`, session token, shop from the session). Test: `test/appBridgeOnce.test.ts`.
 
