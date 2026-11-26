@@ -118,3 +118,22 @@ describe("#2624 — the app serves the listing's legal pages (no stale edge copy
     expect(t).not.toContain("Send request");
   });
 });
+
+describe("F3/F4 red-team 2026-11-26", () => {
+  it("privacy + terms name the legal entity and postal address", () => {
+    for (const f of ["docs/legal/privacy.md", "docs/legal/terms.md"]) {
+      const t = read(f);
+      expect(t, f).toContain("SERGIU TODERAȘCU");
+      expect(t, f).toContain("Nicolae Dimo");
+    }
+  });
+  it("privacy covers the install-screen data categories", () => {
+    const p = read("docs/legal/privacy.md");
+    for (const w of ["Geolocation", "App events", "Blog contributors", "read_content"]) expect(p).toContain(w);
+  });
+  it("every admin page carries a support entry", () => {
+    const a = read("app/routes/app.tsx");
+    expect(a).toContain("mailto:hi@busymate.ai");
+    expect(a).toContain("/legal/faq");
+  });
+});

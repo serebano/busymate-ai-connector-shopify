@@ -30,6 +30,8 @@ official APIs and holds the minimum data needed to run the integration.
   conversation content), the **merchant is the controller** and Busymate AI is a
   **processor** acting on the merchant's instructions.
 
+Busymate AI is operated by **Antreprenor Independent „SERGIU TODERAȘCU”** (a registered sole proprietorship; IDNO 1026023024336), 21/1, apt. 74, Nicolae Dimo str., Chisinau, MD-2068, Republic of Moldova, trading as Busymate AI at busymate.ai.
+
 Contact: **hi@busymate.ai**.
 
 ## 2. What we collect and why
@@ -57,6 +59,23 @@ addresses, phone numbers, or payment details in the App's own database — order
 **live** from Shopify, scoped to the signed-in shopper, and the App never reads card data.
 What a shopper types in the chat is kept in the conversation record held by Busymate AI (see
 section 3 and the retention table), not in the App's database.
+
+### What Shopify shows when you install the App
+
+Shopify's install screen lists broad data categories for each access scope we request
+(for example "Geolocation, IP address, browser and operating system", "App events" and
+"Blog contributors"). Those lines describe what the scope **can** reach, not what the App
+reads. What the App actually does:
+
+| Shopify wording | Scope behind it | What the App does |
+|---|---|---|
+| Customer name, phone, physical address | `read_customers`, `read_orders`, `write_orders` | Reads only the signed-in shopper's own orders live, and sends the address the shopper types when they confirm an address change. Not stored in the App's database. |
+| Geolocation, IP address, browser and operating system | `read_customers`, `read_orders` | **The App does not request, read or store these fields** from Shopify. The chat widget's own requests reach our servers with a normal IP address, used only to deliver the chat and protect it from abuse. |
+| App events from storefront, admin, POS, checkout | Shopify's generic app declaration | The App installs no tracking pixel and sends no analytics events from your storefront or checkout. The chat widget stores only the items in section 7. |
+| Store owner name, email, phone, address; blog contributors' email, IP, browser | `read_content` (also covers blogs and articles), the shop record | The App reads **pages** (title, handle, text) for training. It does **not** read blogs, articles, authors or contributors. It stores the staff email in Shopify's admin session (section 2) and no other staff or owner detail. |
+| View products, collections; policies | `read_products`, `read_legal_policies` | Store content you already publish, used to train the assistant. |
+| Fulfilments, returns | `read_fulfillments`, `read_returns`, `write_returns` | Tracking details read live for a signed-in shopper; returns are created only after the shopper confirms. |
+
 
 ## 3. Where data is processed (sub-processors)
 
@@ -96,7 +115,7 @@ and is available on request.
 | Shopper conversations (messages, handoff notes) | 90 days after the last activity by default; the merchant can set 1 to 3,650 days in the Busymate AI Console | By the platform retention sweep after that window; also on a `customers/redact` request, on `shop/redact`, or when the merchant deletes the conversation |
 | A shopper's data in the tenant | Until erased | On a `customers/redact` request |
 
-Full detail: see the App's data-retention notes.
+Conversation retention is the Busymate AI default shown above; the merchant sets it in the Busymate AI Console. Questions: hi@busymate.ai.
 
 ## 6. Your rights
 
@@ -142,7 +161,7 @@ We will update this policy as the App evolves and post the new effective date he
 
 ## 11. Contact and merchant terms
 
-**Busymate AI** — hi@busymate.ai (we answer privacy requests within 30 days).
+**Busymate AI** (Antreprenor Independent „SERGIU TODERAȘCU”, 21/1, apt. 74, Nicolae Dimo str., Chisinau, MD-2068, Republic of Moldova) — hi@busymate.ai (we answer privacy requests within 30 days).
 
 Merchants: the [Terms of Service & Data Processing Addendum](https://store.busymate.ai/legal/terms)
 sets out our processor obligations to you (roles, security, sub-processors, breach

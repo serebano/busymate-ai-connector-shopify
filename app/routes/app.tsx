@@ -2,7 +2,7 @@ import type { HeadersFunction, LoaderFunctionArgs, MetaFunction } from "react-ro
 import { Link, Outlet, useLoaderData, useLocation, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
-import { AppProvider as PolarisAppProvider, Text } from "@shopify/polaris";
+import { AppProvider as PolarisAppProvider, Box, InlineStack, Link as PLink, Text } from "@shopify/polaris";
 import enPolarisTranslations from "@shopify/polaris/locales/en.json";
 import { NavMenu } from "@shopify/app-bridge-react";
 import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
@@ -55,6 +55,16 @@ export default function App() {
           <Text as="h1" visuallyHidden>{adminPageTitle(pathname)}</Text>
           <Outlet />
         </main>
+        {/* F4 (red-team 2026-11-26): a support path on every admin page. */}
+        <footer>
+          <Box padding="400">
+            <InlineStack align="center" gap="300">
+              <Text as="span" tone="subdued">Help &amp; support:</Text>
+              <PLink url="mailto:hi@busymate.ai" external>hi@busymate.ai</PLink>
+              <PLink url="https://store.busymate.ai/legal/faq" external>FAQ</PLink>
+            </InlineStack>
+          </Box>
+        </footer>
       </PolarisAppProvider>
       </EmbeddedNavigationContext.Provider>
     </AppProvider>
