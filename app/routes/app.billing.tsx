@@ -125,9 +125,10 @@ export default function BillingPage() {
             {data.stuckDeliveryCount > 0 ? (
               <Banner tone="critical" title="A billing delivery needs review">
                 <p>
-                  {data.stuckDeliveryCount === 1 ? "One usage report" : `${data.stuckDeliveryCount} usage reports`} could not be
-                  reconciled automatically after your plan or billing state changed mid-delivery. It is not being retried
-                  silently — contact support so we can resolve it by hand.
+                  {data.stuckDeliveryCount === 1 ? "One usage report was" : `${data.stuckDeliveryCount} usage reports were`} sent
+                  to Shopify while your plan changed, before we could record {data.stuckDeliveryCount === 1 ? "it" : "them"}. Usage
+                  reporting for your store is paused until our team checks it, so nothing is charged twice — contact support
+                  if you have questions.
                 </p>
               </Banner>
             ) : null}
