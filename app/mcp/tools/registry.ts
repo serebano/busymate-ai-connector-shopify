@@ -13,8 +13,7 @@
 import type { ToolContext, ToolResult } from "./types";
 import { searchProducts, getProduct, listCollections } from "./products";
 import { getOrderStatus, trackFulfillment, listMyOrders } from "./orders";
-import { applyDiscount, createDraftOrder } from "./discounts";
-import { cancelOrder, createRefund, updateShippingAddress } from "./returns";
+import { cancelOrder, updateShippingAddress } from "./returns";
 
 export type Tier = "public" | "identified" | "delegated";
 
@@ -94,7 +93,7 @@ export const TOOLS: ToolDef[] = [
     inputSchema: obj({ first: { type: "number" } }),
     handler: listMyOrders,
   },
-  // ── delegated + confirm (writes; refund cap enforced) ──────────────────────
+  // ── delegated + confirm (writes; exactly the two proven + listed: cancel, address) ──
   {
     name: "update_shipping_address",
     description: "Update the shipping address on an unfulfilled order (confirm required).",
@@ -131,24 +130,6 @@ export const TOOLS: ToolDef[] = [
     handler: updateShippingAddress,
   },
   {
-    name: "apply_discount",
-    description: "Apply a discount code to a draft/checkout (confirm required).",
-    tier: "delegated",
-    confirm: true,
-    adminOnly: false,
-    inputSchema: obj({ order_number: str("Order"), code: str("Discount code") }, ["code"]),
-    handler: applyDiscount,
-  },
-  {
-    name: "create_draft_order",
-    description: "Create a draft order for the customer (confirm required).",
-    tier: "delegated",
-    confirm: true,
-    adminOnly: false,
-    inputSchema: obj({ line_items: { type: "array" } }, ["line_items"]),
-    handler: createDraftOrder,
-  },
-  {
     name: "cancel_order",
     description: "Cancel the identified customer's order (confirm + adminOnly).",
     tier: "delegated",
@@ -156,19 +137,6 @@ export const TOOLS: ToolDef[] = [
     adminOnly: true,
     inputSchema: obj({ order_number: str("Order name/number"), reason: str("Reason") }, ["order_number"]),
     handler: cancelOrder,
-  },
-  {
-    name: "create_refund",
-    description:
-      "Refund the identified customer's order (confirm + adminOnly; enforces the merchant refund cap — above cap escalates to a human).",
-    tier: "delegated",
-    confirm: true,
-    adminOnly: true,
-    inputSchema: obj(
-      { order_number: str("Order"), amount_cents: { type: "number" }, reason: str("Reason") },
-      ["order_number", "amount_cents"],
-    ),
-    handler: createRefund,
   },
 ];
 

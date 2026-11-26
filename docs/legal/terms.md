@@ -4,7 +4,8 @@
   `node scripts/render-legal.mjs`). Linked from the privacy policy §10, the App
   Store listing's additional documentation, and the Protected Customer Data
   questionnaire ("privacy and data protection agreements with merchants").
-  Last drafted: 2026-09. Have counsel review before relying on it.
+  Last drafted: 2026-09; staff-name and retention wording checked against the code 2026-11-26.
+  Legal review by the owner/counsel is still an owner decision.
 -->
 
 # Busymate AI for Shopify — Terms of Service & Data Processing Addendum
@@ -121,7 +122,7 @@ processor**. For your own merchant account data we are an independent controller
 | Nature | Storing conversations, reading order data live from Shopify, executing confirmed order actions |
 | Purpose | Answering shopper questions and performing the actions you enable |
 | Data subjects | Your shoppers and your staff who use the App |
-| Data categories | Shopify customer identifier, order and fulfilment details, conversation content, handoff requests, staff name and email |
+| Data categories | Shopify customer identifier, order and fulfilment details, conversation content, handoff requests, staff email |
 
 ### 3. Processing on your instructions
 
@@ -142,8 +143,9 @@ refunds; secrets held only in the host's protected environment; and access loggi
 ### 5. Sub-processors
 
 You authorise the sub-processors listed in the Privacy Policy (Shopify; the Busymate AI
-platform; the App's database host; the LLM providers Busymate AI uses under terms that
-prohibit training on your data). We remain responsible for them, flow down equivalent
+platform; OVH (Germany) and DigitalOcean (Frankfurt), which host the App's database and
+backups; the AI model provider, Anthropic by default, or OpenAI or xAI if the workspace is
+switched, under terms that prohibit training on your data). We remain responsible for them, flow down equivalent
 obligations, and give you notice of additions so you can object.
 
 ### 6. Data subject requests and assistance
