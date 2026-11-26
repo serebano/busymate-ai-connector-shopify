@@ -33,7 +33,7 @@ it. (`app/bmai.server.ts` is the only module that talks to Busymate AI.)
 - **public** — answer-from-KB + catalog reads, anonymous. No store-data writes.
 - **identified** — `get_order_status`/`track_fulfillment`/`list_my_orders`, scoped
   to the launch-JWT customer subject.
-- **delegated** — `create_refund`/`create_return`/`cancel_order`/`update_shipping_address`.
+- **delegated** — `cancel_order`/`update_shipping_address` only (no refund, return, discount or draft-order tool: no scope, not listed).
 - **confirm** — the delegated writes require a confirm turn; the highest-risk ones
   are `adminOnly` so they stay off the free-text LLM path. A refund cap escalates
   above-cap requests to a human (`request_human` is LIVE).

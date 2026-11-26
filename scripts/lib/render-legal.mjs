@@ -8,7 +8,7 @@
  * Supports the subset the docs use: # / ## / ### headings, paragraphs (with
  * soft-wrapped lines joined), - bullets and 1. numbered lists (wrapped
  * continuation lines joined into the item), GFM tables, **bold**, `code`,
- * [links](url), and HTML comments (stripped). Everything else is escaped text.
+ * *italic*, [links](url), and HTML comments (stripped). Everything else is escaped text.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -57,6 +57,7 @@ export function inline(text) {
   let out = escapeHtml(text);
   out = out.replace(/`([^`]+)`/g, (_m, c) => `<code>${c}</code>`);
   out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  out = out.replace(/(^|[^*\w])\*([^*\s](?:[^*]*[^*\s])?)\*(?![*\w])/g, "$1<em>$2</em>");
   out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2">$1</a>');
   return out;
 }

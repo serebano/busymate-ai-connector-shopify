@@ -97,4 +97,24 @@ describe("#2624 — the app serves the listing's legal pages (no stale edge copy
     expect(legalPage("shopify-terms")).toContain("Terms");
     expect(legalPage("../etc/passwd")).toBeNull();
   });
+
+  it("L4: the FAQ italic assistant name renders as emphasis, not literal asterisks", () => {
+    const html = renderLegalHtml(read("docs/legal/faq.md"), "FAQ");
+    expect(html).toContain("<em>your store name</em> AI");
+    expect(html).not.toMatch(/\*your store name\*/);
+  });
+
+  it("L5: the privacy policy is not a draft and names what the app really reads", () => {
+    const privacy = read("docs/legal/privacy.md");
+    expect(privacy).not.toMatch(/DRAFT|Have counsel review/i);
+    expect(privacy).toMatch(/read_themes/);
+    expect(privacy).toMatch(/settings_data\.json/);
+    expect(privacy).toMatch(/name, address and phone/i);
+  });
+
+  it("L2: testing instructions use the live button label", () => {
+    const t = read("docs/review/testing-instructions.md");
+    expect(t).toContain('"Send to the team"');
+    expect(t).not.toContain("Send request");
+  });
 });

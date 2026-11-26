@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { toolByName } from "../app/mcp/tools/registry";
+import { TOOLS, toolByName } from "../app/mcp/tools/registry";
 import type { ToolContext, ToolResult } from "../app/mcp/tools/types";
 
 /**
@@ -117,10 +117,7 @@ const CASES: Record<string, Record<string, unknown>> = {
   track_fulfillment: { order_number: "1001" },
   list_my_orders: {},
   update_shipping_address: { order_number: "1001", address: { address1: "1 New St", city: "Denver", zip: "80014", countryCode: "US" } },
-  apply_discount: { order_number: "1001", code: "SAVE10" },
-  create_draft_order: { line_items: [{ variant_id: "9", quantity: 1 }] },
   cancel_order: { order_number: "1001", reason: "customer" },
-  create_refund: { order_number: "1001", amount_cents: 1000, reason: "damaged" },
 };
 
 describe("connector tools — real payloads, no TODO stubs", () => {
@@ -135,7 +132,7 @@ describe("connector tools — real payloads, no TODO stubs", () => {
 
   it("no tool SOURCE file still carries a TODO(P#) stub", () => {
     const dir = join(process.cwd(), "app", "mcp", "tools");
-    for (const f of ["products.ts", "orders.ts", "returns.ts", "discounts.ts"]) {
+    for (const f of ["products.ts", "orders.ts", "returns.ts"]) {
       const src = readFileSync(join(dir, f), "utf8");
       expect(src, `${f} still contains a TODO(P#) stub`).not.toMatch(/TODO\(P\d/);
     }
@@ -162,31 +159,9 @@ describe("connector tools — real payloads, no TODO stubs", () => {
     expect(text(r)).toMatch(/signed in/i);
   });
 
-  it("create_refund enforces the refund cap (above-cap escalates to a human)", async () => {
-    const r = await run("create_refund", { order_number: "1001", amount_cents: 999999 });
-    expect(r.isError).toBe(true);
-    expect(text(r)).toMatch(/above the automatic limit/i);
-  });
-
-  it("create_refund below cap issues a real refundCreate and reports the amount", async () => {
-    const r = await run("create_refund", { order_number: "1001", amount_cents: 1000 });
-    const sc = r.structuredContent as { refundId: string; amount: string };
-    expect(sc.refundId).toBe("gid://shopify/Refund/3");
-    expect(text(r)).toMatch(/refunded/i);
-  });
-
-  it("apply_discount validates the code and returns a checkout apply link", async () => {
-    const r = await run("apply_discount", { order_number: "1001", code: "SAVE10" });
-    const sc = r.structuredContent as { valid: boolean; applyUrl: string };
-    expect(sc.valid).toBe(true);
-    expect(sc.applyUrl).toContain("/discount/SAVE10");
-  });
-
-  it("create_draft_order creates a real draft with an invoice URL", async () => {
-    const r = await run("create_draft_order", { line_items: [{ variant_id: "9", quantity: 1 }] });
-    const sc = r.structuredContent as { draftId: string; invoiceUrl: string };
-    expect(sc.draftId).toBe("gid://shopify/DraftOrder/2");
-    expect(sc.invoiceUrl).toContain("/invoices/2");
+  it("L10: no refund, discount or draft-order tool is exposed (no scope, not listed)", () => {
+    for (const n of ["create_refund", "apply_discount", "create_draft_order"]) expect(toolByName(n), n).toBeUndefined();
+    expect(TOOLS.filter((t) => t.tier === "delegated").map((t) => t.name).sort()).toEqual(["cancel_order", "update_shipping_address"]);
   });
 });
 
