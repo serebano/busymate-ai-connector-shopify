@@ -38,6 +38,16 @@ const REASON_CELL = {
   overflow: "hidden",
 } as const;
 
+/**
+ * The read-only tables (no bulk actions): Polaris still renders its select-all
+ * checkbox, unlabeled, in the hidden bulk-actions bar; with nothing to select it
+ * is removed from the tree (inventory F9). On a phone (inventory F8) the
+ * conversations table drops "Started" (the transcript shows it) and lets cells
+ * wrap, so Status and the link fit 390px without scrolling sideways.
+ */
+const TABLE_CSS = `.bm-readonly-table .Polaris-IndexTable__BulkActionsWrapper{display:none}
+@media (max-width:30.6em){.bm-conversations th:first-child,.bm-conversations td:first-child,.bm-conversations [data-index-table-sticky-heading]:first-child{display:none}.bm-conversations td{white-space:normal}}`;
+
 export const ErrorBoundary = AppRouteBoundary;
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -67,6 +77,7 @@ export default function ConversationsPage() {
   return (
     <Page>
       <TitleBar title="Conversations" />
+      <style dangerouslySetInnerHTML={{ __html: TABLE_CSS }} />
       <Layout>
         <Layout.Section>
           <BlockStack gap="400">
@@ -102,6 +113,7 @@ export default function ConversationsPage() {
                     conversation, claim it, and reply to the customer.
                   </EmptyCardState>
                 ) : (
+                  <div className="bm-readonly-table">
                   <IndexTable
                     resourceName={{ singular: "handoff", plural: "handoffs" }}
                     itemCount={open.length}
@@ -126,6 +138,7 @@ export default function ConversationsPage() {
                       </IndexTable.Row>
                     ))}
                   </IndexTable>
+                  </div>
                 )}
               </BlockStack>
             </Card>
@@ -134,7 +147,7 @@ export default function ConversationsPage() {
               <BlockStack gap="300">
                 <Text as="h2" variant="headingMd">Recent completed handoffs</Text>
                 <Text as="p" tone="subdued">Read the customer and team messages after a request is closed.</Text>
-                {closed.map((handoff) => <InlineGrid columns="1fr auto" key={handoff.id}>
+                {closed.map((handoff) => <InlineGrid columns="1fr auto" gap="300" alignItems="center" key={handoff.id}>
                   <BlockStack gap="100">
                     <Link url={`/app/conversations/handoffs/${encodeURIComponent(handoff.id)}`}>{handoff.reason ?? "Customer conversation"}</Link>
                     <Text as="p" tone="subdued"><LocalTime iso={handoff.requestedAt} /></Text>
@@ -147,12 +160,13 @@ export default function ConversationsPage() {
             <Card padding="0">
               <BlockStack gap="0">
                 <div style={{ padding: "var(--p-space-400)" }}>
-                  <InlineGrid columns="1fr auto" alignItems="center">
+                  {/* Stacked (inventory F8): side by side the two texts ran into each other at 390px. */}
+                  <BlockStack gap="100">
                     <Text as="h2" variant="headingMd">
                       Recent conversations
                     </Text>
                     <Text as="p" tone="subdued">Read customer conversations here in Shopify.</Text>
-                  </InlineGrid>
+                  </BlockStack>
                 </div>
                 {convs.length === 0 ? (
                   <EmptyCardState heading="No conversations yet">
@@ -160,6 +174,7 @@ export default function ConversationsPage() {
                     last-activity time.
                   </EmptyCardState>
                 ) : (
+                  <div className="bm-readonly-table bm-conversations">
                   <IndexTable
                     resourceName={{ singular: "conversation", plural: "conversations" }}
                     itemCount={convs.length}
@@ -177,6 +192,7 @@ export default function ConversationsPage() {
                       </IndexTable.Row>
                     ))}
                   </IndexTable>
+                  </div>
                 )}
               </BlockStack>
             </Card>
