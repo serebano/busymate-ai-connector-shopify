@@ -143,8 +143,9 @@ refunds; secrets held only in the host's protected environment; and access loggi
 ### 5. Sub-processors
 
 You authorise the sub-processors listed in the Privacy Policy (Shopify; the Busymate AI
-platform; the App's database host; the LLM providers Busymate AI uses under terms that
-prohibit training on your data). We remain responsible for them, flow down equivalent
+platform; OVH (Germany) and DigitalOcean (Frankfurt), which host the App's database and
+backups; the AI model provider, Anthropic by default, or OpenAI or xAI if the workspace is
+switched, under terms that prohibit training on your data). We remain responsible for them, flow down equivalent
 obligations, and give you notice of additions so you can object.
 
 ### 6. Data subject requests and assistance

@@ -64,12 +64,18 @@ section 3 and the retention table), not in the App's database.
 - **Shopify** — the commerce platform (store data, Billing, webhooks).
 - **Busymate AI** (`busymate.ai`) — the AI assistant + control plane, reached only via
   the Busymate AI MCP APIs.
-- The App's own **database host** — an independent, access-controlled Postgres holding
-  only the identifiers/tokens listed above.
-- The underlying **LLM provider(s)** used by Busymate AI to generate answers, under
-  data-processing terms that prohibit training on your data.
+- **OVH** (Germany) — hosts the dedicated server that runs the App, its Postgres database
+  and the Busymate AI platform, and **DigitalOcean** (Frankfurt, Germany), which holds
+  encrypted backups (ciphertext only) and DNS.
+- The AI model provider that writes the assistant's answers. New workspaces, including
+  every Shopify store, are set up on **Anthropic** (Claude Haiku). A workspace can also be
+  switched to **OpenAI**, **xAI** or a customer-supplied endpoint; content is sent only
+  to the provider that answers. Providers process it under terms that do not allow
+  training on it, and their processing locations are those they publish (Anthropic and
+  OpenAI process in several countries, including the United States).
 
-A current sub-processor list is available on request.
+The full, current sub-processor list is in the [Busymate AI privacy policy](https://busymate.ai/legal/privacy#who-else-sees-the-data-sub-processors)
+and is available on request.
 
 ## 4. Security
 
@@ -108,20 +114,33 @@ defined by the CPRA.
 
 To exercise a right, contact the merchant you interacted with, or **hi@busymate.ai**.
 
-## 7. International transfers
+## 7. Cookies and local storage on the storefront
+
+The chat widget the App adds to a store sets no advertising or third-party tracking
+cookie. It stores only these items:
+
+| Name | Where | Purpose | Lifetime |
+|---|---|---|---|
+| `bm_support_visitor:<assistant>` | the store's `localStorage`, and a cookie on `busymate.ai` | An opaque random id (no personal data) that recognises the same shopper the next time they open the chat, so the conversation is not lost | Up to about 13 months |
+| `v2_anon` | cookie on `busymate.ai` (HttpOnly), used inside the chat frame | Anonymous, browser-bound id that ties a conversation to the browser that started it | About 12 months |
+| `bm_unread:<assistant>`, `bm_teaser_x:<assistant>`, `bm_widget_open:<assistant>` | the store's `sessionStorage` / `localStorage` | Remember whether the chat is open, an unread reply is waiting, and a teaser was dismissed (UI state only) | Browser session, or until cleared |
+
+These keep the chat working; a shopper can clear them any time in their browser.
+
+## 8. International transfers
 
 Data may be processed outside your country. Where required, transfers rely on
 appropriate safeguards (e.g. the EU Standard Contractual Clauses).
 
-## 8. Children
+## 9. Children
 
 The App is not directed to children and does not knowingly collect data from them.
 
-## 9. Changes
+## 10. Changes
 
 We will update this policy as the App evolves and post the new effective date here.
 
-## 10. Contact and merchant terms
+## 11. Contact and merchant terms
 
 **Busymate AI** — hi@busymate.ai (we answer privacy requests within 30 days).
 
