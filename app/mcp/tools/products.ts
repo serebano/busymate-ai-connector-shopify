@@ -38,7 +38,10 @@ interface ProductNode {
   onlineStoreUrl?: string | null;
   publishedAt?: string | null;
   totalInventory?: number | null;
+  tracksInventory?: boolean | null;
   isGiftCard?: boolean | null;
+  /** A few variants' `availableForSale` — Shopify's own "can this be bought now" answer. */
+  variants?: { nodes?: Array<{ availableForSale?: boolean | null }> | null } | null;
   priceRangeV2?: { minVariantPrice?: Money; maxVariantPrice?: Money } | null;
   compareAtPriceRange?: { minVariantCompareAtPrice?: Money | null; maxVariantCompareAtPrice?: Money | null } | null;
 }
@@ -107,6 +110,27 @@ export function priceExtremes(products: readonly ProductSummary[]): { cheapest: 
   return { cheapest: priced[0]!, mostExpensive: priced[priced.length - 1]! };
 }
 
+/**
+ * Review2 D1 (2026-11-26) — "The Inventory Not Tracked Snowboard" was answered as sold out and
+ * "The 3p Fulfilled Snowboard" as in stock: availability was `totalInventory > 0`. That is wrong for
+ * a product whose inventory is not tracked (always 0, always buyable), for "continue selling when out
+ * of stock", and for stock held at a location that does not sell online. Shopify's answer is the
+ * variant's `availableForSale`; a product is available when it is ACTIVE and ANY variant is. Only a
+ * node fetched without variants (never the live query) falls back to the inventory count, and an
+ * untracked product is never "out of stock" on that path either.
+ * VARIANT_PROBE variants per product are read (cost measured 2026-11-26 on a test-data store: 250
+ * products x 10 variants requested ~90 points, ~250 ms, the same as before).
+ */
+export const VARIANT_PROBE = 10;
+
+export function productAvailable(n: Pick<ProductNode, "status" | "totalInventory" | "tracksInventory" | "variants">): boolean {
+  if (n.status !== "ACTIVE") return false;
+  const variants = n.variants?.nodes;
+  if (Array.isArray(variants) && variants.length > 0) return variants.some((v) => v?.availableForSale === true);
+  if (n.tracksInventory === false) return true;
+  return (n.totalInventory ?? 0) > 0;
+}
+
 function summarizeProduct(n: ProductNode, shop: string, fmt?: ShopMoneyFormat | null): ProductSummary {
   return {
     title: n.title,
@@ -117,7 +141,7 @@ function summarizeProduct(n: ProductNode, shop: string, fmt?: ShopMoneyFormat | 
     currency: n.priceRangeV2?.minVariantPrice?.currencyCode ?? null,
     compareAtPrice: saleOf(n.priceRangeV2?.minVariantPrice, n.compareAtPriceRange?.minVariantCompareAtPrice, fmt),
     onSale: saleOf(n.priceRangeV2?.minVariantPrice, n.compareAtPriceRange?.minVariantCompareAtPrice) !== null,
-    available: (n.totalInventory ?? 0) > 0 && n.status === "ACTIVE",
+    available: productAvailable(n),
     giftCard: n.isGiftCard === true,
     image: n.featuredImage?.url ?? null,
   };
@@ -195,8 +219,9 @@ export async function searchProducts(
     query SearchProducts($q: String!, $n: Int!) {
       products(query: $q, first: $n) {
         nodes {
-          id title handle status onlineStoreUrl publishedAt totalInventory isGiftCard
+          id title handle status onlineStoreUrl publishedAt totalInventory tracksInventory isGiftCard
           featuredImage { url }
+          variants(first: ${VARIANT_PROBE}) { nodes { availableForSale } }
           priceRangeV2 { minVariantPrice { amount currencyCode } }
           compareAtPriceRange { minVariantCompareAtPrice { amount currencyCode } }
         }
