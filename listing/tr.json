@@ -3,12 +3,12 @@
   "app_name": "Busymate AI",
   "tagline": "Mağazan için sipariş farkında yapay zekâ desteği",
   "intro": "Yalnızca mağazanın içeriğinden yanıt veren yapay zekâ desteği. Sipariş taleplerini halleder ve destek taleplerini azaltır.",
-  "details": "Busymate AI, online mağazana bir yapay zekâ destek asistanı ekler. Alışveriş yapanlara yalnızca kendi ürünlerin, politikaların ve mağaza içeriğinle yanıt verir, kaynaklarını gösterir ve tahmin etmek yerine emin olmadığında bunu söyler. Oturum açmış müşteriler sipariş durumunu ve kargo takibini görebilir; bir siparişi güncelleme, iptal etme, iade etme veya geri ödeme talep edebilir. Her işlem önce onaylanır; daha büyük geri ödemeler veya düşük güvenli görüşmeler ekibine aktarılır. Müşterinin dilinde yanıt verir; sağdan sola yazılan diller dahil.",
+  "details": "Busymate AI, çevrimiçi mağazanıza bir yapay zekâ destek asistanı ekler. Yalnızca kendi ürünlerinize, politikalarınıza ve mağaza içeriğinize dayanarak yanıt verir ve emin olmadığında bunu söyler. Oturum açmış alıcılar sipariş durumunu ve kargo takibini görebilir, gönderilmemiş bir siparişi iptal edebilir veya gönderilmemiş bir siparişin teslimat adresini değiştirebilir; her işlem önce onaylanır. İadeler, geri ödemeler ve emin olunmayan görüşmeler ekibinize devredilir. Alıcının dilinde yanıt verir, sağdan sola yazılan diller dahil.",
   "feature_bullets": [
     "Yalnızca kendi ürünlerin, politikaların ve mağaza içeriğinden, kaynaklarıyla yanıt verir",
     "Emin olmadığında bunu söyler ve tahmin etmek yerine bir insan önerir",
     "Oturum açmış müşteriler sipariş durumu, kargo takibi ve onaylı sipariş işlemleri alır",
-    "İptaller, iadeler ve geri ödemeler önce onaylanır; daha büyük geri ödemeler sana gider",
+    "İptaller ve adres değişiklikleri her zaman önce alıcı tarafından onaylanır",
     "Müşterinin dilinde yanıt verir; sağdan sola yazılan diller dahil"
   ],
   "pricing_summary": "Dahil yapay zekâ çözümleri olan aylık planlar, ardından aylık harcama limitine kadar çözüm başına ücret. Ücretsiz plan mevcut; ücretli planlar 14 günlük ücretsiz deneme ile başlar.",
