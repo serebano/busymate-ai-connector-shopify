@@ -36,7 +36,7 @@ const SNAPSHOT: StoreListing = {
   slug: STORE_APP_SLUG,
   name: "Busymate AI",
   tagline: "Grounded, order-aware AI support for your store",
-  privacy_url: "https://store.busymate.ai/legal/privacy",
+  privacy_url: "https://store.busymate.ai/legal/shopify-privacy",
 };
 
 export function storePageUrl(listing: StoreListing): string {

@@ -23,7 +23,7 @@ The same 14 locales exist on the canonical record (`set_store_app_locale` on
 | `details` | App details | 500 | = paragraph 2 of the record's description (drift-checked) |
 | `feature_bullets` | Features | 3–5 × 80 | = the record's "What it does" bullets |
 | `pricing_summary` | — (busymate.ai store page only) | — | the ONLY field that may talk about plans |
-| `privacy_url` | Privacy policy URL | — | `https://store.busymate.ai/legal/privacy` (= record `privacyUrl`, drift-checked) |
+| `privacy_url` | Privacy policy URL | — | `https://store.busymate.ai/legal/shopify-privacy` (= record `privacyUrl`, drift-checked) |
 | `faq_url` | FAQ URL | — | `https://store.busymate.ai/legal/faq` |
 
 Pricing plans are NOT in these files — `listing/pricing.json` is regenerated from the record
