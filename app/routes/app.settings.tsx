@@ -227,7 +227,7 @@ export default function SettingsPage() {
               </Text>
               <Text as="p" tone="subdued">
                 The &quot;Ask us&quot; launcher text on your storefront is translated automatically for each storefront
-                language. To override it for your store, edit the Busymate AI assistant app embed in your theme editor.
+                language. To override it for your store, edit the AI support chat app embed in your theme editor.
               </Text>
               <Text as="h3" variant="headingSm">
                 What the assistant can do

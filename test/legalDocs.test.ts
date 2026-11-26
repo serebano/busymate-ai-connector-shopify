@@ -107,8 +107,8 @@ describe("#2624 — the app serves the listing's legal pages (no stale edge copy
   it("L5: the privacy policy is not a draft and names what the app really reads", () => {
     const privacy = read("docs/legal/privacy.md");
     expect(privacy).not.toMatch(/DRAFT|Have counsel review/i);
-    expect(privacy).toMatch(/read_themes/);
-    expect(privacy).toMatch(/settings_data\.json/);
+    // G2: no theme scope any more — the policy must not claim a theme read.
+    expect(privacy).not.toMatch(/read_themes|settings_data\.json/);
     expect(privacy).toMatch(/name, address and phone/i);
   });
 

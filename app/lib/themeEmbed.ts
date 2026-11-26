@@ -1,33 +1,32 @@
 /**
  * Theme app-embed onboarding (App Store Req 5.1.3) — the ONE thing a merchant
- * must do after install: enable the "Busymate AI assistant" app embed in
- * Theme editor → App embeds. This module owns the deep link + the setup
- * checklist Home renders, and a scope-free embed detector.
+ * must do after install: enable the "AI support chat" app embed in
+ * Theme editor → App embeds. This module owns the deep link, the setup
+ * checklist Home renders and the embed-state mapping.
  *
  * Activation uses SHOPIFY_API_KEY (the app client_id), not a CDN asset UUID.
- * Shopify deprecated extension UUID activation links. Detection matches the
- * extension asset + this store's slug, never a CDN UUID (#3718).
+ * Shopify deprecated extension UUID activation links.
  * https://shopify.dev/docs/apps/build/online-store/theme-app-extensions/configuration
  *
- * src#2624 reviewer F25: the embed state is read from the THEME itself
- * (`read_themes`: the main theme's config/settings_data.json — is our app-embed
- * block present and not disabled?), so a password-protected store, a reinstall or
- * an embed switched off later is always seen as it is. No stored "it's on"
- * confirmation exists any more. The public-storefront check stays only as the
- * fallback when the theme cannot be read (e.g. before the scope is granted).
+ * Embed state (G2, BFS 4.2.3): Home asks App Bridge — `shopify.app.extensions()`
+ * returns each block's activation status on the store's PUBLISHED theme and
+ * "requires no additional access scopes" (configuration doc above;
+ * https://shopify.dev/docs/api/app-home/apis/app). It works the same on a
+ * password-protected store, needs no `read_themes`, no server round-trip and no
+ * "it's switched on" confirmation from the merchant.
  */
-import { shopToSlug } from "./tenantSlug";
 
-/**
- * The storefront-assistant extension's CDN UUID as of 2026-09-24 (the live
- * `busymate-ai-5` version). Informational only — embed detection matches the
- * asset + this store's slug (see `detectStorefrontEmbed`), never this value.
- */
-export const STOREFRONT_ASSISTANT_EXTENSION_UUID = "01a061be-71c0-7659-afb4-b5e0d5ef3c3e";
-/** blocks/assistant.liquid → the block handle in `activateAppId=<uuid>/<block>`. */
+/** The theme extension's handle (extensions/storefront-assistant/shopify.extension.toml). */
+export const STOREFRONT_ASSISTANT_EXTENSION = "storefront-assistant";
+/** blocks/assistant.liquid → the block handle in `activateAppId=<client_id>/<block>`. */
 export const STOREFRONT_ASSISTANT_BLOCK = "assistant";
-/** The app embed's name as listed in Theme editor → App embeds (schema `name`). */
-export const APP_EMBED_LABEL = "Busymate AI assistant";
+/**
+ * The app embed's name as listed in Theme editor → App embeds (schema `name`,
+ * locales/en.default.schema.json). G9: under 25 characters and WITHOUT the app
+ * title — Shopify shows the app title under it ("Don't include the title of your
+ * app in the name of the block", configuration doc above).
+ */
+export const APP_EMBED_LABEL = "AI support chat";
 
 /** Theme editor with the app embed pre-activated (merchant still clicks Save). */
 export function themeEditorActivateUrl(shop: string, opts: { apiKey?: string; block?: string } = {}): string {
@@ -38,76 +37,46 @@ export function themeEditorActivateUrl(shop: string, opts: { apiKey?: string; bl
   return `${themeEditorAppEmbedsUrl(shop)}&activateAppId=${encodeURIComponent(apiKey)}/${encodeURIComponent(block)}`;
 }
 
-/**
- * Our app-embed block in a theme's settings_data.json → "on" (present and not
- * disabled) or "off". settings_data.json may open with a comment header.
- * Block types look like `shopify://apps/<app-handle>/blocks/assistant/<extension-uuid>`.
- */
-export function embedFromSettingsData(content: string, appHandle = process.env.SHOPIFY_APP_HANDLE || "busymate-ai"): "on" | "off" | null {
-  let data: { current?: unknown } | null = null;
-  try {
-    data = JSON.parse(content.replace(/^\s*\/\*[\s\S]*?\*\//, "")) as { current?: unknown };
-  } catch {
-    return null;
-  }
-  const current = data && typeof data.current === "object" && data.current ? (data.current as { blocks?: Record<string, { type?: string; disabled?: boolean }> }) : null;
-  if (!current) return "off";
-  const ours = Object.values(current.blocks ?? {}).filter((b) => typeof b?.type === "string" && b.type.startsWith(`shopify://apps/${appHandle}/blocks/${STOREFRONT_ASSISTANT_BLOCK}/`));
-  return ours.some((b) => b.disabled !== true) ? "on" : "off";
-}
-
-type ThemeGraphql = (query: string) => Promise<Response>;
-
-/** The main theme's app-embed state via Admin GraphQL (needs `read_themes`); null when it cannot be read. */
-export async function readThemeEmbed(graphql: ThemeGraphql): Promise<"on" | "off" | null> {
-  try {
-    const res = await graphql(`#graphql
-      query MainThemeSettings {
-        themes(first: 1, roles: [MAIN]) {
-          nodes { files(filenames: ["config/settings_data.json"], first: 1) { nodes { body { ... on OnlineStoreThemeFileBodyText { content } } } } }
-        }
-      }`);
-    const body = (await res.json()) as { data?: { themes?: { nodes?: Array<{ files?: { nodes?: Array<{ body?: { content?: string } }> } }> } } };
-    const content = body.data?.themes?.nodes?.[0]?.files?.nodes?.[0]?.body?.content;
-    return typeof content === "string" ? embedFromSettingsData(content) : null;
-  } catch {
-    return null;
-  }
-}
-
 /** Theme editor → App embeds panel (fallback when the deep link is stale). */
 export function themeEditorAppEmbedsUrl(shop: string): string {
   return `https://${shop}/admin/themes/current/editor?context=apps`;
 }
 
 /**
- * `password` (#2618 follow-up): the storefront answered with Shopify's password
- * page, so its theme (and our embed) cannot be seen from outside. The merchant
- * can confirm it themselves; we re-check once the password is removed.
+ * `checking` — App Bridge has not answered yet (first paint);
+ * `unknown` — App Bridge could not answer (outside Shopify Admin, or an error).
  */
-export type EmbedStatus = "on" | "off" | "unknown" | "password";
+export type EmbedStatus = "on" | "off" | "unknown" | "checking";
 
-/** Home instructions must reflect what the scope-free storefront check knows. */
-export function embedSetupPresentation(status: EmbedStatus, confirmed = false) {
-  if (status === "password") {
-    return confirmed
-      ? {
-          heading: "Storefront assistant is on (confirmed by you)",
-          detail: "You confirmed the app embed is switched on and saved. Your store is password-protected, so we can't see the storefront from outside; we check it by ourselves once the password is removed.",
-          button: "Review in App embeds",
-          activationLink: false,
-        }
-      : {
-          heading: "Your store is password-protected",
-          detail: "We couldn't read your theme just now. Open App embeds, switch on \"Busymate AI assistant\" and click Save; this page re-checks your theme by itself.",
-          button: "Open App embeds",
-          activationLink: true,
-        };
-  }
+/** The subset of App Bridge's `ExtensionInfo` this module reads. */
+export interface ExtensionInfoLike {
+  handle: string;
+  type: string;
+  /** Theme blocks/embeds carry `handle` + `status`; UI-extension activations do not. */
+  activations?: ReadonlyArray<object> | null;
+}
+
+/**
+ * `shopify.app.extensions()` → our app embed's state on the published theme:
+ * `active` → on; `available` (present, not switched on) or `unavailable` → off;
+ * null when the answer does not list our embed at all.
+ */
+export function embedFromExtensions(extensions: ReadonlyArray<ExtensionInfoLike> | null | undefined): "on" | "off" | null {
+  if (!Array.isArray(extensions)) return null;
+  const ext = extensions.find((e) => e?.type === "theme_app_extension" && e.handle === STOREFRONT_ASSISTANT_EXTENSION);
+  const block = (ext?.activations as ReadonlyArray<{ handle?: unknown; status?: unknown }> | null | undefined)?.find(
+    (a) => a?.handle === STOREFRONT_ASSISTANT_BLOCK,
+  );
+  if (!block) return null;
+  return block.status === "active" ? "on" : "off";
+}
+
+/** Home's embed card copy for each state. */
+export function embedSetupPresentation(status: EmbedStatus) {
   if (status === "on") {
     return {
       heading: "Storefront assistant is on",
-      detail: "The assistant is loading on your storefront. Open App embeds to review it; click Save if you make a change.",
+      detail: `"${APP_EMBED_LABEL}" is switched on in your published theme, so the "Ask us" launcher shows on your storefront. Open App embeds to review it; click Save if you make a change.`,
       button: "Review in App embeds",
       activationLink: false,
     };
@@ -115,60 +84,43 @@ export function embedSetupPresentation(status: EmbedStatus, confirmed = false) {
   if (status === "off") {
     return {
       heading: "Turn on the storefront assistant",
-      detail: "The storefront check did not find the assistant. Open the theme editor, switch on the app embed, and click Save.",
+      detail: `"${APP_EMBED_LABEL}" is not switched on in your published theme yet. Open the theme editor, switch it on, and click Save. This page updates when you come back.`,
+      button: "Turn on the storefront assistant",
+      activationLink: true,
+    };
+  }
+  if (status === "checking") {
+    return {
+      heading: "Checking your theme",
+      detail: `Checking whether "${APP_EMBED_LABEL}" is switched on in your published theme.`,
       button: "Turn on the storefront assistant",
       activationLink: true,
     };
   }
   return {
     heading: "Check storefront assistant status",
-    detail: "We can't confirm the embed from this storefront. It may be password-protected or unavailable. Open App embeds to check its state; save only if you change it. Home will show the status as unconfirmed until the storefront can be checked.",
+    detail: `We couldn't read your theme's app embeds just now. Open App embeds, switch on "${APP_EMBED_LABEL}" if it is off, and click Save. This page checks again when you come back.`,
     button: "Check in App embeds",
     activationLink: false,
   };
 }
 
-/**
- * Read the storefront home page and look for OUR app embed's script tag: the
- * extension asset `…/assets/assistant.js` carrying THIS store's `data-slug`.
- * Uses no Admin scope. `unknown` when the store is password-protected, errors,
- * or is not 200 — the UI then shows the written steps instead of a false "off".
- *
- * #3718 (Shopify review 5.1.2, 2026-09-24): this used to match a hard-coded
- * extension CDN UUID (`01a04ae4…`), but the live extension serves from
- * `01a061be-…`, so Home said "Not on yet" on a storefront where the embed WAS
- * on. The CDN UUID changes with the extension registration; the asset name and
- * the slug the block renders do not. Matched on the tag itself so an unrelated
- * `assistant.js` from another app can never read as ours.
- */
-export async function detectStorefrontEmbed(
-  shop: string,
-  doFetch: (url: string, init?: RequestInit) => Promise<Response> = fetch,
-  slug: string = shopToSlug(shop),
-): Promise<EmbedStatus> {
-  try {
-    const res = await doFetch(`https://${shop}/`, {
-      redirect: "follow",
-      headers: { accept: "text/html", "user-agent": "BusymateAI-Shopify-App/1.0 (+https://store.busymate.ai)" },
-      signal: AbortSignal.timeout(8000),
-    });
-    if (res.status !== 200) return "unknown";
-    const html = await res.text();
-    if (/action="\/password"|\/password\b/.test(html) && !html.includes("cdn.shopify.com/extensions/")) return "password";
-    return storefrontLoadsOurEmbed(html, slug) ? "on" : "off";
-  } catch {
-    return "unknown";
-  }
-}
-
-/** True when `html` carries a `<script …/assets/assistant.js … data-slug="<slug>">` tag. */
-export function storefrontLoadsOurEmbed(html: string, slug: string): boolean {
-  if (!slug) return false;
-  for (const tag of html.match(/<script\b[^>]*>/gi) ?? []) {
-    if (!/\bsrc="[^"]*\/extensions\/[^"]*\/assets\/assistant\.js(?:\?[^"]*)?"/i.test(tag)) continue;
-    if (tag.includes(`data-slug="${slug}"`)) return true;
-  }
-  return false;
+/** The checklist's embed step for a state (Home recomputes it once App Bridge answers). */
+export function embedStep(embed: EmbedStatus): SetupStep {
+  return {
+    id: "embed",
+    title: "Storefront assistant switched on",
+    detail:
+      embed === "on"
+        ? "Switched on in your published theme. The \"Ask us\" launcher shows on your storefront."
+        : embed === "off"
+          ? "Not on yet. Switch the app embed on in your theme editor and click Save."
+          : embed === "checking"
+            ? "Checking your theme…"
+            : "Couldn't check your theme just now. Switch the app embed on in your theme editor and click Save; this page checks again when you come back.",
+    done: embed === "on",
+    failed: false,
+  };
 }
 
 // ---- Home setup checklist ---------------------------------------------------
@@ -201,9 +153,8 @@ export interface TrainingCounts {
 export interface SetupInput {
   provisionState: string;
   connectorReady: boolean;
+  /** Server render: "checking"; Home swaps in the App Bridge answer (embedStep). */
   embed: EmbedStatus;
-  /** The merchant confirmed the embed is on (only meaningful while the storefront is password-protected). */
-  embedConfirmed?: boolean;
   trainedAt: string | null;
   trainError: string | null;
   /** Items the assistant was trained on (ShopTenant.kb*); null = unknown/never. */
@@ -268,22 +219,7 @@ export function buildSetupChecklist(s: SetupInput): SetupStep[] {
       done: provisioned,
       failed: provisionFailed,
     },
-    {
-      id: "embed",
-      title: "Storefront assistant switched on",
-      detail:
-        s.embed === "on"
-          ? "The \"Ask us\" launcher is live on your storefront."
-          : s.embed === "off"
-            ? "Not on yet — the launcher is not loading on your storefront."
-            : s.embed === "password"
-              ? s.embedConfirmed
-                ? "You confirmed it's on. Your store is password-protected, so we'll check it ourselves once the password is removed."
-                : "We couldn't read your theme just now. Switch the app embed on in your theme editor and click Save; this page re-checks by itself."
-              : "Switch the app embed on in your theme editor and click Save — it only stays on once saved.",
-      done: s.embed === "on" || (s.embed === "password" && Boolean(s.embedConfirmed)),
-      failed: false,
-    },
+    embedStep(s.embed),
     {
       id: "trained",
       title: "Trained on your store",

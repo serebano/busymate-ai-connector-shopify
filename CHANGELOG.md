@@ -4,6 +4,17 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-11-26 — embed state from App Bridge, no theme scope; embed renamed "AI support chat" (audit G2, G9)
+
+- **G2 (BFS 4.2.3, data minimization):** Home reads the app embed's state on the published theme with App Bridge
+  `shopify.app.extensions()` (no access scope, works on password-protected stores, re-checked when the merchant
+  returns from the theme editor). `read_themes` is dropped from `shopify.app.toml`; the server no longer reads
+  the theme or fetches the storefront on Home load. Needs a new app version: existing installs lose `read_themes`
+  on their next app open without a prompt (`app/scopes_update` fires).
+- **G9:** the app embed's theme-editor name is "AI support chat" (14 locales, each under 25 characters, no app
+  title), per the theme app extension configuration docs. The block handle (`assistant`) is unchanged, so
+  embeds that are already on stay on.
+
 ## 2026-11-26 — embedded admin: save bar, back actions, inline errors (Built for Shopify 4.1.1, 4.1.4, 4.1.5, 4.2.4)
 
 Server-rendered admin only: no Shopify app version, no extension or config change.
