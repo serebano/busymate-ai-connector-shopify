@@ -105,7 +105,7 @@ describe("listing copy — en (the source the Partner form is filled from)", () 
   });
 
   it("points support links at the live store.busymate.ai legal pages", () => {
-    expect(en.privacy_url).toBe("https://store.busymate.ai/legal/privacy");
+    expect(en.privacy_url).toBe("https://store.busymate.ai/legal/shopify-privacy");
     expect(en.faq_url).toBe("https://store.busymate.ai/legal/faq");
   });
 
