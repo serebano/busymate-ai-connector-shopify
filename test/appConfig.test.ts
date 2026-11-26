@@ -88,3 +88,62 @@ describe("src#2624 reviewer F25 — read_themes (embed state from the theme)", (
     expect(scopes).not.toMatch(/write_themes/);
   });
 });
+
+/** A TOML string array (`key = [ "a", "b" ]`, one or many lines) inside a section. */
+function tomlArray(section: string, key: string): string[] {
+  const m = section.match(new RegExp(`^${key}\\s*=\\s*\\[([\\s\\S]*?)\\]`, "m"));
+  if (!m) throw new Error(`${key} missing`);
+  return [...m[1].matchAll(/"([^"]*)"/g)].map((x) => x[1]);
+}
+
+/**
+ * Audit item 2 (2026-11-26): from 2026-12-01 Shopify rejects deploys/submissions of an
+ * app with a theme app extension or app proxy whose shopify.app.toml has no
+ * `[network_access] allowed_sources`. The list must name every external server the
+ * storefront page contacts (the widget's platform origin), in Shopify's format.
+ * https://shopify.dev/docs/apps/build/cli-for-apps/app-configuration (network_access)
+ */
+describe("shopify.app.toml [network_access]", () => {
+  const section = tomlSection("network_access");
+  const sources = tomlArray(section, "allowed_sources");
+  const nav = tomlArray(section, "allowed_navigation_hosts");
+  const liquid = readFileSync(join(root, "extensions/storefront-assistant/blocks/assistant.liquid"), "utf8");
+  const widgetOrigins = [
+    liquid.match(/data-origin="([^"]+)"/)![1],
+    assistantJs.match(/getAttribute\("data-origin"\)\s*\|\|\s*"([^"]+)"/)![1],
+  ];
+
+  it("allowed_sources covers the origin the theme embed loads the widget from", () => {
+    for (const origin of widgetOrigins) expect(sources).toContain(new URL(origin).origin);
+  });
+
+  it("every source is a lowercase HTTPS origin: no path, trailing slash, :443, IP, localhost or Shopify domain", () => {
+    expect(sources.length).toBeGreaterThan(0);
+    expect(sources.length).toBeLessThanOrEqual(20); // the changelog says 20, the reference 30: keep the stricter
+    for (const s of sources) {
+      expect(s).toBe(s.toLowerCase());
+      expect(s).toMatch(/^https:\/\/(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)+(:\d+)?$/);
+      expect(s).not.toMatch(/:443$/);
+      expect(s).not.toMatch(/localhost|^https:\/\/[\d.]+$|myshopify\.com|shopify(cdn)?\.com/);
+    }
+  });
+
+  it("allowed_navigation_hosts names the fallback link's host as a bare lowercase host", () => {
+    expect(assistantJs).toMatch(/link\.href = origin \+ "\/chat\/w\/"/);
+    for (const origin of widgetOrigins) expect(nav).toContain(new URL(origin).hostname);
+    for (const h of nav) expect(h).toMatch(/^[a-z0-9-]+(\.[a-z0-9-]+)+$/);
+  });
+});
+
+/** Audit L3 (2026-11-26): every declared OAuth redirect URL must be a path this app serves. */
+describe("shopify.app.toml [auth] redirect_urls", () => {
+  it("each one is <application_url><authPathPrefix>/… (app/routes/auth.$.tsx), none 404s", () => {
+    const appUrl = toml.match(/^application_url\s*=\s*"([^"]+)"/m)![1];
+    const server = readFileSync(join(root, "app/shopify.server.ts"), "utf8");
+    const prefix = server.match(/authPathPrefix:\s*"([^"]+)"/)![1];
+    expect(existsSync(join(root, "app/routes/auth.$.tsx"))).toBe(true);
+    const urls = tomlArray(tomlSection("auth"), "redirect_urls");
+    expect(urls.length).toBeGreaterThan(0);
+    for (const u of urls) expect(u.startsWith(`${appUrl}${prefix}/`), u).toBe(true);
+  });
+});
