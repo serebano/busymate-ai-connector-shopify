@@ -5,10 +5,12 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
+  useLocation,
   useRouteError,
   useRouteLoaderData,
 } from "react-router";
 import { describeRouteError } from "./lib/routeError";
+import { embeddedHomeFromSearch } from "./lib/embeddedNavigation";
 
 // Expose the Shopify API key so App Bridge can initialize from the document head.
 export const loader = () => ({ apiKey: process.env.SHOPIFY_API_KEY || "" });
@@ -60,18 +62,23 @@ export default function App() {
 // developer" with a stack on the public host (#2110). Self-contained styles —
 // the error path must not depend on any other asset loading.
 const errorStyles = `
-  :root { --bm-bg:#ffffff; --bm-fg:#0a0a0a; --bm-muted:#737373; --bm-accent:#3ecf8e; color-scheme: light dark; }
-  @media (prefers-color-scheme: dark) { :root { --bm-bg:#0a0a0a; --bm-fg:#fafafa; --bm-muted:#a3a3a3; } }
+  :root { --bm-bg:#ffffff; --bm-fg:#0a0a0a; --bm-muted:#6b6b6b; --bm-accent:#0b7a4b; color-scheme: light dark; }
+  @media (prefers-color-scheme: dark) { :root { --bm-bg:#0a0a0a; --bm-fg:#fafafa; --bm-muted:#a3a3a3; --bm-accent:#3ecf8e; } }
   body { margin:0; background:var(--bm-bg); color:var(--bm-fg); font-family: Inter, system-ui, -apple-system, sans-serif; }
   .bm-error { min-height:100dvh; display:grid; place-items:center; padding:1.5rem; box-sizing:border-box; text-align:center; }
   .bm-error h1 { font-size:1.5rem; font-weight:600; margin:0 0 .5rem; }
   .bm-error p { color:var(--bm-muted); max-width:34rem; margin:0 auto 1.25rem; line-height:1.5; }
   .bm-error .code { font-variant-numeric: tabular-nums; color:var(--bm-muted); font-size:.875rem; margin-bottom:.75rem; }
-  .bm-error a { color:var(--bm-accent); text-decoration:none; font-weight:500; }
+  .bm-error a { color:var(--bm-accent); text-decoration:underline; text-underline-offset:.15em; font-weight:500; }
 `;
 
 export function ErrorBoundary() {
   const view = describeRouteError(useRouteError());
+  // Inside the embedded admin (/app/…) the way out is the app's own Home, never
+  // the marketing site (inventory F10); the public host keeps the site link.
+  const { pathname, search } = useLocation();
+  const inApp = /^\/app(?:\/|$)/.test(pathname);
+  const home = inApp ? embeddedHomeFromSearch(search) : null;
   return (
     <>
       <title>{`${view.title} — Busymate AI`}</title>
@@ -81,7 +88,7 @@ export function ErrorBoundary() {
           <div className="code">{view.status}</div>
           <h1>{view.title}</h1>
           <p>{view.message}</p>
-          <a href="https://busymate.ai">busymate.ai</a>
+          {home ? <a href={home}>Back to Home</a> : inApp ? null : <a href="https://busymate.ai">busymate.ai</a>}
         </div>
       </main>
     </>

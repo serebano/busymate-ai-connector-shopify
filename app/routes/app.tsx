@@ -1,8 +1,8 @@
-import type { HeadersFunction, LoaderFunctionArgs } from "react-router";
-import { Link, Outlet, useLoaderData, useRouteError } from "react-router";
+import type { HeadersFunction, LoaderFunctionArgs, MetaFunction } from "react-router";
+import { Link, Outlet, useLoaderData, useLocation, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
-import { AppProvider as PolarisAppProvider } from "@shopify/polaris";
+import { AppProvider as PolarisAppProvider, Text } from "@shopify/polaris";
 import enPolarisTranslations from "@shopify/polaris/locales/en.json";
 import { NavMenu } from "@shopify/app-bridge-react";
 import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
@@ -14,6 +14,7 @@ import { AdminLoadingBar } from "../components/AdminLoadingBar";
 import { describeTransportError } from "../lib/clientAction";
 import { embeddedAppUrl, embeddedNavigationForShop } from "../lib/embeddedNavigation";
 import { isRouteControlFlow, reloadEmbeddedFrame } from "../lib/layoutError";
+import { adminDocumentTitle, adminPageTitle } from "../lib/adminPageTitle";
 
 export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
@@ -22,8 +23,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   return { apiKey: process.env.SHOPIFY_API_KEY || "", navigation: embeddedNavigationForShop(session.shop) };
 };
 
+// Accessibility (WCAG 2.4.2, axe document-title): the embedded document names
+// the page. No child route exports `meta`, so this one answers for all of them.
+export const meta: MetaFunction = ({ location }) => [{ title: adminDocumentTitle(location.pathname) }];
+
 export default function App() {
   const { apiKey, navigation } = useLoaderData<typeof loader>();
+  const { pathname } = useLocation();
   return (
     <AppProvider apiKey={apiKey}>
       <EmbeddedNavigationContext.Provider value={navigation}>
@@ -41,7 +47,14 @@ export default function App() {
           <Link to={embeddedAppUrl("/app/billing", navigation)}>Billing</Link>
         </NavMenu>
         <AdminLoadingBar />
-        <Outlet />
+        {/* The ONE main landmark and the page's level-one heading (axe
+            landmark-one-main, region, page-has-heading-one). The visible title is
+            the TitleBar in Shopify's chrome, outside this document, so the h1 is
+            visually hidden: same words, no second title on screen. */}
+        <main>
+          <Text as="h1" visuallyHidden>{adminPageTitle(pathname)}</Text>
+          <Outlet />
+        </main>
       </PolarisAppProvider>
       </EmbeddedNavigationContext.Provider>
     </AppProvider>
@@ -66,7 +79,10 @@ export function ErrorBoundary() {
   if (isRouteControlFlow(error)) return boundary.error(error);
   return (
     <PolarisAppProvider i18n={enPolarisTranslations}>
-      <AppRouteErrorView message={describeTransportError(error)} onRetry={reloadEmbeddedFrame} />
+      <main>
+        <Text as="h1" visuallyHidden>Something went wrong</Text>
+        <AppRouteErrorView message={describeTransportError(error)} onRetry={reloadEmbeddedFrame} />
+      </main>
     </PolarisAppProvider>
   );
 }

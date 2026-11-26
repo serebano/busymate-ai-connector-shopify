@@ -31,10 +31,10 @@ describe("conversation status", () => {
     expect(conversationStatus(row(), [{ sessionId: "wrun_A", supportSessionId: null, status: "resolved" }, { sessionId: "wrun_B", supportSessionId: "support-b", status: "requested" }], NOW).label).toBe("Active");
     expect(conversationStatus(row({ supportSessionId: null }), [{ sessionId: "wrun_B", supportSessionId: null, status: "requested" }], NOW).label).toBe("Active");
   });
-  it("quiet past the window, or with no timestamp, is Inactive", () => {
-    expect(conversationStatus(row({ lastActiveAt: new Date(NOW - ACTIVE_WINDOW_MS - 1).toISOString() }), [], NOW)).toEqual({ label: "Inactive", tone: undefined });
-    expect(conversationStatus(row({ lastActiveAt: null }), [], NOW).label).toBe("Inactive");
-    expect(conversationStatus(row({ lastActiveAt: "not a date" }), [], NOW).label).toBe("Inactive");
+  it("quiet past the window, or with no timestamp, is No recent activity", () => {
+    expect(conversationStatus(row({ lastActiveAt: new Date(NOW - ACTIVE_WINDOW_MS - 1).toISOString() }), [], NOW)).toEqual({ label: "No recent activity", tone: undefined });
+    expect(conversationStatus(row({ lastActiveAt: null }), [], NOW).label).toBe("No recent activity");
+    expect(conversationStatus(row({ lastActiveAt: "not a date" }), [], NOW).label).toBe("No recent activity");
   });
   it("handoff statuses read as words, not codes", () => {
     expect(["requested", "acknowledged", "active", "resolved", "dismissed", "weird"].map((s) => handoffStatus(s).label))

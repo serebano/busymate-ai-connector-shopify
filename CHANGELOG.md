@@ -4,6 +4,21 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-11-26 — embedded admin accessibility: document title, main landmark, h1; Conversations on a phone (audit G5, inventory F8–F10)
+
+Server-rendered admin only: no Shopify app version, no extension or config change.
+
+- **G5 (axe 0 violations wanted on every admin page):** the embedded document now has a `<title>` ("Conversations ·
+  Busymate AI"), one `main` landmark around the routed page and a visually hidden `h1` with the same words as the
+  TitleBar (the visible title stays in Shopify's chrome). One table, `app/lib/adminPageTitle.ts`, feeds the layout's
+  `meta` and the `h1`; a test keeps it equal to every route's TitleBar title.
+- **F8:** at 390px "Recent conversations" and its subtitle are stacked (they ran into each other), the table drops
+  "Started" and wraps its cells, so Status and the link fit without scrolling sideways.
+- **F9:** a quiet chat reads "No recent activity" (was "Inactive"). The hidden, unlabeled select-all checkbox Polaris
+  renders for a table with no bulk actions is removed from the tree.
+- **F10:** an unknown `/app/…` path renders "This page does not exist" inside the app with **Back to Home**
+  (`app/routes/app.$.tsx`, 404). The root error page links to the embedded Home when it shows inside `/app`; its
+  link and muted text now meet 4.5:1 in the light scheme (the green link was 1.99:1).
 ## 2026-11-26 — billing: a late "cancelled" for the replaced plan no longer wipes the new plan
 
 - On a plan change Shopify cancels the old contract and activates the new one; both `app_subscriptions/update`

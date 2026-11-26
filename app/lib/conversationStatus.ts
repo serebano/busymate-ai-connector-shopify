@@ -20,6 +20,9 @@ export interface StatusLabel { label: string; tone: StatusTone }
 /** A conversation with activity inside this window counts as active. */
 export const ACTIVE_WINDOW_MS = 30 * 60_000;
 
+/** A conversation with no message inside the window. */
+export const QUIET_LABEL = "No recent activity";
+
 const OPEN_HANDOFF = new Set(["requested", "acknowledged", "active"]);
 
 export function handoffStatus(status: string): StatusLabel {
@@ -48,5 +51,7 @@ export function conversationStatus(
   if (row.live) return { label: "Assistant replying", tone: "success" };
   const at = row.lastActiveAt ? Date.parse(row.lastActiveAt) : Number.NaN;
   if (Number.isFinite(at) && nowMs - at < ACTIVE_WINDOW_MS) return { label: "Active", tone: "success" };
-  return { label: "Inactive", tone: undefined };
+  // "Inactive" read as a broken or switched-off chat (inventory F9). The chat is
+  // fine: nobody has written in it for a while.
+  return { label: QUIET_LABEL, tone: undefined };
 }
