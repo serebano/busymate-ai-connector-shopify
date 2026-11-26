@@ -32,7 +32,7 @@ account and credentials only you can create. This file is the exact checklist to
 ## 1. Create the Shopify Partner app (issues the API key/secret) 🔒
 
 1. Partner Dashboard → **Apps → Create app → Create app manually**.
-   - Name: **Busymate AI**. App URL: `https://shopify.busymate.ai`.
+   - Name: **Busymate AI**. App URL: `https://store.busymate.ai`.
 2. Copy the **Client ID** and **Client secret**.
 3. Link the config from this repo:
    ```bash

@@ -3,12 +3,12 @@
   "app_name": "Busymate AI",
   "tagline": "Soporte con IA para tu tienda, con contexto de pedidos",
   "intro": "Soporte con IA que responde solo con el contenido de tu tienda. Gestiona solicitudes de pedidos y reduce los tickets.",
-  "details": "Busymate AI añade un asistente de soporte con IA a tu tienda online. Responde a los compradores usando únicamente tus propios productos, políticas y contenido de la tienda, muestra sus fuentes y avisa cuando no está seguro en lugar de adivinar. Los compradores que han iniciado sesión pueden consultar el estado y el seguimiento de sus pedidos y pedir actualizar, cancelar, devolver o reembolsar un pedido; cada acción se confirma primero, y los reembolsos mayores o las conversaciones de baja confianza se transfieren a tu equipo. Responde en el idioma del comprador, incluidas las escrituras de derecha a izquierda.",
+  "details": "Busymate AI añade un asistente de soporte con IA a tu tienda online. Responde usando solo tus propios productos, políticas y contenido de la tienda, y avisa cuando no está seguro. Los compradores con sesión iniciada pueden consultar el estado y el seguimiento de su pedido, cancelar un pedido no enviado o cambiar la dirección de envío de un pedido no enviado; cada acción se confirma primero. Las devoluciones, los reembolsos y las conversaciones dudosas pasan a tu equipo. Responde en el idioma del comprador, incluidas las escrituras de derecha a izquierda.",
   "feature_bullets": [
     "Responde solo con tus propios productos, políticas y contenido de la tienda, con fuentes",
     "Avisa cuando no está seguro y ofrece un humano en lugar de adivinar",
     "Los compradores con sesión iniciada obtienen estado del pedido, seguimiento y acciones confirmadas",
-    "Cancelaciones, devoluciones y reembolsos se confirman primero; los reembolsos mayores pasan a ti",
+    "Las cancelaciones y los cambios de dirección los confirma siempre primero el comprador",
     "Responde en el idioma del comprador, incluidas las escrituras de derecha a izquierda"
   ],
   "pricing_summary": "Planes mensuales con resoluciones de IA incluidas y luego un cargo por resolución hasta tu límite de gasto mensual. Hay un plan gratuito; los planes de pago empiezan con una prueba gratuita de 14 días.",
