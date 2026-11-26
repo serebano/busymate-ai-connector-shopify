@@ -9,8 +9,8 @@
 The September 11 review and September 12 verification found additional provisioning,
 theme-preview, runtime-projection and resolution-metering gaps. Those findings supersede
 the earlier all-resolved assessment below. Current tracking:
-[review fixes #16](https://github.com/serebano/busymate-ai-shopify/issues/16) and
-[resolution metering #19](https://github.com/serebano/busymate-ai-shopify/issues/19).
+[review fixes #16](https://github.com/serebano/busymate-ai-connector-shopify/issues/16) and
+[resolution metering #19](https://github.com/serebano/busymate-ai-connector-shopify/issues/19).
 Resubmission remains pending until live verification is complete.
 
 Two reviews reached us: **Aug 29** (2.1.1 / 2.1.3 — the embedded app returned a web `500`
@@ -110,8 +110,7 @@ been created through Shopify, "Manage apps" listed no billing options.
 
 **How to verify.** Open the app on a development store → **Billing** → "Choose a plan" →
 Shopify's plan-selection page renders (no 404) → pick a plan (free for dev stores) →
-redirected back to Billing showing the chosen plan → Shopify admin → **Settings → Apps and
-sales channels → Manage apps** lists Busymate AI with its plan.
+redirected back to Billing showing the chosen plan → Shopify admin → **Settings → Apps** lists Busymate AI with its plan.
 
 ## Expiring offline tokens
 

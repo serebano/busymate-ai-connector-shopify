@@ -18,17 +18,19 @@ describe("theme editor deep link", () => {
   it("activates the block using the deployed app client ID, never the CDN UUID", () => {
     vi.stubEnv("SHOPIFY_API_KEY", "test-app-client-id");
 
-    const url = new URL(themeEditorActivateUrl("acme.myshopify.com"));
-    expect(url.origin).toBe("https://acme.myshopify.com");
-    expect(url.pathname).toBe("/admin/themes/current/editor");
+    const raw = themeEditorActivateUrl("acme.myshopify.com");
+    // Review2 D5: App Bridge's in-admin protocol, Shopify's documented deep-link params.
+    expect(raw.startsWith("shopify://admin/themes/current/editor?")).toBe(true);
+    const url = new URL(raw.replace("shopify://admin", "https://admin.invalid"));
     expect(url.searchParams.get("context")).toBe("apps");
+    expect(url.searchParams.get("template")).toBe("index");
     expect(url.searchParams.get("activateAppId")).toBe("test-app-client-id/assistant");
     expect(url.href).not.toContain("01a061be");
     expect(STOREFRONT_ASSISTANT_BLOCK).toBe("assistant");
   });
 
   it("uses explicit app identity and safely encodes the block handle", () => {
-    const url = new URL(themeEditorActivateUrl("acme.myshopify.com", { apiKey: "another-client", block: "assistant&other" }));
+    const url = new URL(themeEditorActivateUrl("acme.myshopify.com", { apiKey: "another-client", block: "assistant&other" }).replace("shopify://admin", "https://admin.invalid"));
     expect(url.searchParams.get("activateAppId")).toBe("another-client/assistant&other");
     expect(url.searchParams.has("other")).toBe(false);
   });
@@ -36,7 +38,7 @@ describe("theme editor deep link", () => {
   it("falls back to manual app embeds when app identity is unavailable", () => {
     vi.stubEnv("SHOPIFY_API_KEY", "  ");
     expect(themeEditorActivateUrl("acme.myshopify.com")).toBe(themeEditorAppEmbedsUrl("acme.myshopify.com"));
-    expect(themeEditorAppEmbedsUrl("acme.myshopify.com")).toBe("https://acme.myshopify.com/admin/themes/current/editor?context=apps");
+    expect(themeEditorAppEmbedsUrl("acme.myshopify.com")).toBe("shopify://admin/themes/current/editor?context=apps&template=index");
   });
 });
 
@@ -203,5 +205,17 @@ describe("G9 — app embed name (theme editor) is short and has no app title", (
       expect(name, f).not.toMatch(/busymate/i);
     }
     expect(JSON.parse(readFileSync(`${dir}/en.default.schema.json`, "utf8")).name).toBe(APP_EMBED_LABEL);
+  });
+});
+
+describe("Review2 D9 — Home header status follows the embed", () => {
+  it("published + embed on = Live; off = not on storefront; unknown = checking", async () => {
+    const { homeHeaderStatus } = await import("../app/lib/themeEmbed");
+    expect(homeHeaderStatus("published", "on")).toEqual({ label: "Live", tone: "success" });
+    expect(homeHeaderStatus("published", "off")?.label).toBe("Not on storefront yet");
+    expect(homeHeaderStatus("published", "off")?.label).not.toMatch(/live/i);
+    expect(homeHeaderStatus("published", "checking")?.label).not.toMatch(/live/i);
+    expect(homeHeaderStatus("published", "unknown")?.label).not.toMatch(/live/i);
+    expect(homeHeaderStatus("runtime-pending", "on")).toBeNull();
   });
 });

@@ -34,7 +34,7 @@ vi.mock("@shopify/app-bridge-react", () => ({
 vi.mock("../app/shopify.server", () => ({ authenticate: { admin: vi.fn() } }));
 vi.mock("../app/db.server", () => ({ default: {} }));
 vi.mock("../app/bmai.server", () => ({ setTenantBranding: vi.fn() }));
-vi.mock("../app/lib/ingest", () => ({ retrainForMerchant: vi.fn() }));
+vi.mock("../app/lib/ingest", () => ({ queueRetrainForMerchant: vi.fn() }));
 vi.mock("../app/lib/tenantRead.server", () => ({ readTenantBranding: vi.fn() }));
 import SettingsPage, { SETTINGS_SAVE_BAR_ID } from "../app/routes/app.settings";
 

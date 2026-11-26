@@ -48,11 +48,13 @@ import {
   buildSetupChecklist,
   embedSetupPresentation,
   embedStep,
+  homeHeaderStatus,
   lastKnownEmbed,
   themeEditorActivateUrl,
   themeEditorAppEmbedsUrl,
   trainingSummary,
   AT_MARKER,
+  type EmbedStatus,
 } from "../lib/themeEmbed";
 
 const APP_HANDLE = process.env.SHOPIFY_APP_HANDLE || "busymate-ai";
@@ -179,8 +181,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   return { ok, state: runtime?.state ?? tenant?.provisionState ?? "pending", error: ok ? null : merchantError("reprovision", session.shop, raw) };
 };
 
-function stateBadge(state: string) {
-  if (state === "published") return <Badge tone="success">Live</Badge>;
+function stateBadge(state: string, embed: EmbedStatus) {
+  const header = homeHeaderStatus(state, embed);
+  if (header) return <Badge tone={header.tone}>{header.label}</Badge>;
   if (state === "runtime-pending") return <Badge tone="info" progress="partiallyComplete">Activating</Badge>;
   if (state === "runtime-orphaned") return <Badge tone="attention">Repairing</Badge>;
   if (state === "runtime-unverified") return <Badge tone="warning">Status unavailable</Badge>;
@@ -267,7 +270,7 @@ export default function Index() {
                     <Text as="span" tone="subdued">
                       {done}/{steps.length} done
                     </Text>
-                    {stateBadge(data.provisionState)}
+                    {stateBadge(data.provisionState, embed)}
                   </InlineStack>
                 </InlineGrid>
                 <Text as="p" tone="subdued">
@@ -340,16 +343,12 @@ export default function Index() {
                   </Banner>
                 ) : null}
                 <InlineStack gap="300">
-                  <Button
-                    variant="primary"
-                    url={data.embedReady ? data.activateUrl : undefined}
-                    target="_top"
-                    disabled={!data.embedReady}
-                  >
+                  {/* D5: shopify://admin/… opened by App Bridge stays inside the admin (no top reload, no redirect). */}
+                  <Button variant="primary" onClick={() => window.open(data.activateUrl, "_top")} disabled={!data.embedReady}>
                     {embedSetup.button}
                   </Button>
                   {embedSetup.button !== "Open App embeds" ? (
-                    <Button url={data.embedReady ? data.activateUrl : undefined} target="_top" disabled={!data.embedReady}>
+                    <Button onClick={() => window.open(data.appEmbedsUrl, "_top")} disabled={!data.embedReady}>
                       Open App embeds
                     </Button>
                   ) : null}

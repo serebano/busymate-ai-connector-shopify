@@ -201,6 +201,16 @@ describe("update_shipping_address runs on 2026-10 and says when the total change
     expect(calls.filter((c) => !c.query.includes("OrderUpdate")).every((c) => c.opts?.apiVersion === undefined)).toBe(true);
   });
 
+  it("a new street address replaces the whole address: apartment, company and phone are cleared unless given (D10)", async () => {
+    const sent: Array<Record<string, unknown>> = [];
+    const base = addressAdmin("58.00").admin;
+    const admin = { shop: base.shop, graphql: async (q: string, v?: Record<string, unknown>, o?: { apiVersion?: string }) => { if (q.includes("OrderUpdate")) sent.push((v as { input: { shippingAddress: Record<string, unknown> } }).input.shippingAddress); return base.graphql(q, v, o); } };
+    await toolByName("update_shipping_address")!.handler({ order_number: "1001", address: { address1: "48 Oak Avenue", address2: "", city: "Seattle", zip: "98101", countryCode: "US" } }, ctx({ admin }));
+    expect(sent[0]).toEqual({ address1: "48 Oak Avenue", address2: "", company: "", phone: "", city: "Seattle", zip: "98101", countryCode: "US" });
+    await toolByName("update_shipping_address")!.handler({ order_number: "1001", address: { address1: "9 Elm St", address2: "Apt 2", city: "Seattle", zip: "98101", phone: "+12065550100" } }, ctx({ admin }));
+    expect(sent[1]).toMatchObject({ address2: "Apt 2", phone: "+12065550100", company: "" });
+  });
+
   it("tells the shopper the new total when the tax changed, and charges nothing", async () => {
     const { admin, calls } = addressAdmin("61.50");
     const r = await toolByName("update_shipping_address")!.handler(args, ctx({ admin }));

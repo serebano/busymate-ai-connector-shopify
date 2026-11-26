@@ -96,7 +96,7 @@ export const TOOLS: ToolDef[] = [
   // ── delegated + confirm (writes; exactly the two proven + listed: cancel, address) ──
   {
     name: "update_shipping_address",
-    description: "Update the shipping address on an unfulfilled order (confirm required).",
+    description: "Replace the shipping address on an unfulfilled order (confirm required). The address is replaced as a whole: send every line the shopper wants to keep (apartment, company, phone); any of address2, company and phone left out is cleared.",
     tier: "delegated",
     confirm: true,
     adminOnly: false,

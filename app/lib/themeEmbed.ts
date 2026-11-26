@@ -28,18 +28,44 @@ export const STOREFRONT_ASSISTANT_BLOCK = "assistant";
  */
 export const APP_EMBED_LABEL = "AI support chat";
 
+/**
+ * Review2 D5 (2026-11-26) — the first open of the old link
+ * (`https://<shop>/admin/themes/current/editor?…`, an <a target="_top">) reloaded the whole
+ * admin through the myshopify.com → admin.shopify.com redirect, and the editor once showed
+ * "Failed to load the page" (Page is redirecting to an unsupported URL). The link is now
+ * Shopify's documented app-embed deep link (`context=apps&template=index&activateAppId=
+ * <api_key>/<block handle>`) addressed as `shopify://admin/…`, which App Bridge opens INSIDE
+ * the admin (no top-level reload, no redirect). Measured 2026-11-26 on review2-sim-1126:
+ * `open("shopify://admin/themes/current/editor?…", "_top")` from the app frame lands on
+ * admin.shopify.com/store/<store>/themes/<id>/editor?context=apps&appEmbed=<key>/assistant
+ * with the embed switched on.
+ */
+export const THEME_EDITOR_TEMPLATE = "index";
+
 /** Theme editor with the app embed pre-activated (merchant still clicks Save). */
-export function themeEditorActivateUrl(shop: string, opts: { apiKey?: string; block?: string } = {}): string {
+export function themeEditorActivateUrl(_shop: string, opts: { apiKey?: string; block?: string } = {}): string {
   const apiKey = (opts.apiKey ?? process.env.SHOPIFY_API_KEY ?? "").trim();
   // Without app identity, open the manual app-embeds panel instead of a dead link.
-  if (!apiKey) return themeEditorAppEmbedsUrl(shop);
+  if (!apiKey) return themeEditorAppEmbedsUrl(_shop);
   const block = opts.block ?? STOREFRONT_ASSISTANT_BLOCK;
-  return `${themeEditorAppEmbedsUrl(shop)}&activateAppId=${encodeURIComponent(apiKey)}/${encodeURIComponent(block)}`;
+  return `${themeEditorAppEmbedsUrl(_shop)}&activateAppId=${encodeURIComponent(apiKey)}/${encodeURIComponent(block)}`;
 }
 
-/** Theme editor → App embeds panel (fallback when the deep link is stale). */
-export function themeEditorAppEmbedsUrl(shop: string): string {
-  return `https://${shop}/admin/themes/current/editor?context=apps`;
+/** Theme editor → App embeds panel, opened inside the admin by App Bridge. */
+export function themeEditorAppEmbedsUrl(_shop: string): string {
+  return `shopify://admin/themes/current/editor?context=apps&template=${THEME_EDITOR_TEMPLATE}`;
+}
+
+/**
+ * Review2 D9 — Home's header badge said "Live" while the embed was Off (step "To do", card
+ * "Off"). The assistant is only live for shoppers when the embed is on, so a published
+ * assistant with the embed off/unknown says so instead of "Live".
+ */
+export function homeHeaderStatus(provisionState: string, embed: EmbedStatus): { label: string; tone: "success" | "attention" | "info" } | null {
+  if (provisionState !== "published") return null; // the provisioning badges speak for themselves
+  if (embed === "on") return { label: "Live", tone: "success" };
+  if (embed === "off") return { label: "Not on storefront yet", tone: "attention" };
+  return { label: "Checking storefront", tone: "info" };
 }
 
 /**

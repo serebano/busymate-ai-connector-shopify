@@ -2,16 +2,16 @@
   "_locale": "it",
   "app_name": "Busymate AI",
   "tagline": "Assistenza IA per il tuo negozio, con contesto ordini",
-  "intro": "Assistenza IA che risponde solo con i contenuti del tuo negozio. Gestisce le richieste sugli ordini e riduce i ticket.",
-  "details": "Busymate AI aggiunge un assistente di supporto IA al tuo negozio online. Risponde usando solo i tuoi prodotti, le tue policy e i contenuti del negozio e dice quando non è sicuro. Gli acquirenti con accesso effettuato possono controllare stato e tracking dell'ordine, annullare un ordine non evaso o cambiare l'indirizzo di spedizione di un ordine non spedito; ogni azione viene prima confermata. Resi, rimborsi e conversazioni incerte passano al tuo team. Risponde nella lingua dell'acquirente, comprese le scritture da destra a sinistra.",
+  "intro": "Rispondi a domande su prodotti e ordini con l'IA. Il tuo team subentra quando gli acquirenti hanno bisogno di aiuto.",
+  "details": "Busymate AI aggiunge un assistente di supporto al tuo negozio online. Risponde a domande su prodotti e policy usando solo i contenuti del tuo negozio e dice quando non è sicuro. I clienti con accesso effettuato possono controllare stato e tracking dei propri ordini e, dopo la conferma, annullare un ordine non evaso o cambiare l'indirizzo di spedizione di un ordine non ancora spedito. Gli acquirenti possono chiedere una persona in qualsiasi momento e il tuo team prende in carico, risponde e risolve queste richieste in Shopify Admin.",
   "feature_bullets": [
-    "Risponde solo con i tuoi prodotti, le tue politiche e i contenuti del negozio, con le fonti",
+    "Risponde solo con i tuoi prodotti, le tue policy e i contenuti del negozio",
     "Dice quando non è sicuro e propone una persona invece di tirare a indovinare",
-    "I clienti con accesso effettuato ottengono stato dell'ordine, tracciamento e azioni confermate",
-    "Annullamenti e cambi di indirizzo sono sempre confermati prima dall'acquirente",
-    "Risponde nella lingua del cliente, comprese le scritture da destra a sinistra"
+    "Gli acquirenti con accesso controllano stato e tracking dei propri ordini",
+    "Il tuo team prende in carico, risponde e risolve i passaggi in Shopify Admin",
+    "Annulla o cambia l'indirizzo di un ordine solo dopo la conferma dell'acquirente"
   ],
   "pricing_summary": "Piani mensili con risoluzioni IA incluse, poi un costo per risoluzione fino al tuo limite di spesa mensile. Piano gratuito disponibile; i piani a pagamento iniziano con una prova gratuita di 14 giorni.",
-  "privacy_url": "https://store.busymate.ai/legal/privacy",
+  "privacy_url": "https://store.busymate.ai/legal/shopify-privacy",
   "faq_url": "https://store.busymate.ai/legal/faq"
 }

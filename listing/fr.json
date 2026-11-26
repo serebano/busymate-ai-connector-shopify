@@ -2,16 +2,16 @@
   "_locale": "fr",
   "app_name": "Busymate AI",
   "tagline": "Assistance IA pour votre boutique, au fait des commandes",
-  "intro": "Une assistance IA qui répond uniquement à partir du contenu de votre boutique. Elle traite les demandes de commande et réduit les tickets.",
-  "details": "Busymate AI ajoute un assistant de support IA à votre boutique en ligne. Il répond uniquement à partir de vos propres produits, politiques et contenus, et indique quand il n'est pas sûr. Les acheteurs connectés peuvent consulter le statut et le suivi de leur commande, annuler une commande non expédiée ou modifier l'adresse de livraison d'une commande non expédiée ; chaque action est d'abord confirmée. Les retours, remboursements et conversations incertaines sont transmis à votre équipe. Il répond dans la langue de l'acheteur, y compris les écritures de droite à gauche.",
+  "intro": "Répondez aux questions sur les produits et commandes grâce à l'IA. Votre équipe prend le relais quand l'acheteur a besoin d'aide.",
+  "details": "Busymate AI ajoute un assistant de support à votre boutique en ligne. Il répond aux questions sur les produits et les politiques en s'appuyant uniquement sur le contenu de votre boutique et indique quand il n'est pas sûr. Les clients connectés peuvent consulter le statut et le suivi de leurs propres commandes et, après confirmation, annuler une commande non traitée ou modifier l'adresse de livraison d'une commande non expédiée. Les acheteurs peuvent demander une personne à tout moment, et votre équipe prend en charge, répond et résout ces demandes dans Shopify Admin.",
   "feature_bullets": [
-    "Répond uniquement à partir de vos propres produits, politiques et contenus, avec ses sources",
+    "Répond uniquement à partir de vos produits, politiques et contenus de boutique",
     "Indique quand il n'est pas sûr et propose un humain plutôt que de deviner",
-    "Les acheteurs connectés obtiennent le statut, le suivi et des actions confirmées sur leurs commandes",
-    "Les annulations et changements d'adresse sont toujours d'abord confirmés par l'acheteur",
-    "Répond dans la langue de l'acheteur, y compris les écritures de droite à gauche"
+    "Les acheteurs connectés consultent le statut et le suivi de leurs commandes",
+    "Votre équipe prend en charge, répond et résout les transferts dans Shopify Admin",
+    "N'annule ou ne change l'adresse d'une commande qu'après confirmation de l'acheteur"
   ],
   "pricing_summary": "Des forfaits mensuels avec des résolutions IA incluses, puis une facturation par résolution jusqu'à votre plafond de dépenses mensuel. Forfait gratuit disponible ; les forfaits payants commencent par un essai gratuit de 14 jours.",
-  "privacy_url": "https://store.busymate.ai/legal/privacy",
+  "privacy_url": "https://store.busymate.ai/legal/shopify-privacy",
   "faq_url": "https://store.busymate.ai/legal/faq"
 }
