@@ -39,6 +39,8 @@ describe("awaitRuntimeSettled", () => {
     const src = readFileSync("app/routes/app.connector.tsx", "utf8");
     expect(src).toContain("awaitRuntimeSettled(");
     expect(src).toMatch(/runtime\?\.state === "ready" \|\| runtime\?\.state === "pending"/);
-    expect(src).toContain("goes live in a moment");
+    // The wording moved to the shared helper (review2 D3b) that the toast and the inline result use.
+    expect(src).toContain("reconnectResultMessage(");
+    expect(readFileSync("app/lib/connectionView.ts", "utf8")).toContain("goes live in a moment");
   });
 });
