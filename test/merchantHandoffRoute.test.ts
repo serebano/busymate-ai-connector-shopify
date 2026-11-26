@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({ authenticate: vi.fn(), tenant: vi.fn(), call: 
 vi.mock("../app/shopify.server", () => ({ authenticate: { admin: mocks.authenticate } }));
 vi.mock("../app/db.server", () => ({ default: { shopTenant: { findUnique: mocks.tenant } } }));
 vi.mock("../app/bmai.server", () => ({ callMcpTool: mocks.call }));
-import { action, loader } from "../app/routes/app.handoffs.$requestId";
+import { action, loader } from "../app/routes/app.conversations_.handoffs.$requestId";
 import { loader as transcriptLoader } from "../app/routes/app.transcripts.$sessionId";
 
 const ID = "20000000-0000-4000-8000-000000000002";
@@ -16,7 +16,7 @@ const args = (post = false) => ({
   request: new Request(`https://store.busymate.ai/app/handoffs/${ID}?tenant_id=forged&shop=forged.myshopify.com`, post ? {
     method: "POST", body: new URLSearchParams({ intent: "claim", confirm: "yes", tenant_id: "forged", request_id: "forged", session_id: "forged" }),
   } : undefined), params: { requestId: ID }, context: {},
-  url: new URL(`https://store.busymate.ai/app/handoffs/${ID}`), pattern: "/app/handoffs/:requestId",
+  url: new URL(`https://store.busymate.ai/app/handoffs/${ID}`), pattern: "/app/conversations/handoffs/:requestId",
 });
 
 beforeEach(() => {

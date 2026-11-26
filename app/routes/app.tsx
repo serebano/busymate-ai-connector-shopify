@@ -10,6 +10,7 @@ import { authenticate } from "../shopify.server";
 import { PolarisLink } from "../components/PolarisLink";
 import { AppRouteErrorView } from "../components/AppRouteError";
 import { EmbeddedNavigationContext } from "../components/EmbeddedNavigation";
+import { AdminLoadingBar } from "../components/AdminLoadingBar";
 import { describeTransportError } from "../lib/clientAction";
 import { embeddedAppUrl, embeddedNavigationForShop } from "../lib/embeddedNavigation";
 import { isRouteControlFlow, reloadEmbeddedFrame } from "../lib/layoutError";
@@ -39,6 +40,7 @@ export default function App() {
           <Link to={embeddedAppUrl("/app/connector", navigation)}>Store connection</Link>
           <Link to={embeddedAppUrl("/app/billing", navigation)}>Billing</Link>
         </NavMenu>
+        <AdminLoadingBar />
         <Outlet />
       </PolarisAppProvider>
       </EmbeddedNavigationContext.Provider>
