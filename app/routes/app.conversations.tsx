@@ -5,7 +5,6 @@ import {
   Banner,
   BlockStack,
   Card,
-  EmptyState,
   IndexTable,
   InlineGrid,
   Layout,
@@ -22,6 +21,7 @@ import { storefrontPublicForShop } from "../bmai.server";
 import { hostedWebFor } from "../lib/storefrontPassword";
 import { LocalTime } from "../components/LocalTime";
 import { AppRouteBoundary } from "../components/AppRouteError";
+import { EmptyCardState } from "../components/EmptyCardState";
 
 // Embedded-frame contract (#retrain-500): a route error recovers in-frame, never
 // the root 500 page.
@@ -97,12 +97,10 @@ export default function ConversationsPage() {
                   </InlineGrid>
                 </div>
                 {open.length === 0 ? (
-                  <div style={{ padding: "0 var(--p-space-400) var(--p-space-400)" }}>
-                    <Text as="p" tone="subdued">
-                      No shopper is waiting for a human right now. When the assistant is not confident it offers a
-                      handoff; open a request here to read the conversation, claim it, and reply to the customer.
-                    </Text>
-                  </div>
+                  <EmptyCardState heading="No shopper is waiting for a person">
+                    When the assistant is not confident it offers a handoff. Open a request here to read the
+                    conversation, claim it, and reply to the customer.
+                  </EmptyCardState>
                 ) : (
                   <IndexTable
                     resourceName={{ singular: "handoff", plural: "handoffs" }}
@@ -123,7 +121,7 @@ export default function ConversationsPage() {
                           <div title={h.reason ?? undefined} style={REASON_CELL}>{h.reason ?? "—"}</div>
                         </IndexTable.Cell>
                         <IndexTable.Cell>
-                          <Link url={`/app/handoffs/${encodeURIComponent(h.id)}`}>Open conversation</Link>
+                          <Link url={`/app/conversations/handoffs/${encodeURIComponent(h.id)}`}>Open conversation</Link>
                         </IndexTable.Cell>
                       </IndexTable.Row>
                     ))}
@@ -138,7 +136,7 @@ export default function ConversationsPage() {
                 <Text as="p" tone="subdued">Read the customer and team messages after a request is closed.</Text>
                 {closed.map((handoff) => <InlineGrid columns="1fr auto" key={handoff.id}>
                   <BlockStack gap="100">
-                    <Link url={`/app/handoffs/${encodeURIComponent(handoff.id)}`}>{handoff.reason ?? "Customer conversation"}</Link>
+                    <Link url={`/app/conversations/handoffs/${encodeURIComponent(handoff.id)}`}>{handoff.reason ?? "Customer conversation"}</Link>
                     <Text as="p" tone="subdued"><LocalTime iso={handoff.requestedAt} /></Text>
                   </BlockStack>
                   <Badge>{handoffStatus(handoff.status).label}</Badge>
@@ -157,12 +155,10 @@ export default function ConversationsPage() {
                   </InlineGrid>
                 </div>
                 {convs.length === 0 ? (
-                  <EmptyState heading="No conversations yet" image="">
-                    <p>
-                      Once the storefront assistant is on, every shopper conversation is listed here with its start and
-                      last-activity time.
-                    </p>
-                  </EmptyState>
+                  <EmptyCardState heading="No conversations yet">
+                    Once the storefront assistant is on, every shopper conversation is listed here with its start and
+                    last-activity time.
+                  </EmptyCardState>
                 ) : (
                   <IndexTable
                     resourceName={{ singular: "conversation", plural: "conversations" }}
@@ -176,7 +172,7 @@ export default function ConversationsPage() {
                         <IndexTable.Cell><LocalTime iso={c.lastActiveAt} /></IndexTable.Cell>
                         <IndexTable.Cell><Badge tone={c.status.tone}>{c.status.label}</Badge></IndexTable.Cell>
                         <IndexTable.Cell>
-                          <Link url={`/app/transcripts/${encodeURIComponent(c.sessionId)}`}>Read assistant chat</Link>
+                          <Link url={`/app/conversations/transcripts/${encodeURIComponent(c.sessionId)}`}>Read assistant chat</Link>
                         </IndexTable.Cell>
                       </IndexTable.Row>
                     ))}

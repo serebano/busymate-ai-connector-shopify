@@ -64,6 +64,7 @@ CHECKLIST.md                Built-for-Shopify compliance status
 - **Public naming** — merchant- and customer-facing copy says **"Busymate AI"** / **"your mate"**,
   never internal codenames. Enforced by `test/naming.test.ts`.
 - **Embedded-frame contract** — nothing paints the root "500" in the admin iframe: every `app.*.tsx` child route exports `ErrorBoundary = AppRouteBoundary` and (with an `action`) `clientAction = failClosedClientAction`; enforced by `test/clientAction.test.ts` ([CONVENTIONS](docs/CONVENTIONS.md#embedded-frame-contract)).
+- **Admin UX follows Built for Shopify** — an editable form uses the contextual save bar (`<SaveBar>` + `app/lib/unsavedChanges.ts` + `useLeaveGuard`), never its own Save button; a validation error sits by its field and a failed save is a banner that stays (no error toast); a page under a nav item lives under that item's URL (`/app/conversations/…`) with the title-bar back action (`ConversationTitleBar`); empty cards use `EmptyCardState`. Enforced by `test/settingsSaveBar.test.ts` + `test/adminNavigation.test.ts`.
 - **Every change ships a test** — `test/**`, `npm test`. Assert the denied/failure path too.
 
 ## Commands

@@ -4,6 +4,29 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-11-26 — embedded admin: save bar, back actions, inline errors (Built for Shopify 4.1.1, 4.1.4, 4.1.5, 4.2.4)
+
+Server-rendered admin only: no Shopify app version, no extension or config change.
+
+- **Assistant settings** uses Shopify's contextual save bar (App Bridge `<SaveBar>`): it shows while the
+  names differ from the saved ones, Save and Discard live there (the page's own Save button is gone), and
+  the admin holds navigation until the merchant decides. A failed save keeps the edit and the bar. The
+  app's own router is guarded with `shopify.saveBar.leaveConfirmation()` (`app/lib/useLeaveGuard.ts`).
+  Rules: `app/lib/unsavedChanges.ts`.
+- **Errors stay and sit by the field.** An empty or too-long name is refused in the browser and again on
+  the server (`brandingFieldErrors`), shown under that field in red; a failure no field explains is a
+  critical banner above the form. No error toast (a toast fades). The handoff reply field shows a refused
+  reply the same way.
+- **Pages under Conversations** moved to `/app/conversations/handoffs/:id` and
+  `/app/conversations/transcripts/:id`, so the admin keeps "Conversations" highlighted; the old
+  addresses redirect. Both have the back action in Shopify's title bar (breadcrumb) with Refresh next to
+  it (`app/components/ConversationTitleBar.tsx`); the 10 s background check no longer flickers Refresh.
+- **Loading and empty states.** Shopify's loading bar runs while any page of the app loads
+  (`AdminLoadingBar`, App Bridge Loading API). Cards share one empty state (`EmptyCardState`); the
+  Conversations empty state no longer renders an image element with an empty source.
+- Tests: `test/settingsSaveBar.test.ts` (save bar, inline errors, leave guard, in a DOM),
+  `test/unsavedChanges.test.ts`, `test/adminNavigation.test.ts`.
+
 ## 2026-11-26 — a signed actor credential runs ONE call of ONE tool (ECO-03, P1 security)
 
 - `app/mcp/auth.ts` now carries the verified v3 `tool` claim (actor token and guest binding) and the
