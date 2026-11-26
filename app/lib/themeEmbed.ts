@@ -63,10 +63,18 @@ export interface ExtensionInfoLike {
  */
 export function embedFromExtensions(extensions: ReadonlyArray<ExtensionInfoLike> | null | undefined): "on" | "off" | null {
   if (!Array.isArray(extensions)) return null;
-  const ext = extensions.find((e) => e?.type === "theme_app_extension" && e.handle === STOREFRONT_ASSISTANT_EXTENSION);
-  const block = (ext?.activations as ReadonlyArray<{ handle?: unknown; status?: unknown }> | null | undefined)?.find(
-    (a) => a?.handle === STOREFRONT_ASSISTANT_BLOCK,
-  );
+  // Live App Bridge (0.41.x, 2026-11-26) reports our theme extension with handle
+  // "theme-app-extension", not the toml handle "storefront-assistant", so match the
+  // theme extension by type and the embed by its block handle (the app has ONE theme
+  // extension). Our own handle still wins when Shopify does report it.
+  const themeExts = extensions.filter((e) => e?.type === "theme_app_extension");
+  const ordered = [
+    ...themeExts.filter((e) => e.handle === STOREFRONT_ASSISTANT_EXTENSION),
+    ...themeExts.filter((e) => e.handle !== STOREFRONT_ASSISTANT_EXTENSION),
+  ];
+  const block = ordered
+    .flatMap((e) => (Array.isArray(e.activations) ? (e.activations as ReadonlyArray<{ handle?: unknown; status?: unknown }>) : []))
+    .find((a) => a?.handle === STOREFRONT_ASSISTANT_BLOCK);
   if (!block) return null;
   return block.status === "active" ? "on" : "off";
 }
