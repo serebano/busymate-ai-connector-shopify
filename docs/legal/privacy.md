@@ -2,7 +2,7 @@
   Privacy policy for the "Busymate AI for Shopify" app. This is app-specific
   (NOT the devtools privacy policy). Published at https://store.busymate.ai/legal/privacy
   (the URL in listing/*.json and on the canonical store record; render with
-  `node scripts/render-legal.mjs`). Checked against the code on 2026-11-26 (scopes in
+  `node scripts/render-legal.mjs`). Checked against the code and a live storefront on 2026-11-26 (scopes in
   shopify.app.toml, prisma/schema.prisma, app/mcp/tools/*, app/lib/themeEmbed.ts,
   app/lib/encryptedSessionStorage.ts). Legal review by the owner/counsel is still an
   owner decision; see the flags in .coordination/audits/shopify-audit-20261125.md (L5).
@@ -120,7 +120,8 @@ cookie. It stores only these items:
 
 | Name | Where | Purpose | Lifetime |
 |---|---|---|---|
-| `bm_support_visitor:<assistant>` | the store's `localStorage`, and a cookie on `busymate.ai` | An opaque random id (no personal data) that recognises the same shopper the next time they open the chat, so the conversation is not lost | Up to about 13 months |
+| `bm_support_visitor:<assistant>` | the store's `localStorage`, and a first-party cookie on the store's own domain | An opaque random id (no personal data) that recognises the same shopper the next time they open the chat, so the conversation is not lost | Up to about 13 months |
+| `bm_support_visitor` and `__Host-bm_support_visitor_p` | cookies on `busymate.ai`, used inside the chat frame | The same opaque id, kept in the chat frame so it survives browsers that block third-party storage (the second is a partitioned copy) | Up to about 13 months |
 | `v2_anon` | cookie on `busymate.ai` (HttpOnly), used inside the chat frame | Anonymous, browser-bound id that ties a conversation to the browser that started it | About 12 months |
 | `bm_unread:<assistant>`, `bm_teaser_x:<assistant>`, `bm_widget_open:<assistant>` | the store's `sessionStorage` / `localStorage` | Remember whether the chat is open, an unread reply is waiting, and a teaser was dismissed (UI state only) | Browser session, or until cleared |
 
