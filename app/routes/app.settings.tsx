@@ -16,7 +16,7 @@ import { SaveBar, TitleBar, useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { setTenantBranding } from "../bmai.server";
-import { retrainForMerchant } from "../lib/ingest";
+import { queueRetrainForMerchant } from "../lib/ingest";
 import { ASSISTANT_NAME_MAX, PRODUCT_NAME_MAX, brandingFieldErrors, saveBrandingAndRepublish } from "../lib/brandingSave";
 import { formReducer, initialFormState, isDirty } from "../lib/unsavedChanges";
 import { useLeaveGuard } from "../lib/useLeaveGuard";
@@ -86,7 +86,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     session.shop,
     tenant?.bmaiTenantId,
     { productName, assistantName },
-    { setBranding: (shop, tenantId, branding) => setTenantBranding(shop, tenantId, branding), republish: (shop) => retrainForMerchant(shop) },
+    { setBranding: (shop, tenantId, branding) => setTenantBranding(shop, tenantId, branding), republish: (shop) => queueRetrainForMerchant(shop) },
   );
   // #2618 — the merchant reads one plain sentence; the raw cause goes to the log.
   return {
@@ -100,7 +100,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     notice: persona && res.ok
       ? `Saved. "${typedAssistantName}" is Busymate AI's own assistant, so your store's assistant is called "${assistantName.trim()}". You can rename it any time.`
       : res.ok && res.queued
-        ? "Assistant settings saved. Your storefront shows the new names within a minute or two, as soon as the training in progress finishes."
+        ? "Assistant settings saved. Your storefront assistant shows the new names in under a minute."
         : null,
   };
 };

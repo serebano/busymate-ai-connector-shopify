@@ -53,6 +53,16 @@ export async function purgeReingest(shop: string): Promise<void> {
   await prisma.$executeRaw`DELETE FROM "KbReingestQueue" WHERE "shop"=${shop}`;
 }
 
+/**
+ * Review2 D6 — queue a due-NOW re-train for the background worker (shopify-kb-reingest, LISTEN
+ * kb_reingest_wake) and return at once; nothing is claimed here. Returns the SQL verdict:
+ * "enqueued" (or "duplicate") = the worker publishes it; "inactive" = refused (uninstalled shop).
+ */
+export async function enqueueImmediateReingest(shop: string): Promise<string> {
+  const rows = await boundedTransaction((tx) => tx.$queryRaw<Array<{ r: string }>>`SELECT kb_reingest_enqueue(${shop},${`internal:${randomUUID()}`},true) AS r`);
+  return rows[0]?.r ?? "unknown";
+}
+
 export async function requestImmediateReingest(shop: string): Promise<ReingestLease | null> {
   await boundedTransaction((tx) => tx.$queryRaw`SELECT kb_reingest_enqueue(${shop},${`internal:${randomUUID()}`},true)`);
   const rows = await boundedTransaction((tx) => tx.$queryRaw<Row[]>`SELECT * FROM kb_reingest_claim(${randomUUID()},${shop})`);
