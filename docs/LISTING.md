@@ -88,6 +88,6 @@ directory `install_url` points at the live App Store page.
   > Billing uses Shopify App Pricing (no off-platform charges). In the app open **Billing → Choose a
   > plan** — Shopify's hosted plan page opens; pick the **$0 Free plan** (or any paid plan: dev
   > stores test at no charge) and approve. The subscription then appears under **Settings → Apps
-  > and sales channels → Busymate AI → Billing** and the app's Billing page shows the plan. Until
+  > → Busymate AI** and the app's Billing page shows the plan. Until
   > you choose, both Shopify and the app show "No plan selected" and the assistant runs at Free-plan
   > limits.

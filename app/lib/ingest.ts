@@ -17,7 +17,7 @@ import { buildKbSnapshot } from "./kbFetch";
 import { trainTenant, type ReingestReason, type TrainOutcome } from "./kbTrain";
 import { runtimeOrigins } from "./provision";
 import { enqueueWebhookReingest, type ReingestLease } from "./reingestQueue";
-import { reingestStore, requestImmediateReingest, saveTrainingForLease } from "./reingestStore.server";
+import { enqueueImmediateReingest, reingestStore, requestImmediateReingest, saveTrainingForLease } from "./reingestStore.server";
 import { shopToSlug } from "./tenantSlug";
 import { TRAINING_NOT_STARTED } from "./kbFreshness";
 
@@ -74,6 +74,26 @@ export async function retrainForMerchant(
     return { ...out, ok: true, error: undefined, queued: true };
   }
   return out;
+}
+
+/**
+ * Review2 D6 (2026-11-26) — Assistant settings Save took 9-13 s: it ran the whole training publish
+ * inline (fork an attempt child, read the catalog, publish). Measured on review2-sim-1126:
+ * set_tenant_branding 94 ms, retrainForMerchant 6.7 s. The re-publish now goes to the durable
+ * re-train queue, due now, and the background worker publishes the new names in seconds (with
+ * the queue's retries and /api/kb/health watching it). Fail-closed: an inactive shop is refused.
+ */
+export async function queueRetrainForMerchant(
+  shop: string,
+  enqueue: (shop: string) => Promise<string> = enqueueImmediateReingest,
+): Promise<{ ok: boolean; queued?: boolean; error?: string }> {
+  try {
+    const verdict = await enqueue(shop);
+    if (verdict === "enqueued" || verdict === "duplicate") return { ok: true, queued: true };
+    return { ok: false, error: verdict === "inactive" ? "shop is inactive — not re-trained" : `re-train not queued (${verdict})` };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 /** Only the isolated attempt child calls the actual publisher. */
