@@ -100,34 +100,51 @@ export function parseListingPlanFeatures(features: readonly string[]): {
 }
 
 /**
- * How many of a batch of new resolutions are billable overage units, honoring the
- * plan's included allowance (per billing cycle) and its monthly overage cap.
- * App Pricing has no usage cap concept, so the app enforces the cap by not
- * reporting beyond it. Pure; the widget is never affected.
+ * The most usage units Shopify may ever hold for one billing cycle of `plan`:
+ * the included allowance (Shopify's own $0 first tier) plus as many paid units as
+ * fit under the app-enforced monthly overage cap. Starter 38 + floor($200/$0.49)
+ * = 446 units → $199.92; Growth 225 + 2272 → $999.68; Scale 830 + 11904 →
+ * $4,999.68. 0 for a plan without overage (Free never reports usage).
  */
-export function computeBillableUnits(input: {
+export function reportableUnitsCeiling(plan: Plan): number {
+  if (plan.overageCents === null || plan.overageCents <= 0) return 0;
+  if (plan.capCents === null) return Number.MAX_SAFE_INTEGER;
+  return plan.includedResolutions + Math.floor(plan.capCents / plan.overageCents);
+}
+
+/**
+ * What to report to Shopify for a batch of new (post-trial) resolutions.
+ *
+ * SHOPIFY APPLIES THE ALLOWANCE. Every paid plan's `ai_resolution` usage charge is
+ * a GRADUATED tiered price whose first tier is free: "First 38 AI resolution —
+ * Free, 39+ — $0.49" (Starter; 225/$0.44 Growth; 830/$0.42 Scale — read live from
+ * the Partner API `activeSubscription` items and the approve-charge page). So the
+ * app reports EVERY resolution as one unit; Shopify bills only the units past its
+ * free tier. (Until 2026-11-26 the app reported only units past the allowance, so
+ * the merchant got the allowance twice and paid from resolution 77, not 39.)
+ *
+ * App Pricing has no usage cap, so the cap is enforced by never letting the
+ * cycle's reported total pass `reportableUnitsCeiling(plan)`.
+ *
+ * `reportedBefore` = units already reported to Shopify in this cycle (the meter
+ * cursor's `cycleReported`). Pure; the widget is never affected.
+ */
+export function computeUsageReport(input: {
   plan: Plan;
-  /** Resolutions already counted in this billing cycle (before this batch). */
+  /** Billable resolutions already counted in this billing cycle (before this batch). */
   cycleResolutions: number;
+  /** Units already reported to Shopify in this billing cycle. */
+  reportedBefore: number;
   newResolutions: number;
 }): { units: number; capped: boolean } {
   const { plan } = input;
   const before = Math.max(0, Math.floor(input.cycleResolutions));
   const fresh = Math.max(0, Math.floor(input.newResolutions));
-  if (plan.overageCents === null || plan.overageCents <= 0 || fresh === 0) return { units: 0, capped: false };
-  const billedBefore = Math.max(0, before - plan.includedResolutions);
-  const billedAfter = Math.max(0, before + fresh - plan.includedResolutions);
-  let units = billedAfter - billedBefore;
-  let capped = false;
-  if (plan.capCents !== null) {
-    const capUnits = Math.floor(plan.capCents / plan.overageCents);
-    const headroom = Math.max(0, capUnits - billedBefore);
-    if (units > headroom) {
-      units = headroom;
-      capped = true;
-    } else if (billedAfter >= capUnits) {
-      capped = true;
-    }
-  }
-  return { units, capped };
+  const reported = Math.max(0, Math.floor(input.reportedBefore));
+  const ceiling = reportableUnitsCeiling(plan);
+  if (ceiling === 0) return { units: 0, capped: false };
+  const target = Math.min(before + fresh, ceiling);
+  const units = Math.max(0, target - reported);
+  return { units, capped: plan.capCents !== null && before + fresh >= ceiling };
 }
+

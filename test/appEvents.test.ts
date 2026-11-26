@@ -5,6 +5,7 @@ import {
   createAppEventsClient,
   readAppEventsConfig,
   usageIdempotencyKey,
+  cumulativeUsageKey,
 } from "../app/lib/appEvents";
 
 /**
@@ -31,6 +32,26 @@ describe("readAppEventsConfig", () => {
     expect(k.length).toBeLessThanOrEqual(64);
     expect(k).toBe(usageIdempotencyKey("acme.myshopify.com", "cursor-abc"));
     expect(k).not.toBe(usageIdempotencyKey("acme.myshopify.com", "cursor-abd"));
+  });
+});
+
+describe("cumulativeUsageKey + Idempotent-Replay", () => {
+  it("one key per (shop, cycle, units reported so far), ≤64 chars", () => {
+    const k = cumulativeUsageKey("acme.myshopify.com", "2026-11-22T17:36:35Z", 40);
+    expect(k.length).toBeLessThanOrEqual(64);
+    expect(k).toBe(cumulativeUsageKey("acme.myshopify.com", "2026-11-22T17:36:35Z", 40));
+    expect(k).not.toBe(cumulativeUsageKey("acme.myshopify.com", "2026-11-22T17:36:35Z", 41));
+    expect(k).not.toBe(cumulativeUsageKey("acme.myshopify.com", "2026-12-22T17:36:35Z", 40));
+    expect(k).not.toBe(cumulativeUsageKey("other.myshopify.com", "2026-11-22T17:36:35Z", 40));
+  });
+  it("a 202 with Idempotent-Replay: true is NOT a new report (held, replay flagged)", async () => {
+    const fetchMock = vi.fn(async (url: string) =>
+      url.includes("access_token")
+        ? new Response(JSON.stringify({ access_token: "jwt", expires_in: 3600 }), { status: 200 })
+        : new Response(JSON.stringify({ success: true }), { status: 202, headers: { "Idempotent-Replay": "true" } }));
+    const client = createAppEventsClient({ env: ENV, fetch: fetchMock as unknown as typeof fetch });
+    const r = await client.reportUsage({ shopId: "gid://shopify/Shop/1", units: 3, idempotencyKey: "k", timestamp: "2026-11-26T10:00:00Z" });
+    expect(r).toMatchObject({ ok: false, replay: true });
   });
 });
 

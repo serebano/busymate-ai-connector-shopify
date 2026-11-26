@@ -20,13 +20,46 @@ async function fixture() {
 async function check(name, run) { await run(); passed++; console.log(`ok ${passed} - ${name}`); }
 try {
   const engine = await db.$queryRaw`SELECT version()`;
-  assert.match(engine[0].version, /PostgreSQL 16\./);
-  await check('overlapping preparation shares one immutable batch', async () => {
+  assert.match(engine[0].version, /PostgreSQL (16|17|18)\./); // production runs PG18 (efirs)
+  await check('overlapping preparation leaves exactly one pending immutable batch (the later one supersedes)', async () => {
     const b = await fixture();
     const [a, c] = await Promise.all([core.prepare(b), core.prepare({ ...b, afterCursor: 'c2', units: 9 })]);
-    assert.equal(a.id, c.id); assert.deepEqual(a.payload, c.payload);
-    assert.equal(await db.meterDelivery.count({ where: { shop: b.shop } }), 1);
+    assert.equal(await db.meterDelivery.count({ where: { shop: b.shop, state: 'pending' } }), 1);
+    assert.equal(await db.meterDelivery.count({ where: { shop: b.shop } }), a.id === c.id ? 1 : 2);
     await assert.rejects(db.$executeRaw`UPDATE "MeterDelivery" SET "payload"='{}'::jsonb WHERE "id"=${a.id}`, /immutable/);
+  });
+  await check('a newer batch supersedes an UNCLAIMED pending one; a claimed one is kept; an identical earlier batch is revived', async () => {
+    const b = await fixture();
+    const first = await core.prepare(b);
+    const newer = await core.prepare({ ...b, afterCursor: 'c2', units: 9 });
+    assert.notEqual(newer.id, first.id);
+    assert.equal((await db.meterDelivery.findUnique({ where: { id: first.id } })).state, 'superseded');
+    const claim = await core.claim(b.shop); assert.equal(claim.id, newer.id);
+    assert.equal((await core.prepare({ ...b, afterCursor: 'c3', units: 11 })).id, newer.id); // live lease: untouched
+    await core.release(claim.id, claim.leaseToken);
+    const revived = await core.prepare(b); // back to the first payload
+    assert.equal(revived.id, first.id); assert.equal(revived.state, 'pending');
+    assert.equal((await db.meterDelivery.findUnique({ where: { id: newer.id } })).state, 'superseded');
+    assert.equal(await db.meterDelivery.count({ where: { shop: b.shop, state: 'pending' } }), 1);
+  });
+  await check('a reconciliation row is never superseded (metering stays stopped for a human)', async () => {
+    const b = await fixture(); await core.prepare(b); const claim = await core.claim(b.shop);
+    await db.billingState.update({ where: { shop: b.shop }, data: { plan: 'scale' } });
+    assert.equal((await core.accept(claim.id, claim.leaseToken)).state, 'reconciliation');
+    await db.billingState.update({ where: { shop: b.shop }, data: { plan: 'growth' } });
+    const again = await core.prepare({ ...b, afterCursor: 'c2', units: 9 });
+    assert.equal(again.id, claim.id); assert.equal(again.state, 'reconciliation');
+  });
+  await check('accept runs the ledger commit in the SAME transaction (both or neither)', async () => {
+    const b = await fixture(); await core.prepare(b); const claim = await core.claim(b.shop);
+    await assert.rejects(core.accept(claim.id, claim.leaseToken, async () => { throw new Error('synthetic ledger failure'); }), /synthetic ledger failure/);
+    assert.equal((await db.billingState.findUnique({ where: { shop: b.shop } })).lastMeteredCursor, 'c0');
+    assert.equal((await db.meterDelivery.findUnique({ where: { id: claim.id } })).state, 'pending');
+    const done = await core.accept(claim.id, claim.leaseToken, (tx) => tx.meteredResolution.createMany({ data: [{ tenantId: `t-${b.shop}`, sessionId: 's1', occurredAt: new Date('2026-09-10T00:00:00Z') }] }));
+    assert.equal(done.state, 'accepted');
+    assert.equal((await db.billingState.findUnique({ where: { shop: b.shop } })).lastMeteredCursor, 'c1');
+    assert.equal(await db.meteredResolution.count({ where: { tenantId: `t-${b.shop}` } }), 1);
+    await db.meteredResolution.deleteMany({ where: { tenantId: `t-${b.shop}` } });
   });
   await check('one lease owner; takeover retains payload and rejects old owner', async () => {
     const b = await fixture(); await core.prepare(b);

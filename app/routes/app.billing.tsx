@@ -66,11 +66,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     chosen: r.chosen ? planFor(r.chosen).name : null,
     source: r.source,
     unverified: r.unverified,
-    trialEndsAt: r.trialEndsAt,
+    // Only a trial still running is a trial (Shopify keeps trialEndsAt on the contract for good).
+    trialEndsAt: r.trialEndsAt && Date.parse(r.trialEndsAt) > Date.now() ? r.trialEndsAt : null,
     usage: {
       included: plan.includedResolutions,
-      cycleResolutions: measuredCycleResolutions(billing?.lastMeteredCursor, meter.error),
-      reportedUnits: r.usageQuantity,
+      cycleResolutions: measuredCycleResolutions(billing?.lastMeteredCursor, meter.error, r.cycleStart),
+      // Shopify's meter holds every resolution this cycle; its first `included` units are free.
+      billedExtra: r.usageQuantity === null ? null : Math.max(0, r.usageQuantity - plan.includedResolutions),
       capped: meter.capped,
       meterError: meter.error ?? null,
     },
@@ -123,9 +125,10 @@ export default function BillingPage() {
             {data.stuckDeliveryCount > 0 ? (
               <Banner tone="critical" title="A billing delivery needs review">
                 <p>
-                  {data.stuckDeliveryCount === 1 ? "One usage report" : `${data.stuckDeliveryCount} usage reports`} could not be
-                  reconciled automatically after your plan or billing state changed mid-delivery. It is not being retried
-                  silently — contact support so we can resolve it by hand.
+                  {data.stuckDeliveryCount === 1 ? "One usage report was" : `${data.stuckDeliveryCount} usage reports were`} sent
+                  to Shopify while your plan changed, before we could record {data.stuckDeliveryCount === 1 ? "it" : "them"}. Usage
+                  reporting for your store is paused until our team checks it, so nothing is charged twice — contact support
+                  if you have questions.
                 </p>
               </Banner>
             ) : null}
@@ -177,8 +180,10 @@ export default function BillingPage() {
                 <Text as="p" tone="subdued">
                   {data.usage.cycleResolutions === null
                     ? `Usage shows here after the first hourly update. Your plan includes ${data.usage.included} resolutions per billing cycle`
-                    : `This billing cycle: ${data.usage.cycleResolutions} of ${data.usage.included} included resolutions used`}
-                  {data.usage.reportedUnits !== null ? ` · ${data.usage.reportedUnits} extra resolutions billed by Shopify` : ""}
+                    : data.trialEndsAt
+                      ? `Free trial: ${data.usage.cycleResolutions} resolutions so far, never billed`
+                      : `This billing cycle: ${data.usage.cycleResolutions} of ${data.usage.included} included resolutions used`}
+                  {data.usage.billedExtra ? ` · ${data.usage.billedExtra} extra resolutions billed by Shopify` : ""}
                   {data.usage.capped ? " · monthly cap reached — no further overage this month" : ""}
                   {data.freeLimit ? " · Free allowance used — new conversations go to your team until it resets" : ""}.
                 </Text>

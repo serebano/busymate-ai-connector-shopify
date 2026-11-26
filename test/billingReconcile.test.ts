@@ -24,6 +24,13 @@ describe("src#2624 reviewer F24 — the plan is Shopify's activeSubscriptions, n
     expect(synced.at(-1)).toMatchObject({ status: "active", plan: "scale" });
     expect(r.trialEndsAt).toBe("2026-11-06T22:00:00Z");
   });
+  it("returns the live cycle start (the Billing page's current-cycle key) from the SAME contract", async () => {
+    partner.mockResolvedValue({ ok: true, subscription: { ...cancelledPartner.subscription, cancelAtEndOfCycle: false, currentBillingCycle: { startTime: "2026-11-22T17:36:35Z", endTime: "2026-12-22T17:36:35Z" }, legacySubscriptionId: "gid://shopify/AppSubscription/75" } });
+    const r = await reconcileBilling("s.myshopify.com", gql([{ id: "gid://shopify/AppSubscription/75", name: "Starter", status: "ACTIVE" }]), null);
+    expect(r.cycleStart).toBe("2026-11-22T17:36:35Z");
+    const none = await reconcileBilling("s.myshopify.com", gql([]), null);
+    expect(none.cycleStart).toBeNull();
+  });
   it("right after a plan_handle redirect with no contract yet ⇒ stays pending", async () => {
     await reconcileBilling("s.myshopify.com", gql([]), "growth");
     expect(synced).toHaveLength(1);

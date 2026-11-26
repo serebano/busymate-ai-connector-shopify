@@ -9,7 +9,8 @@ import {
   parseListingPlanFeatures,
   planByHandle,
   planFor,
-  computeBillableUnits,
+  computeUsageReport,
+  reportableUnitsCeiling,
 } from "../app/lib/plans";
 import { loadRepoArtifacts } from "../scripts/lib/store-canonical.mjs";
 
@@ -104,22 +105,80 @@ describe("catalog helpers", () => {
   });
 });
 
-describe("computeBillableUnits (included allowance + app-enforced cap)", () => {
-  const growth = planFor("growth"); // 225 included, $0.44, $1,000 cap ⇒ 2272 billable units max
-  it("charges nothing while inside the included allowance", () => {
-    expect(computeBillableUnits({ plan: growth, cycleResolutions: 0, newResolutions: 100 })).toEqual({ units: 0, capped: false });
-    expect(computeBillableUnits({ plan: growth, cycleResolutions: 200, newResolutions: 25 })).toEqual({ units: 0, capped: false });
+/**
+ * What Shopify charges for a cycle's reported quantity under the live App Pricing usage tier
+ * (GRADUATED: first `included` units free, then `overage` each — Partner API activeSubscription
+ * items + approve-charge page, 2026-11-26).
+ */
+function shopifyTierChargeCents(plan: ReturnType<typeof planFor>, quantity: number): number {
+  return Math.max(0, quantity - plan.includedResolutions) * (plan.overageCents ?? 0);
+}
+
+/** Feed resolutions one batch at a time through computeUsageReport; return Shopify's total quantity. */
+function runCycle(plan: ReturnType<typeof planFor>, batches: number[]): { quantity: number; capped: boolean } {
+  let counted = 0;
+  let reported = 0;
+  let capped = false;
+  for (const n of batches) {
+    const r = computeUsageReport({ plan, cycleResolutions: counted, reportedBefore: reported, newResolutions: n });
+    counted += n;
+    reported += r.units;
+    capped = r.capped;
+  }
+  return { quantity: reported, capped };
+}
+
+describe("computeUsageReport (Shopify's tier applies the allowance; app enforces the cap)", () => {
+  const starter = planFor("starter"); // 38 included, then $0.49, $200 cap
+  const growth = planFor("growth"); // 225 included, then $0.44, $1,000 cap
+  const scale = planFor("scale"); // 830 included, then $0.42, $5,000 cap
+
+  it("reports every resolution, so Shopify's free first tier IS the allowance (no double allowance)", () => {
+    expect(computeUsageReport({ plan: starter, cycleResolutions: 0, reportedBefore: 0, newResolutions: 10 })).toEqual({ units: 10, capped: false });
+    expect(computeUsageReport({ plan: starter, cycleResolutions: 30, reportedBefore: 30, newResolutions: 10 })).toEqual({ units: 10, capped: false });
   });
-  it("bills only the part of a batch that crosses the allowance", () => {
-    expect(computeBillableUnits({ plan: growth, cycleResolutions: 220, newResolutions: 10 })).toEqual({ units: 5, capped: false });
+
+  it("Starter: 38 resolutions cost $0, the 39th costs exactly $0.49, 100 cost $30.38", () => {
+    expect(shopifyTierChargeCents(starter, runCycle(starter, [38]).quantity)).toBe(0);
+    expect(shopifyTierChargeCents(starter, runCycle(starter, [38, 1]).quantity)).toBe(49);
+    expect(shopifyTierChargeCents(starter, runCycle(starter, [20, 30, 50]).quantity)).toBe(62 * 49); // 3038
+    // The old code reported only units past 38, so Shopify's free tier swallowed 38 more:
+    // 100 resolutions would have cost max(0, 62 - 38) × $0.49 = $11.76 instead of $30.38.
   });
-  it("clamps to the plan's monthly overage cap and flags capped", () => {
-    // 2272 billable units fit under $1,000 at $0.44; 2262 already billed ⇒ 10 left
-    expect(computeBillableUnits({ plan: growth, cycleResolutions: 225 + 2262, newResolutions: 50 })).toEqual({ units: 10, capped: true });
-    expect(computeBillableUnits({ plan: growth, cycleResolutions: 225 + 2272, newResolutions: 50 })).toEqual({ units: 0, capped: true });
+
+  it("Growth: 225 free, the 226th costs $0.44; Scale: 830 free, the 831st costs $0.42", () => {
+    expect(shopifyTierChargeCents(growth, runCycle(growth, [225]).quantity)).toBe(0);
+    expect(shopifyTierChargeCents(growth, runCycle(growth, [200, 26]).quantity)).toBe(44);
+    expect(shopifyTierChargeCents(scale, runCycle(scale, [830]).quantity)).toBe(0);
+    expect(shopifyTierChargeCents(scale, runCycle(scale, [831]).quantity)).toBe(42);
   });
-  it("the Free plan never produces billable units", () => {
-    expect(computeBillableUnits({ plan: planFor("free"), cycleResolutions: 1000, newResolutions: 50 })).toEqual({ units: 0, capped: false });
+
+  it("the cap: a cycle never reports past included + floor(cap / price) units, so charges stay ≤ the cap", () => {
+    expect(reportableUnitsCeiling(starter)).toBe(38 + 408); // 446
+    expect(reportableUnitsCeiling(growth)).toBe(225 + 2272); // 2497
+    expect(reportableUnitsCeiling(scale)).toBe(830 + 11904); // 12734
+    const s = runCycle(starter, [400, 40, 6, 1, 500]);
+    expect(s).toEqual({ quantity: 446, capped: true });
+    expect(shopifyTierChargeCents(starter, s.quantity)).toBe(19992); // $199.92 ≤ $200
+    expect(shopifyTierChargeCents(growth, runCycle(growth, [3000]).quantity)).toBe(99968); // $999.68 ≤ $1,000
+    expect(shopifyTierChargeCents(scale, runCycle(scale, [20000]).quantity)).toBe(499968); // $4,999.68 ≤ $5,000
+  });
+
+  it("at the ceiling exactly: reports the last unit and flags capped; after it reports 0", () => {
+    expect(computeUsageReport({ plan: starter, cycleResolutions: 440, reportedBefore: 440, newResolutions: 6 })).toEqual({ units: 6, capped: true });
+    expect(computeUsageReport({ plan: starter, cycleResolutions: 446, reportedBefore: 446, newResolutions: 5 })).toEqual({ units: 0, capped: true });
+    expect(computeUsageReport({ plan: starter, cycleResolutions: 439, reportedBefore: 439, newResolutions: 6 })).toEqual({ units: 6, capped: false });
+  });
+
+  it("reportedBefore is what Shopify already holds: the next report tops its quantity up to the cycle count", () => {
+    const r = computeUsageReport({ plan: starter, cycleResolutions: 37, reportedBefore: 30, newResolutions: 5 });
+    expect(r).toEqual({ units: 12, capped: false }); // 30 + 12 = 42 = 37 + 5
+    expect(shopifyTierChargeCents(starter, 30 + r.units)).toBe(4 * 49);
+  });
+
+  it("the Free plan never produces usage units", () => {
+    expect(reportableUnitsCeiling(planFor("free"))).toBe(0);
+    expect(computeUsageReport({ plan: planFor("free"), cycleResolutions: 1000, reportedBefore: 0, newResolutions: 50 })).toEqual({ units: 0, capped: false });
   });
 });
 
