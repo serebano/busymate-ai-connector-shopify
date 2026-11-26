@@ -4,6 +4,13 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-11-26 — billing: a late "cancelled" for the replaced plan no longer wipes the new plan
+
+- On a plan change Shopify cancels the old contract and activates the new one; both `app_subscriptions/update`
+  webhooks arrive within ~100 ms, often on different pods, in no guaranteed order (seen live on the billing matrix
+  store). `syncBillingState` now ignores a cancelled/declined event that names a different subscription than the
+  live one, so BillingState, metering and the platform plan report stay on the new plan. Server-only, no app version.
+
 ## 2026-11-26 — Home reads the embed state Shopify really reports (G2 hotfix after busymate-ai-12)
 
 - Live `shopify.app.extensions()` names our theme extension `theme-app-extension`, not the toml handle
