@@ -2,14 +2,14 @@
   "_locale": "pt-BR",
   "app_name": "Busymate AI",
   "tagline": "Suporte com IA para sua loja, ciente dos pedidos",
-  "intro": "Suporte com IA que responde só com o conteúdo da sua loja. Resolve solicitações de pedidos e reduz tickets.",
-  "details": "A Busymate AI adiciona um assistente de suporte com IA à sua loja online. Ele responde usando apenas seus próprios produtos, políticas e conteúdo da loja e avisa quando não tem certeza. Compradores conectados podem consultar o status e o rastreamento do pedido, cancelar um pedido não enviado ou alterar o endereço de entrega de um pedido não enviado; cada ação é confirmada primeiro. Devoluções, reembolsos e conversas incertas vão para a sua equipe. Responde no idioma do comprador, incluindo escritas da direita para a esquerda.",
+  "intro": "Responda perguntas sobre produtos e pedidos com IA. Sua equipe assume quando o comprador precisar de ajuda.",
+  "details": "A Busymate AI adiciona um assistente de suporte à sua loja online. Ele responde perguntas sobre produtos e políticas usando apenas o conteúdo da sua própria loja e avisa quando não tem certeza. Clientes conectados podem consultar o status e o rastreamento dos próprios pedidos e, após confirmar, cancelar um pedido não processado ou alterar o endereço de entrega de um pedido não enviado. Os compradores podem pedir uma pessoa a qualquer momento, e sua equipe assume, responde e resolve esses pedidos no Shopify Admin.",
   "feature_bullets": [
-    "Responde apenas com seus próprios produtos, políticas e conteúdo da loja, com fontes",
+    "Responde apenas com seus próprios produtos, políticas e conteúdo da loja",
     "Avisa quando não tem certeza e oferece um humano em vez de adivinhar",
-    "Compradores conectados recebem status do pedido, rastreamento e ações confirmadas",
-    "Cancelamentos e mudanças de endereço são sempre confirmados primeiro pelo comprador",
-    "Responde no idioma do comprador, incluindo escritas da direita para a esquerda"
+    "Compradores conectados consultam o status e o rastreamento dos próprios pedidos",
+    "Sua equipe assume, responde e resolve os repasses no Shopify Admin",
+    "Cancela ou altera o endereço de um pedido só após a confirmação do comprador"
   ],
   "pricing_summary": "Planos mensais com resoluções de IA incluídas e depois uma cobrança por resolução até o seu limite de gastos mensal. Há um plano gratuito; os planos pagos começam com um teste grátis de 14 dias.",
   "privacy_url": "https://store.busymate.ai/legal/shopify-privacy",

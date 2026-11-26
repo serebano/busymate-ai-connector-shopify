@@ -2,14 +2,14 @@
   "_locale": "tr",
   "app_name": "Busymate AI",
   "tagline": "Mağazan için sipariş farkında yapay zekâ desteği",
-  "intro": "Yalnızca mağazanın içeriğinden yanıt veren yapay zekâ desteği. Sipariş taleplerini halleder ve destek taleplerini azaltır.",
-  "details": "Busymate AI, çevrimiçi mağazanıza bir yapay zekâ destek asistanı ekler. Yalnızca kendi ürünlerinize, politikalarınıza ve mağaza içeriğinize dayanarak yanıt verir ve emin olmadığında bunu söyler. Oturum açmış alıcılar sipariş durumunu ve kargo takibini görebilir, gönderilmemiş bir siparişi iptal edebilir veya gönderilmemiş bir siparişin teslimat adresini değiştirebilir; her işlem önce onaylanır. İadeler, geri ödemeler ve emin olunmayan görüşmeler ekibinize devredilir. Alıcının dilinde yanıt verir, sağdan sola yazılan diller dahil.",
+  "intro": "Ürün ve sipariş sorularını yapay zekâyla yanıtlayın. Alıcıların yardıma ihtiyacı olduğunda ekibiniz devralır.",
+  "details": "Busymate AI, çevrimiçi mağazanıza bir destek asistanı ekler. Ürün ve politika sorularını yalnızca kendi mağaza içeriğinize dayanarak yanıtlar ve emin olmadığında bunu söyler. Oturum açmış müşteriler kendi siparişlerinin durumunu ve kargo takibini görebilir; onayladıktan sonra henüz hazırlanmamış bir siparişi iptal edebilir veya gönderilmemiş bir siparişin teslimat adresini değiştirebilir. Alıcılar istedikleri zaman bir kişiyle görüşmeyi isteyebilir; ekibiniz bu talepleri Shopify Admin içinde devralır, yanıtlar ve çözer.",
   "feature_bullets": [
-    "Yalnızca kendi ürünlerin, politikaların ve mağaza içeriğinden, kaynaklarıyla yanıt verir",
+    "Yalnızca kendi ürünlerinize, politikalarınıza ve mağaza içeriğinize dayanarak yanıtlar",
     "Emin olmadığında bunu söyler ve tahmin etmek yerine bir insan önerir",
-    "Oturum açmış müşteriler sipariş durumu, kargo takibi ve onaylı sipariş işlemleri alır",
-    "İptaller ve adres değişiklikleri her zaman önce alıcı tarafından onaylanır",
-    "Müşterinin dilinde yanıt verir; sağdan sola yazılan diller dahil"
+    "Oturum açmış alıcılar kendi siparişlerinin durumunu ve kargo takibini görür",
+    "Ekibiniz devirleri Shopify Admin içinde devralır, yanıtlar ve çözer",
+    "Siparişi yalnızca alıcı onayladıktan sonra iptal eder veya adresini değiştirir"
   ],
   "pricing_summary": "Dahil yapay zekâ çözümleri olan aylık planlar, ardından aylık harcama limitine kadar çözüm başına ücret. Ücretsiz plan mevcut; ücretli planlar 14 günlük ücretsiz deneme ile başlar.",
   "privacy_url": "https://store.busymate.ai/legal/shopify-privacy",

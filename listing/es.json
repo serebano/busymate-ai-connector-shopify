@@ -2,14 +2,14 @@
   "_locale": "es",
   "app_name": "Busymate AI",
   "tagline": "Soporte con IA para tu tienda, con contexto de pedidos",
-  "intro": "Soporte con IA que responde solo con el contenido de tu tienda. Gestiona solicitudes de pedidos y reduce los tickets.",
-  "details": "Busymate AI añade un asistente de soporte con IA a tu tienda online. Responde usando solo tus propios productos, políticas y contenido de la tienda, y avisa cuando no está seguro. Los compradores con sesión iniciada pueden consultar el estado y el seguimiento de su pedido, cancelar un pedido no enviado o cambiar la dirección de envío de un pedido no enviado; cada acción se confirma primero. Las devoluciones, los reembolsos y las conversaciones dudosas pasan a tu equipo. Responde en el idioma del comprador, incluidas las escrituras de derecha a izquierda.",
+  "intro": "Responde preguntas sobre productos y pedidos con IA. Tu equipo toma el relevo cuando el comprador necesita ayuda.",
+  "details": "Busymate AI añade un asistente de soporte a tu tienda online. Responde preguntas sobre productos y políticas usando solo el contenido de tu propia tienda y avisa cuando no está seguro. Los clientes con sesión iniciada pueden consultar el estado y el seguimiento de sus propios pedidos y, tras confirmarlo, cancelar un pedido sin preparar o cambiar la dirección de envío de un pedido sin enviar. Los compradores pueden pedir hablar con una persona en cualquier momento, y tu equipo asume, responde y resuelve estas solicitudes dentro de Shopify Admin.",
   "feature_bullets": [
-    "Responde solo con tus propios productos, políticas y contenido de la tienda, con fuentes",
+    "Responde solo con tus propios productos, políticas y contenido de la tienda",
     "Avisa cuando no está seguro y ofrece un humano en lugar de adivinar",
-    "Los compradores con sesión iniciada obtienen estado del pedido, seguimiento y acciones confirmadas",
-    "Las cancelaciones y los cambios de dirección los confirma siempre primero el comprador",
-    "Responde en el idioma del comprador, incluidas las escrituras de derecha a izquierda"
+    "Los compradores con sesión iniciada consultan el estado y seguimiento de sus pedidos",
+    "Tu equipo asume, responde y resuelve las derivaciones desde Shopify Admin",
+    "Cancela o cambia la dirección de un pedido solo tras la confirmación del comprador"
   ],
   "pricing_summary": "Planes mensuales con resoluciones de IA incluidas y luego un cargo por resolución hasta tu límite de gasto mensual. Hay un plan gratuito; los planes de pago empiezan con una prueba gratuita de 14 días.",
   "privacy_url": "https://store.busymate.ai/legal/shopify-privacy",
