@@ -11,6 +11,7 @@ Store privacy disclosures — every control it attests is implemented in code.
 |---|---|---|---|---|
 | `Session` | `accessToken` | Shopify offline access token (credential) | **Yes** (AES‑256‑GCM) | Call the store's Admin GraphQL API for the connector tools + KB ingest |
 | `Session` | `email` | Staff PII | **Yes** (AES‑256‑GCM) | Shopify session-storage field |
+| `Session` | `firstName`, `lastName` | Staff name | **Not stored** (dropped before storage; existing rows scrubbed by migration `20261126130000_session_scrub_staff_names`) | Never read by the app |
 | `Session` | shop, scope, ids | Config | No (non-sensitive) | Session bookkeeping |
 | `ShopTenant` | shop, slug, `bmaiTenantId`, `connectorId` | Config identifiers | No | Map the shop ↔ its bmai tenant |
 | `BillingState` | status, plan, ids, cursor | Billing config | No | Merchant billing state (no card data — Shopify Billing holds that) |

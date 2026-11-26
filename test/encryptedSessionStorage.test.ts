@@ -113,6 +113,36 @@ describe("encryptedSessionStorage with a key configured", () => {
   });
 });
 
+describe("staff names are not stored (data minimisation)", () => {
+  const user = { id: 1, first_name: "Ada", last_name: "Lovelace", email: EMAIL, email_verified: true, account_owner: true, locale: "en", collaborator: false };
+  const onlineSession = () => {
+    const s = new Session({ id: "acme.myshopify.com_1", shop: "acme.myshopify.com", state: "", isOnline: true, accessToken: ACCESS });
+    s.onlineAccessInfo = { expires_in: 86399, associated_user_scope: "read_products", associated_user: { ...user } };
+    return s;
+  };
+  it("an online session's first/last name never reach the inner storage (the Prisma adapter reads toPropertyArray(true))", async () => {
+    const inner = memoryStorage();
+    await encryptedSessionStorage(inner).storeSession(onlineSession());
+    expect(Object.fromEntries(onlineSession().toPropertyArray(true))).toMatchObject({ firstName: "Ada", lastName: "Lovelace" });
+    const cols = Object.fromEntries(inner.rows.get("acme.myshopify.com_1")!.toPropertyArray(true));
+    expect(cols.firstName).toBeUndefined();
+    expect(cols.lastName).toBeUndefined();
+    expect(JSON.stringify(cols)).not.toMatch(/Ada|Lovelace/);
+    expect(cols.userId).toBe(1);
+    expect(cols.accountOwner).toBe(true);
+  });
+  it("the caller's own session object is not mutated", async () => {
+    const online = onlineSession();
+    await encryptedSessionStorage(memoryStorage()).storeSession(online);
+    expect(online.onlineAccessInfo?.associated_user.first_name).toBe("Ada");
+  });
+  it("an offline session (no associated user) passes through unchanged", async () => {
+    const inner = memoryStorage();
+    await encryptedSessionStorage(inner).storeSession(offlineSession());
+    expect(inner.rows.get("offline_acme.myshopify.com")!.onlineAccessInfo).toBeUndefined();
+  });
+});
+
 describe("encryptedSessionStorage without a key (documented dev/CI no-op)", () => {
   const prevKey = process.env.APP_ENCRYPTION_KEY;
   beforeAll(() => {

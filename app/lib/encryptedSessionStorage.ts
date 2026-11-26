@@ -40,7 +40,20 @@ function transform(session: Session, fn: (v: string) => string): Session {
   return Object.keys(patch).length ? cloneWith(session, patch) : session;
 }
 
-const encryptSession = (s: Session) => transform(s, encryptField);
+/**
+ * Data minimisation: the staff member's first/last name (online-token `associated_user`) is never
+ * read by this app, so it is never written. Without them `Session.toPropertyArray()` yields no
+ * `firstName`/`lastName` and the Prisma columns stay NULL. Staff `email` is kept (encrypted).
+ */
+function withoutStaffNames(session: Session): Session {
+  const info = (session as { onlineAccessInfo?: { associated_user?: Record<string, unknown> } }).onlineAccessInfo;
+  const user = info?.associated_user;
+  if (!info || !user || (!("first_name" in user) && !("last_name" in user))) return session;
+  const { first_name: _first, last_name: _last, ...rest } = user;
+  return cloneWith(session, { onlineAccessInfo: { ...info, associated_user: rest } } as unknown as Partial<SessionLike>);
+}
+
+const encryptSession = (s: Session) => transform(withoutStaffNames(s), encryptField);
 const decryptSession = (s: Session) => transform(s, decryptField);
 
 export function encryptedSessionStorage(inner: SessionStorage): SessionStorage {
