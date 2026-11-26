@@ -268,7 +268,7 @@ it("MCP transport preserves customer identity and signed confirmation gates befo
   const adminForShop = vi.fn(async () => ({}));
   vi.doMock("../app/mcp/auth", () => ({ resolveCaller: (request: Request) => resolveCaller(request, deps()) }));
   vi.doMock("../app/mcp/shopifyAdmin", () => ({ adminForShop }));
-  // ECO-03: a confirmed v2 write burns its jti first; this fixture mints a fresh token per call.
+  // ECO-03: every v2 call (read or write) burns its jti first; this fixture mints a fresh token per call.
   vi.doMock("../app/mcp/jtiStore", () => ({ consumeJti: async () => true }));
   vi.doMock("../app/mcp/tools/registry", async () => {
     const registry = await vi.importActual<typeof import("../app/mcp/tools/registry")>("../app/mcp/tools/registry");

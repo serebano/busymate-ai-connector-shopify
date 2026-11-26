@@ -135,11 +135,10 @@ export async function handleMcpRequest(request: Request, deps: McpRouteDeps = DE
     });
   }
 
-  // ECO-03 — burn the credential's single-use id(s) BEFORE any side effect, in the app's own
-  // Postgres (holds across replicas). v3 ids always (one token = one call); a v2 id only for a
-  // confirmed write (see `ConnectorCaller.singleUse`). Replay or store failure ⇒ refused.
+  // ECO-03 — burn every verified credential's single-use id BEFORE any side effect, in the app's
+  // own Postgres (holds across replicas): one token = one call, v2 and v3 alike. Replay or store
+  // failure ⇒ refused.
   for (const use of caller.singleUse ?? []) {
-    if (use.version === 2 && !tool.confirm) continue;
     if (!(await deps.consumeJti(use.key, use.exp).catch(() => false))) {
       return rpcError(body.id, -32001, "unauthorized (fail-closed: credential already used)");
     }

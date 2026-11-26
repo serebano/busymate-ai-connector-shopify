@@ -4,8 +4,8 @@
  *   - the v3 `tool` claim is carried through `resolveCaller` and the transport refuses any other
  *     tool BEFORE a side effect (a credential the customer confirmed for tool A never runs B);
  *   - the v3 jti (and the guest binding's) is burned before any side effect: a replay is refused;
- *   - a v2 jti is burned for a confirmed write (v2 has no tool claim; the platform's unattended
- *     checker reuses one unconfirmed v2 token across several reads, which must keep working);
+ *   - a v2 jti is burned too, reads included (v2 has no tool claim; since busymate-ai-src#6867 the
+ *     platform mints one v2 token per call): a replayed v2 read is refused;
  *   - expired tokens and a failing single-use store fail closed.
  *
  * "Side effect" is observed as `adminForShop` being reached: it is the only path to Admin GraphQL.
@@ -111,17 +111,6 @@ describe("ECO-03 — positive path", () => {
     expect(h.state.adminCalls).toBe(1);
     expect(h.state.burned[0]).toMatch(/^binding:/);
   });
-
-  it("an unconfirmed v2 token may serve several reads (the platform checker reuses it)", async () => {
-    const h = harness();
-    const token = v2();
-    for (const tool of ["list_my_orders", "get_order_status", "list_my_orders"]) {
-      const json = await h.call(tool, bearer(token), { order_number: "#1001" });
-      expect(json.error).toBeUndefined();
-    }
-    expect(h.state.adminCalls).toBe(3);
-    expect(h.state.burned).toHaveLength(0);
-  });
 });
 
 describe("ECO-03 — signed tool is enforced", () => {
@@ -179,6 +168,17 @@ describe("ECO-03 — single use", () => {
     const replay = await h.call("cancel_order", bearer(token), { order_number: "#1001" });
     expect(replay.error?.message).toMatch(/already used/);
     expect(h.state.adminCalls).toBe(1);
+  });
+
+  it("a replayed v2 read is refused (one v2 token = one call, reads included)", async () => {
+    const h = harness();
+    const token = v2();
+    expect((await h.call("list_my_orders", bearer(token), {})).error).toBeUndefined();
+    const replay = await h.call("get_order_status", bearer(token), { order_number: "#1001" });
+    expect(replay.error?.code).toBe(-32001);
+    expect(replay.error?.message).toMatch(/already used/);
+    expect(h.state.adminCalls).toBe(1);
+    expect(h.state.burned).toHaveLength(1);
   });
 
   it("dual-sign burns both ids: stripping the v3 header cannot replay the v2 bearer", async () => {

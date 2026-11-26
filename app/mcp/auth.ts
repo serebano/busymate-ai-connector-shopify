@@ -39,9 +39,9 @@ export interface ConnectorCaller {
   signedTool?: string;
   /**
    * ECO-03 — single-use ids of the verified credentials, burned by the transport before any
-   * side effect. v3 (actor/binding) ids are always burned (one token = one call); a v2 id is
-   * burned for a confirmed write (the platform's unattended checker reuses ONE unconfirmed v2
-   * token across several read calls, so burning v2 on reads would break it).
+   * side effect, v2 and v3 (actor/binding) alike: one token = one call, reads included (the
+   * platform mints one v2 token per call since busymate-ai-src#6867, so a replayed v2 read is
+   * refused).
    */
   singleUse?: ReadonlyArray<SingleUseId>;
 }
