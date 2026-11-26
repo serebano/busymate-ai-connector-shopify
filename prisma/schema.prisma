@@ -221,3 +221,11 @@ model KbReingestWorkerState {
   claimed Int @default(0)
   failed Int @default(0)
 }
+
+/// ECO-03 — single-use actor credential ids (jti), burned at `tools/call` before any side
+/// effect (`app/mcp/jtiStore.ts`). A row is dead after the token's exp + clock skew.
+model ActorJti {
+  key       String   @id
+  expiresAt DateTime @db.Timestamptz
+  @@index([expiresAt])
+}
