@@ -83,6 +83,23 @@ export async function reportShopPlan(shop: string, plan: PlatformPlan): Promise<
 }
 
 /**
+ * The Free plan limit ("25 AI resolutions a month, then conversations route to your team"):
+ * record on the shop's workspace that this cycle's allowance is used until `resetsAt` (the
+ * platform then sends every new conversation to the team's Inbox), or lift it. The platform
+ * resolves the workspace from the proven shop. Resolves to whether it was recorded.
+ */
+export async function reportShopLimit(shop: string, input: { reached: boolean; resetsAt: string | null }): Promise<boolean> {
+  const r = await callMcpTool<{ recorded?: boolean }>("set_partner_shop_limit", {
+    partner: "shopify", shop, reached: input.reached,
+    ...(input.reached && input.resetsAt ? { resets_at: input.resetsAt } : {}),
+    ...proofArgs(shopProof(shop)),
+  });
+  const recorded = r.ok && r.data?.recorded === true;
+  console.log(`[billing] ${shop}: free limit ${input.reached ? `reached until ${input.resetsAt}` : "lifted"} ${recorded ? "recorded" : `not recorded (${r.ok ? "platform did not record it" : r.error ?? "failed"})`}`);
+  return recorded;
+}
+
+/**
  * MCP JSON-RPC 2.0 `tools/call` client. Mints/refreshes the OAuth bearer via the
  * token provider and retries once on a 401 (expired token → force re-mint).
  */

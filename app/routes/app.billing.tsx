@@ -24,6 +24,8 @@ import { reconcileBilling as reconcile } from "../lib/billingReconcile.server";
 import { listStuckDeliveries, meterShop } from "../lib/usageBilling";
 import { measuredCycleResolutions } from "../lib/usageDisplay";
 import { RESOLUTION_DEFINITION } from "../lib/resolutionDefinition";
+import { freeLimitNotice } from "../lib/freeLimit";
+import { FreeLimitBanner } from "../components/FreeLimitBanner";
 import { failClosedClientAction } from "../lib/clientAction";
 import { merchantError } from "../lib/merchantError";
 import { AppRouteBoundary } from "../components/AppRouteError";
@@ -73,6 +75,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
       meterError: meter.error ?? null,
     },
     stuckDeliveryCount: stuckDeliveries.length,
+    // The Free allowance is used this cycle: conversations now route to the team (docs/BILLING.md).
+    freeLimit: freeLimitNotice(billing, planFor("free").includedResolutions),
   };
 };
 
@@ -113,6 +117,9 @@ export default function BillingPage() {
       <Layout>
         <Layout.Section>
           <BlockStack gap="400">
+            {data.freeLimit ? (
+              <FreeLimitBanner used={data.freeLimit.used} included={data.freeLimit.included} resetsAt={data.freeLimit.resetsAt} onUpgrade={openPricing} />
+            ) : null}
             {data.stuckDeliveryCount > 0 ? (
               <Banner tone="critical" title="A billing delivery needs review">
                 <p>
@@ -172,7 +179,8 @@ export default function BillingPage() {
                     ? `Usage shows here after the first hourly update. Your plan includes ${data.usage.included} resolutions per billing cycle`
                     : `This billing cycle: ${data.usage.cycleResolutions} of ${data.usage.included} included resolutions used`}
                   {data.usage.reportedUnits !== null ? ` · ${data.usage.reportedUnits} extra resolutions billed by Shopify` : ""}
-                  {data.usage.capped ? " · monthly cap reached — no further overage this month" : ""}.
+                  {data.usage.capped ? " · monthly cap reached — no further overage this month" : ""}
+                  {data.freeLimit ? " · Free allowance used — new conversations go to your team until it resets" : ""}.
                 </Text>
                 <Text as="p" tone="subdued">
                   {RESOLUTION_DEFINITION}
@@ -213,7 +221,8 @@ export default function BillingPage() {
                 <Text as="p" tone="subdued">
                   Every plan includes a monthly number of AI resolutions — conversations the assistant resolves without
                   your team. Paid plans charge per extra resolution up to that plan&apos;s monthly cap; after the cap,
-                  no further overage is charged that month. The storefront assistant is never switched off.
+                  no further overage is charged that month. On Free, once the month&apos;s resolutions are used, new
+                  conversations go to your team until the allowance resets. The storefront chat itself is never switched off.
                 </Text>
                 <BlockStack gap="200">
                   {data.plans.map((p) => (

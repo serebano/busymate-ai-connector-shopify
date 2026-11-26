@@ -11,6 +11,13 @@ export interface MeterCursor {
   cycleKey: string | null;
   /** Resolutions counted so far in `cycleKey` (billable or not). */
   cycleResolutions: number;
+  /**
+   * Free plan only: the cycle's end (when the allowance resets) and whether the platform has
+   * recorded the "allowance used — conversations go to your team" hold (`set_partner_shop_limit`).
+   * Absent on paid-plan cursors, so their serialized form (the outbox's identity) is unchanged.
+   */
+  cycleEnd?: string | null;
+  limitHeld?: boolean;
 }
 
 const EMPTY: MeterCursor = { cursor: null, cycleKey: null, cycleResolutions: 0 };
@@ -21,16 +28,23 @@ export function parseMeterCursor(raw: string | null | undefined): MeterCursor {
   try {
     const j = JSON.parse(raw) as Partial<Record<keyof MeterCursor, unknown>> & { v?: unknown };
     if (j.v !== 1) return { ...EMPTY, cursor: raw };
-    return {
+    const out: MeterCursor = {
       cursor: typeof j.cursor === "string" && j.cursor ? j.cursor : null,
       cycleKey: typeof j.cycleKey === "string" && j.cycleKey ? j.cycleKey : null,
       cycleResolutions: typeof j.cycleResolutions === "number" && Number.isFinite(j.cycleResolutions) ? Math.max(0, Math.floor(j.cycleResolutions)) : 0,
     };
+    if (typeof j.cycleEnd === "string" && j.cycleEnd) out.cycleEnd = j.cycleEnd;
+    if (j.limitHeld === true) out.limitHeld = true;
+    return out;
   } catch {
     return { ...EMPTY, cursor: raw };
   }
 }
 
 export function serializeMeterCursor(c: MeterCursor): string {
-  return JSON.stringify({ v: 1, cursor: c.cursor, cycleKey: c.cycleKey, cycleResolutions: c.cycleResolutions });
+  return JSON.stringify({
+    v: 1, cursor: c.cursor, cycleKey: c.cycleKey, cycleResolutions: c.cycleResolutions,
+    ...(c.cycleEnd ? { cycleEnd: c.cycleEnd } : {}),
+    ...(c.limitHeld ? { limitHeld: true } : {}),
+  });
 }

@@ -4,8 +4,7 @@ import { meterShop } from "../lib/usageBilling";
 import { BILLING_METER_HEADER, BILLING_METER_SECRET_ENV, meterRequestAuthorized } from "../lib/meterAuth.server";
 
 /**
- * POST /api/billing/meter — THE metering trigger. Meters every shop with an
- * active plan (`meterShop`: allowance → overage → App Events billing event) so
+ * POST /api/billing/meter — THE metering trigger. Meters every installed shop (`meterShop`: allowance → overage → App Events billing event) so
  * usage reaches Shopify without waiting for a merchant to open the Billing page.
  *
  * Scheduled by a host timer, e.g. systemd (secret read from the env file, never argv):
@@ -24,7 +23,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
   const only = new URL(request.url).searchParams.get("shop");
   const rows = await prisma.billingState.findMany({
-    where: only ? { shop: only } : { status: "active" },
+    // Every installed shop: paid plans report overage; Free and "no plan selected" shops count
+    // against the Free allowance (and get the team-routing hold at it). Pending/frozen are no-ops.
+    where: only ? { shop: only } : { tenant: { inactiveAt: null } },
     select: { shop: true },
   });
   const results: Record<string, unknown> = {};

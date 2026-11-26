@@ -33,6 +33,8 @@ import { readTrainingState } from "../lib/retrain.server";
 import { resolveBillingAccess } from "../lib/billingGate";
 import { reconcileBilling } from "../lib/billingReconcile.server";
 import { planFor } from "../lib/plans";
+import { freeLimitNotice } from "../lib/freeLimit";
+import { FreeLimitBanner } from "../components/FreeLimitBanner";
 import { failClosedClientAction } from "../lib/clientAction";
 import { AppRouteBoundary } from "../components/AppRouteError";
 import { LocalTime } from "../components/LocalTime";
@@ -147,6 +149,9 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     activateUrl: themeEditorActivateUrl(shop),
     appEmbedsUrl: themeEditorAppEmbedsUrl(shop),
     planName: planFor(access.planId).name,
+    // The Free allowance is used this cycle: say so on Home too, with the Upgrade (docs/BILLING.md).
+    freeLimit: freeLimitNotice(tenant?.billing, planFor("free").includedResolutions),
+    pricingUrl: access.redirectTo,
     live,
     embedReady,
     activating,
@@ -224,6 +229,10 @@ export default function Index() {
       <Layout>
         <Layout.Section>
           <BlockStack gap="400">
+            {data.freeLimit ? (
+              // Shopify's plan page is an admin page: opened top-level, never inside the app frame.
+              <FreeLimitBanner used={data.freeLimit.used} included={data.freeLimit.included} resetsAt={data.freeLimit.resetsAt} onUpgrade={() => window.open(data.pricingUrl, "_top")} />
+            ) : null}
             {data.provisionError ? (
               <Banner tone="critical" title="Provisioning needs attention">
                 <BlockStack gap="200">
@@ -436,7 +445,8 @@ export default function Index() {
                     </>
                   )}{" "}
                   Plans include a monthly number of AI resolutions; paid plans charge per extra resolution up to a monthly
-                  cap. The assistant is never switched off for billing.
+                  cap. On Free, once the month&apos;s resolutions are used, new conversations go to your team until it
+                  resets. The storefront chat is never switched off for billing.
                 </Text>
                 <Link url="/app/billing">{data.planSelected ? "Manage plan" : "Choose a plan"}</Link>
               </BlockStack>
