@@ -97,8 +97,11 @@ with developer hints on any unknown route — is removed by the branded root
 The theme extension + `shopify.app.toml` config reach Shopify only through an **app version**.
 Since 2026-05 the non-interactive credential is the Dev Dashboard **App automation token**
 (Settings → App automation token → Rotate; 1/3/6 months; the value is shown once). The Shopify CLI
-reads it from `SHOPIFY_APP_AUTOMATION_TOKEN`. The token lives in the Vault under that name
-(`SHOPIFY_APP_AUTOMATION_TOKEN`, rotated 2026-10-02, 6 months) — never in a file, never on argv.
+reads it from `SHOPIFY_SERVICE_ACCOUNT_TOKEN` (the CLI deprecated `SHOPIFY_APP_AUTOMATION_TOKEN`, which
+it still accepts as a fallback). The token lives in the Vault as `SHOPIFY_SERVICE_ACCOUNT_TOKEN` (same
+value as the old `SHOPIFY_APP_AUTOMATION_TOKEN`, rotated 2026-10-02, 6 months; fingerprints verified equal
+2026-11-26) — never in a file, never on argv. Read the new name first and fall back to the old one; the old
+Vault name is removed after the next app release proves the new one.
 
 - `shopify.app.production.toml` = `shopify.app.toml` with the real (public) `client_id`; it is
   gitignored. `--config production` selects it.
@@ -108,15 +111,15 @@ reads it from `SHOPIFY_APP_AUTOMATION_TOKEN`. The token lives in the Vault under
 
 ```bash
 # from the app checkout; the CLI 4.x has no --force (CI=1 makes it non-interactive)
-SHOPIFY_APP_AUTOMATION_TOKEN=<from the Vault, via env> \
+SHOPIFY_SERVICE_ACCOUNT_TOKEN=<from the Vault, via env> \
   npx shopify app deploy --config production --allow-updates \
     --message "<version>: <what the extension/config change is>" \
     --source-control-url "https://github.com/serebano/busymate-ai-connector-shopify/commit/<sha>"
 ```
 
 `busymate-ai-6` (2026-10-02) was released this way. `app versions list --config production` is the
-read-only check. The GitHub `deploy.yml` workflow expects the same value as the
-`SHOPIFY_APP_AUTOMATION_TOKEN` repository secret.
+read-only check. The GitHub `deploy.yml` workflow does not read this token (it uses
+`SHOPIFY_CLI_PARTNERS_TOKEN`).
 
 ## 3c. Expiring offline access tokens — one-off cycling of pre-upgrade sessions 🔒
 
