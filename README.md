@@ -14,7 +14,7 @@ signed-in shoppers get order status, tracking and confirm-gated order actions ·
 replies in the shopper's language (RTL included) · confidence-gated human handoff.
 
 > **Two things at once.** This repository is **both** the real production app running at
-> `shopify.busymate.ai` **and** a MIT-licensed, open reference implementation. If you run
+> `store.busymate.ai` **and** a MIT-licensed, open reference implementation. If you run
 > a SaaS, a marketplace, a CMS, or any platform with an "account", the same six-step
 > pattern below connects it to Busymate AI — Shopify is just the worked example. Start
 > with **[docs/EXTENDING.md](./docs/EXTENDING.md)** to adapt it to Stripe, WordPress,

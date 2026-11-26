@@ -45,7 +45,7 @@ describe("connector transport contract", () => {
     const res = await handleMcpRequest(
       rpc(
         "tools/call",
-        { name: "create_refund", arguments: { order_number: "#1001", amount_cents: 100 } },
+        { name: "cancel_order", arguments: { order_number: "#1001" } },
         { "x-bmai-shop": "acme.myshopify.com", "x-bmai-identity": "invalid" },
       ),
     );

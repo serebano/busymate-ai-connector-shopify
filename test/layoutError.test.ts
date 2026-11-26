@@ -46,7 +46,7 @@ describe("app/routes/app.tsx layout boundary wiring", () => {
     expect(src).not.toMatch(/return boundary\.error\(useRouteError\(\)\);/);
   });
   it("wraps the in-frame view in a Polaris provider (the layout that mounted one is the route that errored)", () => {
-    expect(src).toMatch(/<PolarisAppProvider i18n=\{enPolarisTranslations\}>\s*<AppRouteErrorView/);
+    expect(src).toMatch(/<PolarisAppProvider i18n=\{enPolarisTranslations\}>\s*<main>\s*<Text as="h1" visuallyHidden>[^<]+<\/Text>\s*<AppRouteErrorView/);
   });
 });
 

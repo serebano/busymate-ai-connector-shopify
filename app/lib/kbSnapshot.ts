@@ -15,6 +15,7 @@
  * `app/lib/kbTrain.ts` publishes the result and persists the training state.
  */
 
+import { formatMoney, type ShopMoneyFormat } from "./money";
 import { onOnlineStore, storefrontProductUrl } from "./onlineStore";
 
 export interface KbMoney {
@@ -53,6 +54,8 @@ export interface KbSnapshot {
   /** `<store>.myshopify.com` — used for page URLs when the API gives none. */
   shop: string;
   shopName?: string | null;
+  /** The shop's own money format ("₱{{amount}}"), so prices read as the merchant writes them. */
+  moneyFormat?: ShopMoneyFormat | null;
   products: KbProduct[];
   policies: KbPolicy[];
   pages: KbPage[];
@@ -206,9 +209,8 @@ export function clip(text: string, max: number): string {
   return (at > max * 0.6 ? head.slice(0, at) : head).trimEnd() + "…";
 }
 
-function money(m: KbMoney | null | undefined): string | null {
-  if (!m?.amount) return null;
-  return `${m.amount}${m.currencyCode ? ` ${m.currencyCode}` : ""}`;
+function money(m: KbMoney | null | undefined, fmt?: ShopMoneyFormat | null): string | null {
+  return formatMoney(m, fmt);
 }
 
 function humanizePolicyType(type: string | null | undefined): string | null {
@@ -229,16 +231,16 @@ export function isSellable(p: KbProduct): boolean {
   return onOnlineStore(p);
 }
 
-function renderProduct(p: KbProduct, shop: string): string | null {
+function renderProduct(p: KbProduct, shop: string, fmt?: ShopMoneyFormat | null): string | null {
   const title = (p.title ?? "").trim();
   if (!title) return null;
   const lines = [`Product: ${title}`];
-  const min = money(p.priceRangeV2?.minVariantPrice);
-  const max = money(p.priceRangeV2?.maxVariantPrice);
+  const min = money(p.priceRangeV2?.minVariantPrice, fmt);
+  const max = money(p.priceRangeV2?.maxVariantPrice, fmt);
   if (min) lines.push(`Price: ${max && max !== min ? `from ${min} to ${max}` : min}`);
   // src#2624 reviewer F13 — the "was" price, so "what's on sale?" is answered from the catalog.
   const was = p.compareAtPriceRange?.minVariantCompareAtPrice;
-  if (min && was?.amount && Number(was.amount) > Number(p.priceRangeV2?.minVariantPrice?.amount)) lines.push(`On sale: yes (compare-at price ${money(was)})`);
+  if (min && was?.amount && Number(was.amount) > Number(p.priceRangeV2?.minVariantPrice?.amount)) lines.push(`On sale: yes (compare-at price ${money(was, fmt)})`);
   const meta: string[] = [];
   if (p.productType) meta.push(`Type: ${p.productType}`);
   if (p.vendor) meta.push(`Vendor: ${p.vendor}`);
@@ -349,7 +351,7 @@ export function buildKnowledgeSources(snapshot: KbSnapshot, limits: KnowledgeLim
       label: "Product catalog",
       kind: "fact",
       header: `# Product catalog — ${storeName} (${shop})${SEP}`,
-      items: products.map((p) => renderProduct(p, shop)).filter((x): x is string => Boolean(x)),
+      items: products.map((p) => renderProduct(p, shop, snapshot.moneyFormat)).filter((x): x is string => Boolean(x)),
       noun: "products",
       fetched: snapshot.products.length,
       renderable: products.length,

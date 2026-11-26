@@ -1,5 +1,6 @@
 import type { ToolContext, ToolResult } from "./types";
 import { errorResult, textResult } from "./types";
+import { formatMoney, loadMoneyFormat, type ShopMoneyFormat } from "../../lib/money";
 import { findCustomerOrder, listCustomerOrders, summarizeOrder, type CustomerOrder } from "./orderLookup";
 
 /**
@@ -25,7 +26,7 @@ function notFound(orderNumber: unknown): ToolResult {
 }
 
 /** Concise WISMO fields Busymate AI cites back to the shopper. */
-function orderStatusPayload(order: CustomerOrder) {
+function orderStatusPayload(order: CustomerOrder, fmt?: ShopMoneyFormat | null) {
   const tracking = order.fulfillments.flatMap((f) =>
     f.trackingInfo.map((t) => ({ company: t.company, number: t.number, url: t.url })),
   );
@@ -34,7 +35,7 @@ function orderStatusPayload(order: CustomerOrder) {
     fulfillmentStatus: order.displayFulfillmentStatus,
     financialStatus: order.displayFinancialStatus,
     cancelled: Boolean(order.cancelledAt),
-    total: order.totalPrice ? `${order.totalPrice.amount} ${order.totalPrice.currencyCode}` : null,
+    total: formatMoney(order.totalPrice, fmt),
     tracking,
     estimatedDelivery: order.fulfillments.map((f) => f.estimatedDeliveryAt).find(Boolean) ?? null,
   };
@@ -89,7 +90,7 @@ export async function getOrderStatus(
   const { order, others, implicit } = await resolveOrder(ctx, args.order_number);
   if (!order) return implicit ? noOrders() : notFound(args.order_number);
   return textResult(`${implicit ? "Your most recent order — " : ""}${summarizeOrder(order)}${otherOrdersLine(others)}`, {
-    order: orderStatusPayload(order),
+    order: orderStatusPayload(order, await loadMoneyFormat(ctx.admin)),
     ...(implicit ? { mostRecent: true, otherOrders: others.map((o) => o.name) } : {}),
   });
 }
@@ -135,12 +136,13 @@ export async function listMyOrders(
   if (orders.length === 0) {
     return textResult("I don't see any orders on your account yet.", { orders: [] });
   }
+  const fmt = await loadMoneyFormat(ctx.admin);
   const summaries = orders.map((o) => ({
     name: o.name,
     processedAt: o.processedAt,
     cancelled: Boolean(o.cancelledAt),
     fulfillmentStatus: o.displayFulfillmentStatus,
-    total: o.totalPrice ? `${o.totalPrice.amount} ${o.totalPrice.currencyCode}` : null,
+    total: formatMoney(o.totalPrice, fmt),
   }));
   const lines = orders.map(
     (o, i) => `• ${o.name}${summaries[i]!.total ? ` — ${summaries[i]!.total}` : ""} · ${orderStateLabel(o)}`,

@@ -6,12 +6,7 @@ import { findCustomerOrder } from "./orderLookup";
  * Delegated + confirm WRITE tools (Admin GraphQL 2026-07). The transport enforces
  * confirm before dispatch and every write is gated on the identified customer +
  * a verified Busymate AI actor token, so these run scoped to ONE customer's own order.
- *
- * Refund cap: above `DEFAULT_REFUND_CAP_CENTS` we do NOT auto-refund — we escalate
- * to a human (request_human handoff). Merchant-configurable is a P3 follow-up.
  */
-const DEFAULT_REFUND_CAP_CENTS = 5000;
-
 const USER_ERRORS = `userErrors { field message }`;
 
 function firstError(errors?: Array<{ message?: string }> | null): string | null {
@@ -28,93 +23,6 @@ function orderNotFound(orderNumber: unknown): ToolResult {
   return textResult(
     `I couldn't find order ${String(orderNumber ?? "")} on your account, so I can't act on it.`,
     { order: null },
-  );
-}
-
-/** A settled SALE/CAPTURE transaction to refund against, or null. */
-async function refundableParent(
-  ctx: ToolContext,
-  orderId: string,
-): Promise<{ id: string; gateway: string } | null> {
-  const data = (await ctx.admin.graphql(
-    `#graphql
-    query OrderTransactions($id: ID!) {
-      order(id: $id) {
-        transactions(first: 20) { id kind status gateway }
-      }
-    }`,
-    { id: orderId },
-  )) as { order?: { transactions?: Array<{ id: string; kind: string; status: string; gateway: string }> } };
-  const txs = data.order?.transactions ?? [];
-  const parent = txs.find(
-    (t) => (t.kind === "SALE" || t.kind === "CAPTURE") && t.status === "SUCCESS",
-  );
-  return parent ? { id: parent.id, gateway: parent.gateway } : null;
-}
-
-export async function createRefund(
-  args: Record<string, unknown>,
-  ctx: ToolContext,
-): Promise<ToolResult> {
-  const guard = guardCustomer(ctx, "request a refund on");
-  if (guard) return guard;
-
-  const amountCents = Number(args.amount_cents ?? 0);
-  const cap = DEFAULT_REFUND_CAP_CENTS;
-  if (!Number.isFinite(amountCents) || amountCents <= 0) {
-    return errorResult("Tell me the refund amount and I'll take a look.");
-  }
-  if (amountCents > cap) {
-    // Above cap → do NOT auto-refund; hand off to a human (request_human is LIVE).
-    return errorResult(
-      `This $${(amountCents / 100).toFixed(2)} refund is above the automatic limit. I'll connect you with the team to approve it.`,
-    );
-  }
-
-  const order = await findCustomerOrder(ctx, args.order_number);
-  if (!order) return orderNotFound(args.order_number);
-
-  const parent = await refundableParent(ctx, order.id);
-  if (!parent) {
-    return errorResult(
-      `I can't process an automatic refund on ${order.name} (no settled payment to refund against). I'll pass this to the team.`,
-    );
-  }
-
-  const amount = (amountCents / 100).toFixed(2);
-  const data = (await ctx.admin.graphql(
-    `#graphql
-    mutation RefundCreate($input: RefundInput!) {
-      refundCreate(input: $input) {
-        refund { id totalRefundedSet { presentmentMoney { amount currencyCode } } }
-        ${USER_ERRORS}
-      }
-    }`,
-    {
-      input: {
-        orderId: order.id,
-        note: String(args.reason ?? "Customer refund via Busymate AI"),
-        notify: true,
-        transactions: [
-          { orderId: order.id, gateway: parent.gateway, kind: "REFUND", amount, parentId: parent.id },
-        ],
-      },
-    },
-  )) as {
-    refundCreate?: {
-      refund?: { id: string; totalRefundedSet?: { presentmentMoney?: { amount: string; currencyCode: string } } } | null;
-      userErrors?: Array<{ message?: string }>;
-    };
-  };
-
-  const err = firstError(data.refundCreate?.userErrors);
-  if (err || !data.refundCreate?.refund) {
-    return errorResult(`I couldn't complete that refund: ${err ?? "no refund was created"}.`);
-  }
-  const refunded = data.refundCreate.refund.totalRefundedSet?.presentmentMoney;
-  return textResult(
-    `Refunded ${refunded ? `${refunded.amount} ${refunded.currencyCode}` : `$${amount}`} on ${order.name}. It can take a few business days to appear.`,
-    { order: order.name, refundId: data.refundCreate.refund.id, amount },
   );
 }
 
@@ -262,4 +170,3 @@ function moneyOf(bag: MoneyBag | null | undefined): { amount: string; currency: 
   return { amount: m.amount, currency: m.currencyCode ?? "" };
 }
 
-export { DEFAULT_REFUND_CAP_CENTS };

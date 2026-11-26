@@ -3,12 +3,12 @@
   "app_name": "Busymate AI",
   "tagline": "Asistență AI pentru magazinul tău, cu context de comenzi",
   "intro": "Asistență AI care răspunde doar din conținutul magazinului tău. Gestionează solicitările legate de comenzi și reduce tichetele.",
-  "details": "Busymate AI adaugă un asistent de suport AI magazinului tău online. Răspunde cumpărătorilor folosind doar propriile tale produse, politici și conținutul magazinului, își arată sursele și spune când nu este sigur în loc să ghicească. Cumpărătorii autentificați pot verifica starea și urmărirea comenzii și pot cere actualizarea, anularea, returnarea sau rambursarea unei comenzi; fiecare acțiune este confirmată mai întâi, iar rambursările mai mari sau conversațiile cu încredere scăzută sunt predate echipei tale. Răspunde în limba cumpărătorului, inclusiv în scrieri de la dreapta la stânga.",
+  "details": "Busymate AI adaugă un asistent de suport AI magazinului tău online. Răspunde folosind doar propriile tale produse, politici și conținutul magazinului și spune când nu este sigur. Cumpărătorii autentificați pot verifica starea și urmărirea comenzii, pot anula o comandă neexpediată sau pot schimba adresa de livrare a unei comenzi neexpediate; fiecare acțiune este confirmată mai întâi. Returnările, rambursările și conversațiile nesigure merg la echipa ta. Răspunde în limba cumpărătorului, inclusiv în scrieri de la dreapta la stânga.",
   "feature_bullets": [
     "Răspunde doar din propriile tale produse, politici și conținutul magazinului, cu surse",
     "Spune când nu este sigur și oferă un om în loc să ghicească",
     "Cumpărătorii autentificați primesc starea comenzii, urmărirea și acțiuni confirmate",
-    "Anulările, retururile și rambursările sunt confirmate mai întâi; rambursările mai mari ajung la tine",
+    "Anulările și schimbările de adresă sunt confirmate mereu mai întâi de cumpărător",
     "Răspunde în limba cumpărătorului, inclusiv în scrieri de la dreapta la stânga"
   ],
   "pricing_summary": "Planuri lunare cu rezolvări AI incluse, apoi un cost per rezolvare până la limita ta lunară de cheltuieli. Plan gratuit disponibil; planurile plătite încep cu o perioadă de probă gratuită de 14 zile.",

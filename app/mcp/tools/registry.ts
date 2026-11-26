@@ -13,8 +13,7 @@
 import type { ToolContext, ToolResult } from "./types";
 import { searchProducts, getProduct, listCollections } from "./products";
 import { getOrderStatus, trackFulfillment, listMyOrders } from "./orders";
-import { applyDiscount, createDraftOrder } from "./discounts";
-import { cancelOrder, createRefund, updateShippingAddress } from "./returns";
+import { cancelOrder, updateShippingAddress } from "./returns";
 
 export type Tier = "public" | "identified" | "delegated";
 
@@ -40,11 +39,11 @@ export const TOOLS: ToolDef[] = [
   // ── public ────────────────────────────────────────────────────────────────
   {
     name: "search_products",
-    description: "Search the store catalog by keyword. Returns titles, prices (with the compare-at \"was\" price when on sale), availability and the lowest/highest-priced match. For \"what is on sale\" questions set on_sale: true (query may be empty or a product type). For cheapest / most expensive / price-ordered questions set sort: \"price_asc\" or \"price_desc\" — the whole matching catalog is ordered by numeric price and the cheapest is named in the result; quote it, never re-rank prices yourself.",
+    description: "Search the store catalog by keyword. Returns titles, prices (with the compare-at \"was\" price when on sale), availability and the lowest/highest-priced match. For \"what is on sale\" questions set on_sale: true (query may be empty or a product type). For cheapest / most expensive / price-ordered questions set sort: \"price_asc\" or \"price_desc\" — the whole matching catalog is ordered by numeric price and the cheapest is named in the result; quote it, never re-rank prices yourself. For a price condition set under_price (\"under / less than / below $700\" → 700), max_price (\"up to / at most $700\"), min_price (\"from / at least $500\") — the whole catalog is filtered in code and the result states the exact count; quote that count, never filter or count prices yourself.",
     tier: "public",
     confirm: false,
     adminOnly: false,
-    inputSchema: obj({ query: str("Search terms (may be empty with on_sale)"), first: { type: "number" }, on_sale: { type: "boolean", description: "Only products whose compare-at price is above their price" }, sort: { type: "string", enum: ["relevance", "price_asc", "price_desc"], description: "Result order: relevance (default), price_asc (cheapest first) or price_desc (most expensive first)" } }, []),
+    inputSchema: obj({ query: str("Search terms (may be empty with on_sale)"), first: { type: "number" }, on_sale: { type: "boolean", description: "Only products whose compare-at price is above their price" }, sort: { type: "string", enum: ["relevance", "price_asc", "price_desc"], description: "Result order: relevance (default), price_asc (cheapest first) or price_desc (most expensive first)" }, under_price: { type: "number", description: "Only products priced strictly below this amount, in the shop currency (\"under $700\" → 700)" }, max_price: { type: "number", description: "Only products priced at or below this amount, in the shop currency (\"up to $700\")" }, min_price: { type: "number", description: "Only products priced at or above this amount, in the shop currency (\"from $500\")" } }, []),
     handler: searchProducts,
   },
   {
@@ -94,7 +93,7 @@ export const TOOLS: ToolDef[] = [
     inputSchema: obj({ first: { type: "number" } }),
     handler: listMyOrders,
   },
-  // ── delegated + confirm (writes; refund cap enforced) ──────────────────────
+  // ── delegated + confirm (writes; exactly the two proven + listed: cancel, address) ──
   {
     name: "update_shipping_address",
     description: "Update the shipping address on an unfulfilled order (confirm required).",
@@ -131,24 +130,6 @@ export const TOOLS: ToolDef[] = [
     handler: updateShippingAddress,
   },
   {
-    name: "apply_discount",
-    description: "Apply a discount code to a draft/checkout (confirm required).",
-    tier: "delegated",
-    confirm: true,
-    adminOnly: false,
-    inputSchema: obj({ order_number: str("Order"), code: str("Discount code") }, ["code"]),
-    handler: applyDiscount,
-  },
-  {
-    name: "create_draft_order",
-    description: "Create a draft order for the customer (confirm required).",
-    tier: "delegated",
-    confirm: true,
-    adminOnly: false,
-    inputSchema: obj({ line_items: { type: "array" } }, ["line_items"]),
-    handler: createDraftOrder,
-  },
-  {
     name: "cancel_order",
     description: "Cancel the identified customer's order (confirm + adminOnly).",
     tier: "delegated",
@@ -156,19 +137,6 @@ export const TOOLS: ToolDef[] = [
     adminOnly: true,
     inputSchema: obj({ order_number: str("Order name/number"), reason: str("Reason") }, ["order_number"]),
     handler: cancelOrder,
-  },
-  {
-    name: "create_refund",
-    description:
-      "Refund the identified customer's order (confirm + adminOnly; enforces the merchant refund cap — above cap escalates to a human).",
-    tier: "delegated",
-    confirm: true,
-    adminOnly: true,
-    inputSchema: obj(
-      { order_number: str("Order"), amount_cents: { type: "number" }, reason: str("Reason") },
-      ["order_number", "amount_cents"],
-    ),
-    handler: createRefund,
   },
 ];
 

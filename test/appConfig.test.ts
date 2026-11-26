@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -81,11 +81,13 @@ describe("#2631 the app requests no returns access (owner, 2026-10-23)", () => {
   });
 });
 
-describe("src#2624 reviewer F25 — read_themes (embed state from the theme)", () => {
-  it("requests read_themes and never write_themes", () => {
+describe("G2 — no theme scope: the embed state comes from App Bridge app.extensions()", () => {
+  it("requests neither read_themes nor write_themes, and no app code reads a theme", () => {
     const scopes = tomlValue(tomlSection("access_scopes"), "scopes");
-    expect(scopes.split(",")).toContain("read_themes");
-    expect(scopes).not.toMatch(/write_themes/);
+    expect(scopes).not.toMatch(/_themes/);
+    expect(readFileSync(".env.example", "utf8")).not.toMatch(/_themes/);
+    const walk = (d: string): string[] => readdirSync(d).flatMap((f) => (statSync(join(d, f)).isDirectory() ? walk(join(d, f)) : [join(d, f)]));
+    for (const f of walk("app")) expect(readFileSync(f, "utf8"), f).not.toMatch(/\bthemes\s*\(|settings_data\.json|OnlineStoreThemeFile/);
   });
 });
 

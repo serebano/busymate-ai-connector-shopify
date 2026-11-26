@@ -1,5 +1,6 @@
 import type { ToolContext, ToolResult } from "./types";
 import { textResult } from "./types";
+import { formatMoney, loadMoneyFormat, type ShopMoneyFormat } from "../../lib/money";
 import { ONLINE_STORE_QUERY, onOnlineStore, storefrontProductUrl } from "../../lib/onlineStore";
 
 /**
@@ -13,9 +14,10 @@ interface Money {
   currencyCode: string;
 }
 
-function money(m?: Money | null): string | null {
+/** Money with the shop format (see lib/money). */
+function money(m?: Money | null, fmt?: ShopMoneyFormat | null): string | null {
   if (!m) return null;
-  return `${m.amount} ${m.currencyCode}`;
+  return formatMoney(m, fmt);
 }
 
 /** Collapse HTML/whitespace to a short plain-text blurb (grounded, no markup). */
@@ -36,6 +38,7 @@ interface ProductNode {
   onlineStoreUrl?: string | null;
   publishedAt?: string | null;
   totalInventory?: number | null;
+  isGiftCard?: boolean | null;
   priceRangeV2?: { minVariantPrice?: Money; maxVariantPrice?: Money } | null;
   compareAtPriceRange?: { minVariantCompareAtPrice?: Money | null; maxVariantCompareAtPrice?: Money | null } | null;
 }
@@ -45,11 +48,11 @@ interface ProductNode {
  * products had a compare-at price: the tools never fetched it. A product is ON SALE when
  * its compare-at price is above its price.
  */
-export function saleOf(price?: Money | null, compareAt?: Money | null): string | null {
+export function saleOf(price?: Money | null, compareAt?: Money | null, fmt?: ShopMoneyFormat | null): string | null {
   if (!price || !compareAt) return null;
   const p = Number(price.amount);
   const c = Number(compareAt.amount);
-  return Number.isFinite(p) && Number.isFinite(c) && c > p ? money(compareAt) : null;
+  return Number.isFinite(p) && Number.isFinite(c) && c > p ? money(compareAt, fmt) : null;
 }
 
 export interface ProductSummary {
@@ -64,6 +67,8 @@ export interface ProductSummary {
   compareAtPrice: string | null;
   onSale: boolean;
   available: boolean;
+  /** A gift card is listed as one (it often matches a keyword through its vendor), never counted as the thing asked for. */
+  giftCard: boolean;
   image: string | null;
 }
 
@@ -102,19 +107,71 @@ export function priceExtremes(products: readonly ProductSummary[]): { cheapest: 
   return { cheapest: priced[0]!, mostExpensive: priced[priced.length - 1]! };
 }
 
-function summarizeProduct(n: ProductNode, shop: string): ProductSummary {
+function summarizeProduct(n: ProductNode, shop: string, fmt?: ShopMoneyFormat | null): ProductSummary {
   return {
     title: n.title,
     handle: n.handle,
     url: storefrontProductUrl(shop, n),
-    price: money(n.priceRangeV2?.minVariantPrice),
+    price: money(n.priceRangeV2?.minVariantPrice, fmt),
     priceAmount: amountOf(n.priceRangeV2?.minVariantPrice),
     currency: n.priceRangeV2?.minVariantPrice?.currencyCode ?? null,
-    compareAtPrice: saleOf(n.priceRangeV2?.minVariantPrice, n.compareAtPriceRange?.minVariantCompareAtPrice),
+    compareAtPrice: saleOf(n.priceRangeV2?.minVariantPrice, n.compareAtPriceRange?.minVariantCompareAtPrice, fmt),
     onSale: saleOf(n.priceRangeV2?.minVariantPrice, n.compareAtPriceRange?.minVariantCompareAtPrice) !== null,
     available: (n.totalInventory ?? 0) > 0 && n.status === "ACTIVE",
+    giftCard: n.isGiftCard === true,
     image: n.featuredImage?.url ?? null,
   };
+}
+
+/**
+ * src 2026-11-26 (v12-review-1126, guest storefront chat) — "Which snowboards do you sell under 700 dollars?" was
+ * answered "We have four snowboards under $700" and then "That's three, not four." The tool returned the whole
+ * catalog and left the model to filter prices in prose; it counted the out-of-stock Gift Card (it matches
+ * "snowboard" through its vendor) before it listed. A price condition is applied in code, like the sort: the
+ * whole matching catalog is read, filtered NUMERICALLY, and the reply states the exact count it holds.
+ *   - min_price: at least (inclusive)           "from $500", "$500 or more"
+ *   - max_price: at most (inclusive)            "up to $700", "$700 or less"
+ *   - under_price: strictly below (exclusive)   "under $700", "less than $700", "cheaper than $700"
+ * Amounts are in the shop currency. A product's price is its lowest variant price (what the listing shows "from").
+ */
+export interface PriceBounds {
+  min: number | null;
+  max: number | null;
+  under: number | null;
+}
+
+function bound(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const n = typeof value === "number" ? value : Number(String(value).replace(/[^0-9.]/g, ""));
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+export function priceBoundsOf(args: Record<string, unknown>): PriceBounds {
+  return { min: bound(args.min_price), max: bound(args.max_price), under: bound(args.under_price) };
+}
+
+export function hasPriceBounds(b: PriceBounds): boolean {
+  return b.min !== null || b.max !== null || b.under !== null;
+}
+
+/** Within the bounds; a product with no known price never matches a price condition. */
+export function withinPrice(p: Pick<ProductSummary, "priceAmount">, b: PriceBounds): boolean {
+  if (!hasPriceBounds(b)) return true;
+  if (p.priceAmount === null) return false;
+  if (b.min !== null && p.priceAmount < b.min) return false;
+  if (b.max !== null && p.priceAmount > b.max) return false;
+  if (b.under !== null && p.priceAmount >= b.under) return false;
+  return true;
+}
+
+/** The bounds in words, in the shop's money format ("priced under $700.00", "priced $500.00–$800.00"). */
+function boundsPhrase(b: PriceBounds, currency: string | null, fmt?: ShopMoneyFormat | null): string {
+  const f = (n: number) => formatMoney({ amount: n.toFixed(2), currencyCode: currency ?? fmt?.currencyCode ?? "USD" }, fmt) ?? String(n);
+  const parts: string[] = [];
+  if (b.min !== null) parts.push(`at least ${f(b.min)}`);
+  if (b.max !== null) parts.push(`at most ${f(b.max)}`);
+  if (b.under !== null) parts.push(`under ${f(b.under)}`);
+  return parts.length ? ` priced ${parts.join(" and ")}` : "";
 }
 
 export async function searchProducts(
@@ -124,19 +181,21 @@ export async function searchProducts(
   const onSaleOnly = args.on_sale === true;
   const sort: ProductSort = PRODUCT_SORTS.includes(args.sort as ProductSort) ? (args.sort as ProductSort) : "relevance";
   const byPrice = sort !== "relevance";
+  const bounds = priceBoundsOf(args);
+  const priced = hasPriceBounds(bounds);
   // "sale" is not a catalog keyword: an on-sale question lists the products whose
   // compare-at price is above their price (fetches a wider page, then filters).
   const query = onSaleOnly ? String(args.query ?? "").replace(/\b(on\s+)?sale\b|\bdiscount(ed)?\b/gi, "").trim() : String(args.query ?? "").trim();
   const limit = Math.max(1, Math.min(Number(args.first ?? 10) || 10, 25));
-  // A price-ordered answer must see every match, not Shopify's first relevance page
-  // (the Admin API has no PRICE sort key for products).
-  const first = byPrice ? 250 : onSaleOnly ? 100 : limit;
+  // A price-ordered or price-filtered answer must see every match, not Shopify's first
+  // relevance page (the Admin API has no PRICE sort key or price filter for products).
+  const first = byPrice || priced ? 250 : onSaleOnly ? 100 : limit;
   const data = (await ctx.admin.graphql(
     `#graphql
     query SearchProducts($q: String!, $n: Int!) {
       products(query: $q, first: $n) {
         nodes {
-          id title handle status onlineStoreUrl publishedAt totalInventory
+          id title handle status onlineStoreUrl publishedAt totalInventory isGiftCard
           featuredImage { url }
           priceRangeV2 { minVariantPrice { amount currencyCode } }
           compareAtPriceRange { minVariantCompareAtPrice { amount currencyCode } }
@@ -148,34 +207,47 @@ export async function searchProducts(
     { q: `${ONLINE_STORE_QUERY} ${query}`.trim(), n: first },
   )) as { products?: { nodes?: ProductNode[] } };
 
-  const all = (data.products?.nodes ?? []).filter(onOnlineStore).map((n) => summarizeProduct(n, ctx.shop));
-  const matching = onSaleOnly ? all.filter((p) => p.onSale) : all;
+  const fmt = await loadMoneyFormat(ctx.admin);
+  const all = (data.products?.nodes ?? []).filter(onOnlineStore).map((n) => summarizeProduct(n, ctx.shop, fmt));
+  const matching = all.filter((p) => (!onSaleOnly || p.onSale) && withinPrice(p, bounds));
   // Extremes over EVERY match fetched, before the page is cut to `first`.
   const extremes = priceExtremes(matching);
   const ordered = byPrice ? sortByPrice(matching, sort === "price_asc" ? "asc" : "desc") : matching;
-  const products = byPrice ? ordered.slice(0, limit) : ordered;
+  const products = byPrice || priced ? ordered.slice(0, limit) : ordered;
+  const within = boundsPhrase(bounds, all.find((p) => p.currency)?.currency ?? null, fmt);
+  const priceFilter = priced ? { minPrice: bounds.min, maxPrice: bounds.max, underPrice: bounds.under } : null;
   if (products.length === 0) {
-    return textResult(onSaleOnly ? `No products are on sale right now${query ? ` matching “${query}”` : ""}.` : `No products match “${query}”.`, { query, onSale: onSaleOnly, sort, products: [] });
+    return textResult(
+      onSaleOnly
+        ? `No products are on sale right now${query ? ` matching “${query}”` : ""}${within}.`
+        : `No products match “${query}”${within}.`,
+      { query, onSale: onSaleOnly, sort, priceFilter, total: 0, products: [] },
+    );
   }
   const lines = products.map(
-    (p) => `• ${p.title}${p.price ? ` — ${p.price}` : ""}${p.compareAtPrice ? ` (on sale, was ${p.compareAtPrice})` : ""}${p.available ? "" : " (out of stock)"}`,
+    (p) => `• ${p.title}${p.giftCard ? " (gift card)" : ""}${p.price ? ` — ${p.price}` : ""}${p.compareAtPrice ? ` (on sale, was ${p.compareAtPrice})` : ""}${p.available ? "" : " (out of stock)"}`,
   );
   const total = matching.length;
   const order = byPrice ? `, sorted by price (${sort === "price_asc" ? "lowest" : "highest"} first)` : "";
   const shown = products.length < total ? ` (showing ${products.length} of ${total})` : "";
   const head = onSaleOnly
-    ? `${total} product${total === 1 ? "" : "s"} on sale${query ? ` matching “${query}”` : ""}${order}${shown}:`
-    : `${total} product${total === 1 ? "" : "s"} matching “${query}”${order}${shown}:`;
+    ? `${total} product${total === 1 ? "" : "s"} on sale${query ? ` matching “${query}”` : ""}${within}${order}${shown}:`
+    : `${total} product${total === 1 ? "" : "s"} matching “${query}”${within}${order}${shown}:`;
+  // A gift card matched by keyword is not the thing asked for: say how many of the count are gift cards.
+  const giftCards = matching.filter((p) => p.giftCard).length;
+  const giftNote = giftCards > 0 && query ? `\n${giftCards} of these ${total} ${giftCards === 1 ? "is a gift card" : "are gift cards"}, not “${query}”.` : "";
   // The cheapest / most expensive are stated in code, so the reply never has to rank prices itself.
-  const scope = byPrice || onSaleOnly ? "of all matches" : `of these ${products.length}`;
+  const scope = byPrice || onSaleOnly || priced ? "of all matches" : `of these ${products.length}`;
   const foot = extremes && total > 1
     ? `\nLowest price ${scope}: ${extremes.cheapest.title} — ${extremes.cheapest.price}. Highest: ${extremes.mostExpensive.title} — ${extremes.mostExpensive.price}.`
     : "";
-  return textResult(`${head}\n${lines.join("\n")}${foot}`, {
+  return textResult(`${head}\n${lines.join("\n")}${giftNote}${foot}`, {
     query,
     onSale: onSaleOnly,
     sort,
+    priceFilter,
     total,
+    giftCards,
     cheapest: extremes?.cheapest ?? null,
     mostExpensive: extremes?.mostExpensive ?? null,
     products,
@@ -190,6 +262,11 @@ interface VariantNode {
   availableForSale: boolean;
   inventoryQuantity?: number | null;
   sku?: string | null;
+}
+
+/** A variant price is a bare amount in the shop currency; format it like the rest. */
+function variantMoney(amount: string, currencyCode: string | null | undefined, fmt: ShopMoneyFormat | null): string {
+  return formatMoney({ amount, currencyCode: currencyCode ?? fmt?.currencyCode ?? null }, fmt) ?? amount;
 }
 
 export async function getProduct(
@@ -226,10 +303,11 @@ export async function getProduct(
   // missing one: the shopper cannot open or buy it, and its details stay the merchant's.
   if (!p || !onOnlineStore(p)) return textResult(`No product found for “${handle}”.`, { handle, product: null });
 
+  const fmt = await loadMoneyFormat(ctx.admin);
   const variants = (p.variants?.nodes ?? []).map((v) => ({
     title: v.title,
-    price: v.price,
-    compareAtPrice: v.compareAtPrice && Number(v.compareAtPrice) > Number(v.price) ? v.compareAtPrice : null,
+    price: variantMoney(v.price, p.priceRangeV2?.minVariantPrice?.currencyCode, fmt),
+    compareAtPrice: v.compareAtPrice && Number(v.compareAtPrice) > Number(v.price) ? variantMoney(v.compareAtPrice, p.priceRangeV2?.minVariantPrice?.currencyCode, fmt) : null,
     available: v.availableForSale,
     quantity: v.inventoryQuantity ?? null,
     sku: v.sku ?? null,
@@ -239,7 +317,7 @@ export async function getProduct(
     handle: p.handle,
     url: storefrontProductUrl(ctx.shop, p),
     description: plain(p.descriptionHtml),
-    priceFrom: money(p.priceRangeV2?.minVariantPrice),
+    priceFrom: money(p.priceRangeV2?.minVariantPrice, fmt),
     onSale: variants.some((v) => v.compareAtPrice),
     available: variants.some((v) => v.available),
     variants,

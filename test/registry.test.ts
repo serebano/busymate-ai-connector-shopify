@@ -10,8 +10,9 @@ describe("connector tool registry gates", () => {
     }
   });
 
-  it("the highest-risk writes (refund/cancel) are adminOnly", () => {
-    for (const name of ["create_refund", "cancel_order"]) {
+  it("the highest-risk write (cancel) is adminOnly; no refund/discount/draft tool exists (L10)", () => {
+    for (const name of ["create_refund", "apply_discount", "create_draft_order"]) expect(toolByName(name)).toBeUndefined();
+    for (const name of ["cancel_order"]) {
       expect(toolByName(name)?.adminOnly, `${name} must be adminOnly`).toBe(true);
     }
   });
