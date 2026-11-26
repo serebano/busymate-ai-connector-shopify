@@ -144,8 +144,7 @@ export default function BillingPage() {
               <Banner tone="info" title="No plan selected yet" action={{ content: "Choose a plan", onAction: openPricing }}>
                 <p>
                   Pick a plan on Shopify&apos;s secure pricing page — the Free plan is $0 and takes one click; paid plans
-                  start with a 14-day free trial. Your selection then shows in your Shopify admin under Settings → Apps
-                  and sales channels → Busymate AI → Billing. Until you choose, the assistant works at Free-plan limits (25
+                  start with a 14-day free trial. Your selection then shows in your Shopify admin under Settings → Apps → Busymate AI. Until you choose, the assistant works at Free-plan limits (25
                   AI resolutions a month, then conversations route to your team).
                 </p>
               </Banner>
@@ -202,7 +201,7 @@ export default function BillingPage() {
                 </InlineStack>
                 <Text as="p" tone="subdued">
                   All charges are billed through Shopify App Pricing on your Shopify invoice. You can also change or
-                  cancel from Settings → Apps and sales channels in your Shopify admin.
+                  cancel from Settings → Apps → Busymate AI in your Shopify admin.
                 </Text>
                 {data.unverified ? (
                   <Text as="p" tone="caution">
