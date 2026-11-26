@@ -2,14 +2,14 @@
   "_locale": "de",
   "app_name": "Busymate AI",
   "tagline": "KI-Support für deinen Shop, mit Bestellkontext",
-  "intro": "KI-Support, der nur aus den Inhalten deines Shops antwortet. Er bearbeitet Bestellanfragen und senkt das Ticketaufkommen.",
-  "details": "Busymate AI fügt deinem Onlineshop einen KI-Support-Assistenten hinzu. Er antwortet ausschließlich auf Basis deiner eigenen Produkte, Richtlinien und Shop-Inhalte und sagt, wenn er sich nicht sicher ist. Angemeldete Käufer können Bestellstatus und Sendungsverfolgung abrufen, eine noch nicht versendete Bestellung stornieren oder die Lieferadresse einer noch nicht versendeten Bestellung ändern; jede Aktion wird zuerst bestätigt. Rücksendungen, Erstattungen und unsichere Gespräche gehen an dein Team. Er antwortet in der Sprache des Käufers, auch in Schriften, die von rechts nach links laufen.",
+  "intro": "Beantworte Produkt- und Bestellfragen mit KI. Dein Team übernimmt, wenn Käufer Hilfe brauchen.",
+  "details": "Busymate AI fügt deinem Onlineshop einen Support-Assistenten hinzu. Er beantwortet Fragen zu Produkten und Richtlinien ausschließlich auf Basis deiner eigenen Shop-Inhalte und sagt, wenn er sich nicht sicher ist. Angemeldete Kunden können Status und Sendungsverfolgung ihrer eigenen Bestellungen abrufen und nach Bestätigung eine nicht bearbeitete Bestellung stornieren oder die Lieferadresse einer noch nicht versendeten Bestellung ändern. Käufer können jederzeit nach einer Person fragen, und dein Team übernimmt, beantwortet und löst diese Anfragen direkt im Shopify Admin.",
   "feature_bullets": [
-    "Antwortet nur aus deinen eigenen Produkten, Richtlinien und Shop-Inhalten, mit Quellen",
+    "Antwortet nur aus deinen eigenen Produkten, Richtlinien und Shop-Inhalten",
     "Sagt, wenn er sich nicht sicher ist, und bietet einen Menschen an, statt zu raten",
-    "Angemeldete Käufer erhalten Bestellstatus, Sendungsverfolgung und bestätigte Bestellaktionen",
-    "Stornierungen und Adressänderungen werden immer zuerst vom Käufer bestätigt",
-    "Antwortet in der Sprache des Käufers, auch in Schriften von rechts nach links"
+    "Angemeldete Käufer sehen Status und Sendungsverfolgung ihrer eigenen Bestellungen",
+    "Dein Team übernimmt, beantwortet und löst Übergaben im Shopify Admin",
+    "Storniert oder ändert die Adresse einer Bestellung erst nach Bestätigung des Käufers"
   ],
   "pricing_summary": "Monatliche Pläne mit inbegriffenen KI-Lösungen, danach ein Preis pro Lösung bis zu deinem monatlichen Ausgabenlimit. Kostenloser Plan verfügbar; bezahlte Pläne starten mit einer 14-tägigen kostenlosen Testphase.",
   "privacy_url": "https://store.busymate.ai/legal/shopify-privacy",
