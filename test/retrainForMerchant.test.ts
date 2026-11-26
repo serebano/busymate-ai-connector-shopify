@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 // ingest.ts imports the db + bmai seams at module load; the function under test takes its deps.
 vi.mock("../app/db.server", () => ({ default: {} }));
 vi.mock("../app/bmai.server", () => ({ publishTenantRuntime: vi.fn() }));
-vi.mock("../app/lib/reingestStore.server", () => ({ reingestStore: {}, requestImmediateReingest: vi.fn(), saveTrainingForLease: vi.fn() }));
+vi.mock("../app/lib/reingestStore.server", () => ({ reingestStore: {}, requestImmediateReingest: vi.fn(), enqueueImmediateReingest: vi.fn(), saveTrainingForLease: vi.fn() }));
 
 const { retrainForMerchant } = await import("../app/lib/ingest");
 const { TRAINING_NOT_STARTED } = await import("../app/lib/kbFreshness");
