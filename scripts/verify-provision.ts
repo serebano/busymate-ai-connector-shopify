@@ -24,7 +24,7 @@ async function provision() {
     call: callMcpTool,
     getTenant: async () => null,
     saveTenant: async () => {},
-    connectorEndpoint: () => `${process.env.SHOPIFY_APP_URL || "https://shopify.busymate.ai"}/mcp`,
+    connectorEndpoint: () => `${process.env.SHOPIFY_APP_URL || "https://store.busymate.ai"}/mcp`,
     embedOrigin: process.env.BMAI_EMBED_ORIGIN || "https://busymate.ai",
     signProof: (partner, s) => buildPartnerProof(partner, s),
     delegationReady: masterSecretUsable(process.env.BMAI_SUPPORT_ACTOR_MASTER),

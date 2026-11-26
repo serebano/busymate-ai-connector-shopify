@@ -1,11 +1,11 @@
 blank_issues_enabled: true
 contact_links:
   - name: Security vulnerability
-    url: https://github.com/serebano/busymate-ai-shopify/security/advisories/new
+    url: https://github.com/serebano/busymate-ai-connector-shopify/security/advisories/new
     about: Report a security issue privately — please do NOT open a public issue.
   - name: Busymate AI docs
     url: https://busymate.ai/docs
     about: Canonical Busymate AI platform documentation.
   - name: How to connect another platform
-    url: https://github.com/serebano/busymate-ai-shopify/blob/main/docs/EXTENDING.md
+    url: https://github.com/serebano/busymate-ai-connector-shopify/blob/main/docs/EXTENDING.md
     about: The porting guide — adapt this reference to any platform.

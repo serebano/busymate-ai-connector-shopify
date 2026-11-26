@@ -13,7 +13,7 @@ Status legend: **[x]** scaffolded (structure + seam in place) · **[~]** partial
 
 ## Deployment state (Phase-1)
 
-- **App host** `shopify.busymate.ai` (historical: busymate-v2-lon1 droplet, now deleted; the app runs on k8s ns `bmai`, see SETUP.md 3b; :3970) redeployed on the Phase-1 code. Live `/api/bmai/status` →
+- **App host** `store.busymate.ai` (earlier name `shopify.busymate.ai`; historical: busymate-v2-lon1 droplet, now deleted; the app runs on k8s ns `bmai`, see SETUP.md 3b; :3970) redeployed on the Phase-1 code. Live `/api/bmai/status` →
   `{ok:true, actorVerifier:true, launchIdentity:true, apiVersion:"2026-07"}`;
   MCP `tools/list` serves 12 tools; `tools/call` fails closed. Env updated:
   `SHOPIFY_API_VERSION=2026-07`, `APP_ENCRYPTION_KEY` set (mirrored to vault as
@@ -166,7 +166,7 @@ Status legend: **[x]** scaffolded (structure + seam in place) · **[~]** partial
    → `shopify app config link` writes them into `shopify.app.toml` / env.
 2. 🔒 **Provisioning credential** (the provisioning-credential step): ship `provision_partner_tenant` (proof-of-shop)
    on the Busymate AI side, OR mint a scoped operator OAuth client for the app.
-3. 🔒 **App-server host** (`shopify.busymate.ai`) + DNS + TLS (historical: droplet + systemd; now k8s, SETUP §3b).
+3. 🔒 **App-server host** (`store.busymate.ai`, earlier `shopify.busymate.ai`) + DNS + TLS (historical: droplet + systemd; now k8s, SETUP §3b).
 4. 🔒 **ES256 launch signing key** + register JWKS as the tenant visitor IdP.
 5. 🔒 **Billing plan** definition in Partners + guarantee accounting decision.
 6. 🔒 **Listing assets + translations** + demo store.

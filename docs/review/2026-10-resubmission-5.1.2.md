@@ -117,7 +117,7 @@ this run, not a continuous screen recording.
   (busymate-devtools#3731). `authenticate.webhook` refreshes the expired token first, and after an
   uninstall that fails. This is why the Dev Dashboard shows a **51.4 % webhook failure rate**. The
   Shopify review stores `app-review-6a24a432-*` still read `published` because their uninstall was
-  never processed. Fix: [PR #43](https://github.com/serebano/busymate-ai-shopify/pull/43)
+  never processed. Fix: [PR #43](https://github.com/serebano/busymate-ai-connector-shopify/pull/43)
   (0.1.13, verifies the HMAC without a session), **deployed 2026-09-25 03:53 UTC** (`50d3c6a`).
   Our own uninstalls on a fresh token answered 200 before the fix.
 - Home loaded during the ~4 s afterAuth publish shows the **Provisioning** badge with the CTA
@@ -158,7 +158,7 @@ apply to this app are listed; the numbers are Shopify's.
 | **4.5.4 / 4.5.5** Credentials in the testing instructions | met | none required ("no account required" set); update the instructions text (below) |
 | **4.5.6** Emergency developer contact | check | Partner Dashboard → Settings (confirm it is set) |
 | **4.1.x / 4.2.x / 4.3.x / 4.4.x** Listing name, pricing placement, truthful copy, assets | met | `test/listing-copy.test.ts` ×14 locales, drift-checked against the canonical store record |
-| Mandatory GDPR webhooks | met | `compliance_topics`; `customers/data_request`, `customers/redact`, `shop/redact` handlers, HMAC-verified without loading the offline session. Before 0.1.13 they answered 500 when a session with an expired offline token still existed (busymate-devtools#3731); fixed in [PR #43](https://github.com/serebano/busymate-ai-shopify/pull/43), on the host since 2026-09-25 03:53 UTC: each topic answers 200 with an expired session present, 401 on a bad HMAC |
+| Mandatory GDPR webhooks | met | `compliance_topics`; `customers/data_request`, `customers/redact`, `shop/redact` handlers, HMAC-verified without loading the offline session. Before 0.1.13 they answered 500 when a session with an expired offline token still existed (busymate-devtools#3731); fixed in [PR #43](https://github.com/serebano/busymate-ai-connector-shopify/pull/43), on the host since 2026-09-25 03:53 UTC: each topic answers 200 with an expired session present, 401 on a bad HMAC |
 | `app/uninstalled`, `app/scopes_update`, `domains/*` | met (`domains/*` on the next deploy) | suspend + session purge (200 on 2026-09-25 at 02:13 and 02:26, fresh token; since 0.1.13 also 200 with an expired token, which purges the session, #3731); reinstall reactivates the tenant (step 5); a domain change repairs the allowlist |
 | Current Admin API version; expiring offline tokens | met | `2026-07`; `future.expiringOfflineAccessTokens: true`; no re-publish on re-exchange (0.1.12) |
 | Privacy policy + FAQ URLs | met | `https://store.busymate.ai/legal/privacy`, `/legal/faq` |
@@ -183,7 +183,7 @@ apply to this app are listed; the numbers are Shopify's.
       tenants on dormant stores; the owner decides.*
 - [x] Steps 3–8 pass; screenshots P01–P08 filed on #3718.
       *2026-09-25 live run, above; the evidence comment is on #3718.*
-- [x] **#3731 fix deployed**: [PR #43](https://github.com/serebano/busymate-ai-shopify/pull/43)
+- [x] **#3731 fix deployed**: [PR #43](https://github.com/serebano/busymate-ai-connector-shopify/pull/43)
       (0.1.13) merged and deployed to the host, so `app/uninstalled` and the GDPR topics answer
       200 even when the offline token has expired. Recommended before resubmitting: the Dev
       Dashboard's webhook failure rate is visible to reviewers.
