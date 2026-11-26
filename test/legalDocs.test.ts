@@ -145,4 +145,11 @@ describe("F3/F4 red-team 2026-11-26", () => {
     expect(a).toContain("mailto:hi@busymate.ai");
     expect(a).toContain("/legal/faq");
   });
+  it("privacy page names only scopes the app really requests (no returns scopes)", () => {
+    const toml = read("shopify.app.toml");
+    const requested = new Set((toml.match(/^scopes\s*=\s*"([^"]*)"/m)?.[1] ?? "").split(",").filter(Boolean));
+    const named = new Set(read("docs/legal/privacy.md").match(/`((?:read|write)_[a-z_]+)`/g)?.map((x) => x.slice(1, -1)));
+    for (const sc of named) expect(requested.has(sc), sc).toBe(true);
+    expect(named.has("read_returns") || named.has("write_returns")).toBe(false);
+  });
 });

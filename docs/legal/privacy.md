@@ -74,7 +74,7 @@ reads. What the App actually does:
 | App events from storefront, admin, POS, checkout | Shopify's generic app declaration | The App installs no tracking pixel and sends no analytics events from your storefront or checkout. The chat widget stores only the items in section 7. |
 | Store owner name, email, phone, address; blog contributors' email, IP, browser | `read_content` (also covers blogs and articles), the shop record | The App reads **pages** (title, handle, text) for training. It does **not** read blogs, articles, authors or contributors. It stores the staff email in Shopify's admin session (section 2) and no other staff or owner detail. |
 | View products, collections; policies | `read_products`, `read_legal_policies` | Store content you already publish, used to train the assistant. |
-| Fulfilments, returns | `read_fulfillments`, `read_returns`, `write_returns` | Tracking details read live for a signed-in shopper; returns are created only after the shopper confirms. |
+| Fulfilments | `read_fulfillments` | Tracking details read live for a signed-in shopper. The App does not request access to returns. |
 
 
 ## 3. Where data is processed (sub-processors)
