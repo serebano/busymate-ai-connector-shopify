@@ -8,9 +8,10 @@ import { useNavigate } from "react-router";
  *
  * Why not `AppProvider` (red-team F5, 2026-11-26): it renders TWO parser-blocking
  * scripts in <body> before the page — a second `app-bridge.js` (root.tsx already
- * loads it first in <head>, as Built for Shopify requires) and `polaris.js`, the
- * Polaris web-components bundle (149 KB br / 740 KB raw) that this app never
- * uses (it renders Polaris React). Enforced by test/appBridgeOnce.test.ts.
+ * loads it first in <head>, as Built for Shopify requires) and a `polaris.js`
+ * tag (Polaris web components, 149 KB br). App Bridge still preloads polaris.js
+ * itself, off the parser path; only the blocking tags are gone. Enforced by
+ * test/appBridgeOnce.test.ts.
  */
 export function AppBridgeNavigation() {
   const navigate = useNavigate();
