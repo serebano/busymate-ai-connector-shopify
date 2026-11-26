@@ -1,5 +1,6 @@
 import type { ToolContext, ToolResult } from "./types";
 import { textResult } from "./types";
+import { formatMoney, loadMoneyFormat, type ShopMoneyFormat } from "../../lib/money";
 import { ONLINE_STORE_QUERY, onOnlineStore, storefrontProductUrl } from "../../lib/onlineStore";
 
 /**
@@ -13,9 +14,10 @@ interface Money {
   currencyCode: string;
 }
 
-function money(m?: Money | null): string | null {
+/** Money with the shop format (see lib/money). */
+function money(m?: Money | null, fmt?: ShopMoneyFormat | null): string | null {
   if (!m) return null;
-  return `${m.amount} ${m.currencyCode}`;
+  return formatMoney(m, fmt);
 }
 
 /** Collapse HTML/whitespace to a short plain-text blurb (grounded, no markup). */
@@ -45,11 +47,11 @@ interface ProductNode {
  * products had a compare-at price: the tools never fetched it. A product is ON SALE when
  * its compare-at price is above its price.
  */
-export function saleOf(price?: Money | null, compareAt?: Money | null): string | null {
+export function saleOf(price?: Money | null, compareAt?: Money | null, fmt?: ShopMoneyFormat | null): string | null {
   if (!price || !compareAt) return null;
   const p = Number(price.amount);
   const c = Number(compareAt.amount);
-  return Number.isFinite(p) && Number.isFinite(c) && c > p ? money(compareAt) : null;
+  return Number.isFinite(p) && Number.isFinite(c) && c > p ? money(compareAt, fmt) : null;
 }
 
 export interface ProductSummary {
@@ -102,15 +104,15 @@ export function priceExtremes(products: readonly ProductSummary[]): { cheapest: 
   return { cheapest: priced[0]!, mostExpensive: priced[priced.length - 1]! };
 }
 
-function summarizeProduct(n: ProductNode, shop: string): ProductSummary {
+function summarizeProduct(n: ProductNode, shop: string, fmt?: ShopMoneyFormat | null): ProductSummary {
   return {
     title: n.title,
     handle: n.handle,
     url: storefrontProductUrl(shop, n),
-    price: money(n.priceRangeV2?.minVariantPrice),
+    price: money(n.priceRangeV2?.minVariantPrice, fmt),
     priceAmount: amountOf(n.priceRangeV2?.minVariantPrice),
     currency: n.priceRangeV2?.minVariantPrice?.currencyCode ?? null,
-    compareAtPrice: saleOf(n.priceRangeV2?.minVariantPrice, n.compareAtPriceRange?.minVariantCompareAtPrice),
+    compareAtPrice: saleOf(n.priceRangeV2?.minVariantPrice, n.compareAtPriceRange?.minVariantCompareAtPrice, fmt),
     onSale: saleOf(n.priceRangeV2?.minVariantPrice, n.compareAtPriceRange?.minVariantCompareAtPrice) !== null,
     available: (n.totalInventory ?? 0) > 0 && n.status === "ACTIVE",
     image: n.featuredImage?.url ?? null,
@@ -148,7 +150,8 @@ export async function searchProducts(
     { q: `${ONLINE_STORE_QUERY} ${query}`.trim(), n: first },
   )) as { products?: { nodes?: ProductNode[] } };
 
-  const all = (data.products?.nodes ?? []).filter(onOnlineStore).map((n) => summarizeProduct(n, ctx.shop));
+  const fmt = await loadMoneyFormat(ctx.admin);
+  const all = (data.products?.nodes ?? []).filter(onOnlineStore).map((n) => summarizeProduct(n, ctx.shop, fmt));
   const matching = onSaleOnly ? all.filter((p) => p.onSale) : all;
   // Extremes over EVERY match fetched, before the page is cut to `first`.
   const extremes = priceExtremes(matching);
@@ -192,6 +195,11 @@ interface VariantNode {
   sku?: string | null;
 }
 
+/** A variant price is a bare amount in the shop currency; format it like the rest. */
+function variantMoney(amount: string, currencyCode: string | null | undefined, fmt: ShopMoneyFormat | null): string {
+  return formatMoney({ amount, currencyCode: currencyCode ?? fmt?.currencyCode ?? null }, fmt) ?? amount;
+}
+
 export async function getProduct(
   args: Record<string, unknown>,
   ctx: ToolContext,
@@ -226,10 +234,11 @@ export async function getProduct(
   // missing one: the shopper cannot open or buy it, and its details stay the merchant's.
   if (!p || !onOnlineStore(p)) return textResult(`No product found for “${handle}”.`, { handle, product: null });
 
+  const fmt = await loadMoneyFormat(ctx.admin);
   const variants = (p.variants?.nodes ?? []).map((v) => ({
     title: v.title,
-    price: v.price,
-    compareAtPrice: v.compareAtPrice && Number(v.compareAtPrice) > Number(v.price) ? v.compareAtPrice : null,
+    price: variantMoney(v.price, p.priceRangeV2?.minVariantPrice?.currencyCode, fmt),
+    compareAtPrice: v.compareAtPrice && Number(v.compareAtPrice) > Number(v.price) ? variantMoney(v.compareAtPrice, p.priceRangeV2?.minVariantPrice?.currencyCode, fmt) : null,
     available: v.availableForSale,
     quantity: v.inventoryQuantity ?? null,
     sku: v.sku ?? null,
@@ -239,7 +248,7 @@ export async function getProduct(
     handle: p.handle,
     url: storefrontProductUrl(ctx.shop, p),
     description: plain(p.descriptionHtml),
-    priceFrom: money(p.priceRangeV2?.minVariantPrice),
+    priceFrom: money(p.priceRangeV2?.minVariantPrice, fmt),
     onSale: variants.some((v) => v.compareAtPrice),
     available: variants.some((v) => v.available),
     variants,
