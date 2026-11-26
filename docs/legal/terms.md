@@ -13,12 +13,12 @@
 **Effective date:** September 2, 2026
 
 These terms ("Terms") govern the **Busymate AI for Shopify** app ("the App") that
-**Busymate AI** ("we", "us") provides to the Shopify merchant who installs it ("you",
+**Busymate AI** ("we", "us"), operated by Antreprenor Independent „SERGIU TODERAȘCU” (a registered sole proprietorship; IDNO 1026023024336), 21/1, apt. 74, Nicolae Dimo str., Chisinau, MD-2068, Republic of Moldova, provides to the Shopify merchant who installs it ("you",
 "the Merchant"). By installing or using the App you agree to these Terms. Part B is the
 **Data Processing Addendum** ("DPA") that applies whenever we process personal data of
 your shoppers on your behalf.
 
-Contact for anything in these Terms: **hi@busymate.ai**.
+Contact for anything in these Terms: **hi@busymate.ai**, or by post at the address above.
 
 ## Part A — Terms of Service
 
