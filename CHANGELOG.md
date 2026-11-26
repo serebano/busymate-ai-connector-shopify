@@ -4,6 +4,12 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-11-26 — Home reads the embed state Shopify really reports (G2 hotfix after busymate-ai-12)
+
+- Live `shopify.app.extensions()` names our theme extension `theme-app-extension`, not the toml handle
+  `storefront-assistant`, so Home showed "Check storefront assistant status" while the embed was on. The parser now
+  matches the theme extension by type and the embed by its block handle `assistant`. Server-only, no app version.
+
 ## 2026-11-26 — embed state from App Bridge, no theme scope; embed renamed "AI support chat" (audit G2, G9)
 
 - **G2 (BFS 4.2.3, data minimization):** Home reads the app embed's state on the published theme with App Bridge

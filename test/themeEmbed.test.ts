@@ -166,9 +166,17 @@ describe("G2 — embed state from App Bridge shopify.app.extensions() (no read_t
   it("null when the answer does not list OUR embed (never a false on/off)", () => {
     expect(embedFromExtensions([])).toBeNull();
     expect(embedFromExtensions(null)).toBeNull();
-    expect(embedFromExtensions([{ handle: "other-theme-ext", type: "theme_app_extension", activations: [{ handle: "assistant", status: "active" }] }])).toBeNull();
     expect(embedFromExtensions([{ handle: STOREFRONT_ASSISTANT_EXTENSION, type: "theme_app_extension", activations: [{ handle: "other-block", status: "active" }] }])).toBeNull();
     expect(embedFromExtensions([{ handle: STOREFRONT_ASSISTANT_EXTENSION, type: "ui_extension", activations: [] }])).toBeNull();
+  });
+  it("reads the live App Bridge answer, which names the theme extension \"theme-app-extension\" (not the toml handle)", () => {
+    // Captured from shopify.app.extensions() on northpeak-review-14 after busymate-ai-12 (2026-11-26, App Bridge 0.41.6).
+    const live = (status: string) => [
+      { handle: "theme-app-extension", type: "theme_app_extension", activations: [{ target: "body", handle: "assistant", name: "AI support chat", status, activations: [{ target: "theme/4921784256407975851", themeId: "gid://shopify/OnlineStoreTheme/190033887285" }] }] },
+    ];
+    expect(embedFromExtensions(live("active"))).toBe("on");
+    expect(embedFromExtensions(live("available"))).toBe("off");
+    expect(embedFromExtensions([{ handle: "theme-app-extension", type: "theme_app_extension", activations: [] }])).toBeNull();
   });
   it("the checklist step is Done only on 'on'; no state asks the merchant to confirm by hand", () => {
     expect(embedStep("on")).toMatchObject({ id: "embed", done: true, failed: false });
