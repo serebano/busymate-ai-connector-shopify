@@ -23,3 +23,18 @@ it("a ZERO-USAGE store (never resolved anything, or Free-plan, or a fresh cycle)
   const noCycleKeyNonzero = serializeMeterCursor({ cursor: "c1", cycleKey: null, cycleResolutions: 3 });
   expect(measuredCycleResolutions(noCycleKeyNonzero)).toBe(3);
 });
+
+it("after a cycle rollover the Billing page shows the CURRENT cycle (0), never last cycle's count", () => {
+  // review-test-7, 2026-11-26: stored cycle 2026-10-23 with 16 used, Shopify's live cycle started 2026-11-22.
+  const stale = serializeMeterCursor({ cursor: "c", cycleKey: "2026-10-23T17:36:35Z", cycleResolutions: 16 });
+  expect(measuredCycleResolutions(stale, null, "2026-11-22T17:36:35Z")).toBe(0);
+  // Same cycle, or no live cycle known (trial / Partner API unread / no plan): the stored count.
+  expect(measuredCycleResolutions(stale, null, "2026-10-23T17:36:35Z")).toBe(16);
+  expect(measuredCycleResolutions(stale, null, null)).toBe(16);
+  // The trial counter belongs to no paid cycle: once the first cycle opens it reads 0.
+  const trial = serializeMeterCursor({ cursor: "c", cycleKey: "trial:2026-10-23T17:36:35Z", cycleResolutions: 9, cycleReported: 0 });
+  expect(measuredCycleResolutions(trial, null, null)).toBe(9);
+  expect(measuredCycleResolutions(trial, null, "2026-10-23T17:36:35Z")).toBe(0);
+  // A failed meter run is still "unavailable", never a guessed 0.
+  expect(measuredCycleResolutions(stale, "unreadable", "2026-11-22T17:36:35Z")).toBeNull();
+});

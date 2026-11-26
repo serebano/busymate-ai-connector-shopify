@@ -18,7 +18,7 @@ export type AdminGraphql = (query: string) => Promise<Response>;
  *
  *   1. the App Pricing redirect `plan_handle` (just picked) ⇒ pending until Admin confirms
  *   2. Admin `activeSubscriptions` ⇒ active plan, or NONE ⇒ no plan selected
- *   3. Partner API ⇒ trialEndsAt / usageQuantity for that contract
+ *   3. Partner API ⇒ trialEndsAt / usageQuantity / cycleStart for that contract
  * Non-fatal: an unreadable Admin answer leaves the stored state and reports `unverified`.
  */
 export async function reconcileBilling(shop: string, graphql: AdminGraphql, planHandle: string | null, opts: { enrich?: boolean } = {}) {
@@ -32,6 +32,7 @@ export async function reconcileBilling(shop: string, graphql: AdminGraphql, plan
   let unverified: string | null = null;
   let trialEndsAt: string | null = null;
   let usageQuantity: number | null = null;
+  let cycleStart: string | null = null;
   try {
     const resp = await graphql(`#graphql
       query ActiveSubscriptions { shop { id } currentAppInstallation { activeSubscriptions { id name status } } }`);
@@ -49,11 +50,12 @@ export async function reconcileBilling(shop: string, graphql: AdminGraphql, plan
         const p = subscriptionStateFromPartnerApi(live.subscription);
         trialEndsAt = p.trialEndsAt;
         usageQuantity = p.usageQuantity;
+        cycleStart = p.cycleStart;
       }
     }
   } catch (err) {
     unverified = err instanceof Error ? err.message : String(err);
     console.warn(`[billing] reconcile failed shop=${shop}: ${unverified}`);
   }
-  return { chosen, source, unverified, trialEndsAt, usageQuantity };
+  return { chosen, source, unverified, trialEndsAt, usageQuantity, cycleStart };
 }

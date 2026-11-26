@@ -1,10 +1,10 @@
 import prisma from "../db.server";
 import { adminForShop } from "../mcp/shopifyAdmin";
-import { FREE_PLAN_ID, PLANS, computeBillableUnits, planFor, type Plan } from "./plans";
+import { FREE_PLAN_ID, PLANS, computeUsageReport, planFor, reportableUnitsCeiling, type Plan } from "./plans";
 import { freeLimitState, monthlyWindow, type CycleWindow, type FreeLimitState } from "./freeLimit";
 import { parseMeterCursor, serializeMeterCursor, type MeterCursor } from "./meterCursor";
-import { createAppEventsClient, usageIdempotencyKey } from "./appEvents";
-import { appGidFromEnv, fetchActiveSubscription } from "./partnerApi";
+import { RESOLUTION_EVENT_HANDLE, createAppEventsClient, usageIdempotencyKey } from "./appEvents";
+import { appGidFromEnv, fetchActiveSubscription, type ActiveSubscription } from "./partnerApi";
 import { commitCountedResolutions, liveResolutionLedgerDeps, readNewResolutions, type CountedSession } from "./resolutionLedger.server";
 import { createMeterOutbox, type PreparedMeterBatch } from "./meterOutbox";
 
@@ -17,12 +17,15 @@ export type { Plan };
  *   - Busymate AI usage_events (internal cost/margin truth) — read via MCP.
  *
  * A "resolution" = a positive-outcome, non-double-billed conversation signal. We
- * read the tenant's new resolutions since `cursor`, count them against the
- * plan's INCLUDED allowance for the current billing cycle, and report only the
- * billable overage — clamped to the plan's monthly cap — as ONE App Events
- * billing event (`ai_resolution`, value = units). App Pricing has no usage-cap
- * concept, so the cap is enforced here by not reporting beyond it. The cursor
- * (+ cycle counter) advances after a successful report or a nonbillable batch.
+ * read the tenant's new resolutions since `cursor` and report EVERY post-trial
+ * resolution of the current billing cycle as ONE App Events billing event
+ * (`ai_resolution`, value = units). Shopify's own graduated tiers make the first
+ * 38/225/830 units free (the included allowance), so the app must not subtract the
+ * allowance itself (docs/BILLING.md "Allowance, cap and trial"). App Pricing has no
+ * usage-cap concept, so the cap is enforced here by never reporting a cycle past
+ * included + floor(cap / price) units. Resolutions that happened during the free
+ * trial are never reported, then or later. The cursor (+ cycle counters) advances
+ * after a successful report or a nonbillable batch.
  *
  * The cap is a ceiling on CHARGES, never on the assistant — the widget is NEVER
  * disabled (`widgetEnabled()` is unconditional).
@@ -35,15 +38,22 @@ export interface MeterDeps {
   getBilling: (shop: string) => Promise<{ status: string; plan: string; lastMeteredCursor: string | null } | null>;
   /** The Busymate AI tenant id for the shop, or null (not provisioned). */
   getTenantId: (shop: string) => Promise<string | null>;
-  /** New resolutions since the cursor (Busymate AI MCP read — no backdoor), or null when unreadable. */
-  readResolutions: (tenantId: string, cursor: string | null) => Promise<{ resolutions: number; cursor: string } | null>;
   /**
-   * The live billing cycle (Partner API) + the shop GID; null when there is no
-   * active cycle (trial / unreachable). `end` / `subscriptionId` are extra,
-   * OPTIONAL evidence for the outbox (cycle-bound occurrence range + a stable
-   * subscription identity for its staleness check).
+   * New resolutions since the cursor (Busymate AI MCP read — no backdoor), or null when unreadable.
+   * `occurredAt` (one ISO time per resolution, when the conversation ended) lets the meter leave
+   * resolutions from the free trial unbilled; absent ⇒ all are treated as post-trial.
    */
-  readBillingCycle: (shop: string) => Promise<{ key: string; shopId: string; end?: string; subscriptionId?: string | null } | null>;
+  readResolutions: (tenantId: string, cursor: string | null) => Promise<{ resolutions: number; cursor: string; occurredAt?: string[] } | null>;
+  /**
+   * The live contract (Partner API): its current billing cycle + the shop GID, or `{ trial }`
+   * while the free trial runs (Shopify opens no billing cycle and rejects usage then), or null
+   * when it cannot be read / has no cycle for another reason (held, never guessed).
+   * `end` / `subscriptionId` are extra, OPTIONAL evidence for the outbox. `trialEndsAt` marks
+   * resolutions that ended before it as trial usage. `tier` is Shopify's usage tier for the
+   * plan (first `freeUnits` free, then `overageCents`); when present it must match the plan or
+   * the batch is held (production always supplies it; test deps may omit it).
+   */
+  readBillingCycle: (shop: string) => Promise<BillingCycle | { trial: true; trialEndsAt: string } | null>;
   /**
    * Report billable units as an App Events billing event. `beforeCursor` /
    * `afterCursor` (the raw stored `BillingState.lastMeteredCursor` before/after
@@ -71,6 +81,15 @@ export interface MeterDeps {
    * (reached) or lift that (`set_partner_shop_limit`). Resolves true when the platform recorded it.
    */
   reportLimit: (shop: string, input: { reached: boolean; resetsAt: string | null }) => Promise<boolean>;
+}
+
+export interface BillingCycle {
+  key: string;
+  shopId: string;
+  end?: string;
+  subscriptionId?: string | null;
+  trialEndsAt?: string | null;
+  tier?: { freeUnits: number | null; overageCents: number | null };
 }
 
 export interface MeterOutcome {
@@ -125,23 +144,54 @@ export async function meterShop(shop: string, deps: MeterDeps = liveMeterDeps())
 
   const resolutions = usage.resolutions;
   const plan = planFor(billing.plan);
+  const keep = { cursor: usage.cursor, cycleKey: state.cycleKey, cycleResolutions: state.cycleResolutions, ...(state.cycleReported !== undefined ? { cycleReported: state.cycleReported } : {}) };
   // Upgraded from a held Free month: lift the hold (the platform already ignores it on a paid
   // plan; this keeps the record honest). Best-effort — never blocks metering.
   if (state.limitHeld) await deps.reportLimit(shop, { reached: false, resetsAt: null }).catch(() => false);
 
   if (resolutions === 0) {
-    await deps.saveCursor(shop, serializeMeterCursor({ cursor: usage.cursor, cycleKey: state.cycleKey, cycleResolutions: state.cycleResolutions }));
+    await deps.saveCursor(shop, serializeMeterCursor(keep));
     return noop(usage.cursor);
   }
 
   const cycle = await deps.readBillingCycle(shop);
   if (!cycle) {
-    // No active billing cycle (trial, or the Partner API could not be read):
-    // hold everything — never report blind, never lose the resolutions.
+    // No readable billing cycle (Partner API down, or Shopify has not opened the first
+    // cycle after the trial yet): hold everything — never report blind, never lose them.
     return { metered: resolutions, reportedUnits: 0, capped: false, cursor: state.cursor, error: "no active billing cycle — held" };
   }
-  const cycleResolutions = state.cycleKey === cycle.key ? state.cycleResolutions : 0;
-  const { units, capped } = computeBillableUnits({ plan, cycleResolutions, newResolutions: resolutions });
+  if ("trial" in cycle) {
+    // Free trial: these resolutions are free for good. Count them for the merchant's view
+    // (cycle key `trial:<end>`, so the first paid cycle starts from 0) and commit them to the
+    // ledger, so they are never reported in the first paid cycle either.
+    const key = `trial:${cycle.trialEndsAt}`;
+    const used = (state.cycleKey === key ? state.cycleResolutions : 0) + resolutions;
+    await deps.saveCursor(shop, serializeMeterCursor({ cursor: usage.cursor, cycleKey: key, cycleResolutions: used, cycleReported: 0 }));
+    return { metered: resolutions, reportedUnits: 0, capped: false, cursor: usage.cursor };
+  }
+  if (cycle.tier && (cycle.tier.freeUnits !== plan.includedResolutions || (cycle.tier.overageCents !== plan.overageCents && cycle.tier.overageCents !== 0))) {
+    // Shopify's usage tier is not the one this plan promises (Partner pricing edited, or the
+    // stored plan is behind the contract): reporting now could charge a wrong amount. Hold.
+    return {
+      metered: resolutions, reportedUnits: 0, capped: false, cursor: state.cursor,
+      error: `Shopify usage tier (first ${cycle.tier.freeUnits ?? "?"} free, then ${cycle.tier.overageCents ?? "?"}¢) does not match the ${plan.name} plan (${plan.includedResolutions} included, then ${plan.overageCents}¢) — held`,
+    };
+  }
+  // Resolutions whose conversation ended before the trial ended are trial usage: never billed.
+  const trialEnd = cycle.trialEndsAt ? Date.parse(cycle.trialEndsAt) : NaN;
+  const trialUsage = Number.isFinite(trialEnd) && usage.occurredAt
+    ? usage.occurredAt.filter((t) => Date.parse(t) < trialEnd).length
+    : 0;
+  const billable = resolutions - trialUsage;
+  const sameCycle = state.cycleKey === cycle.key;
+  const cycleResolutions = sameCycle ? state.cycleResolutions : 0;
+  // A cursor from before 2026-11-26 has no `cycleReported`. Its in-cycle count may include
+  // trial backlog (the old meter counted trial resolutions in the first paid cycle) and none of
+  // it was ever reported (no App Events credential in production). Treat that count as settled
+  // rather than catch it up: the merchant is never billed for usage we cannot prove billable.
+  const reportedBefore = sameCycle ? state.cycleReported ?? Math.min(cycleResolutions, reportableUnitsCeiling(plan)) : 0;
+  const { units, capped } = computeUsageReport({ plan, cycleResolutions, reportedBefore, newResolutions: billable });
+  const next = serializeMeterCursor({ cursor: usage.cursor, cycleKey: cycle.key, cycleResolutions: cycleResolutions + billable, cycleReported: reportedBefore + units });
 
   if (units > 0) {
     const rec = await deps.reportUsage({
@@ -150,14 +200,14 @@ export async function meterShop(shop: string, deps: MeterDeps = liveMeterDeps())
       units,
       idempotencyKey: usageIdempotencyKey(shop, usage.cursor),
       beforeCursor: billing.lastMeteredCursor ?? null,
-      afterCursor: serializeMeterCursor({ cursor: usage.cursor, cycleKey: cycle.key, cycleResolutions: cycleResolutions + resolutions }),
+      afterCursor: next,
     });
     if (!rec.ok) {
       // Transient failure — hold the cursor so the batch is retried, not lost.
       return { metered: resolutions, reportedUnits: 0, capped, cursor: state.cursor, error: rec.error };
     }
   }
-  await deps.saveCursor(shop, serializeMeterCursor({ cursor: usage.cursor, cycleKey: cycle.key, cycleResolutions: cycleResolutions + resolutions }));
+  await deps.saveCursor(shop, next);
   return { metered: resolutions, reportedUnits: units, capped, cursor: usage.cursor };
 }
 
@@ -228,7 +278,7 @@ export function liveMeterDeps(): MeterDeps {
       const batch = await readNewResolutions(tenantId, ledgerDeps);
       if (!batch) return null;
       pending = { tenantId, sessions: batch.sessions, occurredFrom: batch.occurredFrom, occurredThrough: batch.occurredThrough, evidenceRef: batch.evidenceRef };
-      return { resolutions: batch.resolutions, cursor: batch.cursor };
+      return { resolutions: batch.resolutions, cursor: batch.cursor, occurredAt: batch.sessions.map((s) => s.occurredAt) };
     },
     readBillingCycle: async (shop) => {
       const appGid = appGidFromEnv();
@@ -239,10 +289,16 @@ export function liveMeterDeps(): MeterDeps {
       const shopId = data.shop?.id;
       if (!shopId) return null;
       const sub = await fetchActiveSubscription({ appGid, shopGid: shopId });
-      if (!sub.ok || !sub.subscription?.currentBillingCycle) return null;
-      const { startTime, endTime } = sub.subscription.currentBillingCycle;
-      cycleInfo = { start: startTime, end: endTime ?? null, subscriptionId: sub.subscription.legacySubscriptionId ?? null };
-      return { key: startTime, shopId, end: endTime, subscriptionId: cycleInfo.subscriptionId };
+      if (!sub.ok || !sub.subscription) return null;
+      const live = sub.subscription;
+      if (!live.currentBillingCycle) {
+        // Shopify opens no billing cycle during the free trial (and rejects usage then).
+        const trialEnd = live.trialEndsAt ? Date.parse(live.trialEndsAt) : NaN;
+        return Number.isFinite(trialEnd) && trialEnd > Date.now() ? { trial: true as const, trialEndsAt: live.trialEndsAt! } : null;
+      }
+      const { startTime, endTime } = live.currentBillingCycle;
+      cycleInfo = { start: startTime, end: endTime ?? null, subscriptionId: live.legacySubscriptionId ?? null };
+      return { key: startTime, shopId, end: endTime, subscriptionId: cycleInfo.subscriptionId, trialEndsAt: live.trialEndsAt ?? null, tier: usageTierOf(live) };
     },
     reportUsage: async ({ shop, shopId, units, idempotencyKey, beforeCursor, afterCursor }) => {
       const sendDirect = () => events.reportUsage({ shopId, units, idempotencyKey, timestamp: new Date().toISOString() });
@@ -330,6 +386,27 @@ export function liveMeterDeps(): MeterDeps {
       }
     },
   };
+}
+
+/**
+ * Shopify's usage tier for the `ai_resolution` meter of a live contract: the free first tier's
+ * size and the per-unit price after it (cents). `freeUnits` is null when the first graduated tier
+ * is missing or not free, so the meter holds instead of reporting against an unknown price.
+ * Development stores show every amount as 0 ("Free to test"), so `overageCents` may be 0 there.
+ */
+export function usageTierOf(sub: Pick<ActiveSubscription, "items">): { freeUnits: number | null; overageCents: number | null } {
+  const item = sub.items.find((i) => i.handle === RESOLUTION_EVENT_HANDLE && i.price.__typename === "TieredPrice")
+    ?? sub.items.find((i) => i.price.__typename === "TieredPrice");
+  if (!item || item.price.__typename !== "TieredPrice") return { freeUnits: null, overageCents: null };
+  const tiers = [...item.price.tiers].sort((a, b) => (a.upTo ?? Infinity) - (b.upTo ?? Infinity));
+  const first = tiers[0];
+  const rest = tiers.find((t) => t.upTo === null);
+  const cents = (v: string | null | undefined) => {
+    const n = Number(v);
+    return v !== null && v !== undefined && Number.isFinite(n) ? Math.round(n * 100) : null;
+  };
+  const freeUnits = item.price.tiersMode === "GRADUATED" && first?.upTo != null && cents(first.amountPerUnit) === 0 ? first.upTo : null;
+  return { freeUnits, overageCents: rest ? cents(rest.amountPerUnit) : null };
 }
 
 /** Reconciliation-state (dead-letter) meter deliveries for a shop — surfaced on the Billing page, never silently retried. */

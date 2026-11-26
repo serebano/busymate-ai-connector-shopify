@@ -11,13 +11,17 @@
  * proves on its own; `cycleKey` is meterShop's OWN cycle-reset bookkeeping,
  * never a signal about whether the count is trustworthy for display).
  */
-export function measuredCycleResolutions(raw: string | null | undefined, error?: string | null): number | null {
+export function measuredCycleResolutions(raw: string | null | undefined, error?: string | null, liveCycleKey?: string | null): number | null {
   if (error || !raw) return null;
   try {
-    const value = JSON.parse(raw) as { v?: unknown; cycleResolutions?: unknown };
+    const value = JSON.parse(raw) as { v?: unknown; cycleResolutions?: unknown; cycleKey?: unknown };
     if (!value || typeof value !== "object" || value.v !== 1 || !Number.isSafeInteger(value.cycleResolutions) || (value.cycleResolutions as number) < 0) {
       return null;
     }
+    // A new billing cycle has started (Shopify's live `currentBillingCycle.startTime` differs from
+    // the cycle the stored count belongs to) and the meter has not counted anything in it yet:
+    // the current cycle's usage is 0, not last cycle's count (review-test-7, 2026-11-26).
+    if (liveCycleKey && typeof value.cycleKey === "string" && value.cycleKey && value.cycleKey !== liveCycleKey) return 0;
     return value.cycleResolutions as number;
   } catch {
     return null;

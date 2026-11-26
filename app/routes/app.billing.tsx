@@ -66,11 +66,13 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     chosen: r.chosen ? planFor(r.chosen).name : null,
     source: r.source,
     unverified: r.unverified,
-    trialEndsAt: r.trialEndsAt,
+    // Only a trial still running is a trial (Shopify keeps trialEndsAt on the contract for good).
+    trialEndsAt: r.trialEndsAt && Date.parse(r.trialEndsAt) > Date.now() ? r.trialEndsAt : null,
     usage: {
       included: plan.includedResolutions,
-      cycleResolutions: measuredCycleResolutions(billing?.lastMeteredCursor, meter.error),
-      reportedUnits: r.usageQuantity,
+      cycleResolutions: measuredCycleResolutions(billing?.lastMeteredCursor, meter.error, r.cycleStart),
+      // Shopify's meter holds every resolution this cycle; its first `included` units are free.
+      billedExtra: r.usageQuantity === null ? null : Math.max(0, r.usageQuantity - plan.includedResolutions),
       capped: meter.capped,
       meterError: meter.error ?? null,
     },
@@ -177,8 +179,10 @@ export default function BillingPage() {
                 <Text as="p" tone="subdued">
                   {data.usage.cycleResolutions === null
                     ? `Usage shows here after the first hourly update. Your plan includes ${data.usage.included} resolutions per billing cycle`
-                    : `This billing cycle: ${data.usage.cycleResolutions} of ${data.usage.included} included resolutions used`}
-                  {data.usage.reportedUnits !== null ? ` · ${data.usage.reportedUnits} extra resolutions billed by Shopify` : ""}
+                    : data.trialEndsAt
+                      ? `Free trial: ${data.usage.cycleResolutions} resolutions so far, never billed`
+                      : `This billing cycle: ${data.usage.cycleResolutions} of ${data.usage.included} included resolutions used`}
+                  {data.usage.billedExtra ? ` · ${data.usage.billedExtra} extra resolutions billed by Shopify` : ""}
                   {data.usage.capped ? " · monthly cap reached — no further overage this month" : ""}
                   {data.freeLimit ? " · Free allowance used — new conversations go to your team until it resets" : ""}.
                 </Text>

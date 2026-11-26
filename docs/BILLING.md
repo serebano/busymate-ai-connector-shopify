@@ -58,10 +58,10 @@ flowchart LR
    sessionId])`): a session is permanently counted **at most once, ever**,
    however many times the rolling `list_tenant_conversations` window re-surfaces
    it. Committed only once a batch is DONE — see "retry safety" below.
-3. **Allowance / cap math** (`usageBilling.meterShop`, unchanged by this
-   change — still the tested pure function): counts resolutions against the
-   plan's included allowance per cycle, computes billable overage units,
-   clamps to the plan's monthly spend cap. The widget is never disabled.
+3. **Allowance / cap math** (`usageBilling.meterShop` + `plans.computeUsageReport`):
+   reports every post-trial resolution of the cycle (Shopify's free first tier
+   is the included allowance), never past the cap ceiling; trial usage is never
+   reported. See "Allowance, cap and trial" below. The widget is never disabled.
 4. **Durable delivery** (`app/lib/meterOutbox.ts`, `MeterDelivery` table): a
    billable batch is `prepare`d (immutable, per-shop-locked, one pending batch
    at a time — protects against overlapping timer + page-load metering),
@@ -149,6 +149,45 @@ before a plan was chosen). Behaviour now, exactly as the copy says:
 - **Lag.** A conversation counts once it is resolved and idle ≥ 24 h (the resolution definition
   above) and the meter runs hourly, so the hold starts within about a day of the 25th resolution.
 
+## Allowance, cap and trial (2026-11-26)
+
+**What Shopify is configured to charge** (read live: Partner API `activeSubscription.items` on
+busymate-ai-review-test-7 / busymate-billing-1126, and the approve-charge pages): each paid plan has
+a recurring item (`starter`/`growth`/`scale`) and a usage item `ai_resolution` with a GRADUATED
+tiered price: "First 38 AI resolution — Free, 39+ — $0.49" (Growth 225 / $0.44, Scale 830 /
+$0.42). No usage cap object exists on the contract; trial 14 days; 30-day cycles.
+
+**So the app reports every resolution.** Shopify's free first tier IS the included allowance.
+Before 2026-11-26 the app reported only resolutions past the allowance, so Shopify's tier made
+another 38/225/830 free and paid usage started at 2× the allowance (Starter: resolution 77 instead
+of 39). Now `computeUsageReport` reports one unit per post-trial resolution.
+
+**Cap.** A cycle's reported total never passes `reportableUnitsCeiling` = included +
+floor(cap / price): Starter 38 + 408 = 446 units → $199.92; Growth 225 + 2272 = 2497 → $999.68;
+Scale 830 + 11904 = 12734 → $4,999.68. The cursor carries `cycleReported` (units Shopify holds this
+cycle), so each report tops Shopify's quantity up to min(cycle count, ceiling) exactly.
+
+**Tier guard.** Before reporting, the live tier must match the plan (first tier upTo ==
+includedResolutions and free; open tier price == overage, or 0 on a development store, where every
+price shows as "Free to test"). Anything else holds the batch with an error (nothing reported) —
+e.g. Partner pricing edited, or the stored plan behind the contract.
+
+**Trial.** Shopify opens no billing cycle during the trial and rejects usage then. The meter now
+commits trial resolutions as free (cursor key `trial:<trialEndsAt>`, shown on Billing as "Free
+trial: N resolutions so far, never billed") instead of holding them; and any resolution whose
+conversation ended before `trialEndsAt` that is only decided after it (24 h idle rule) is dropped,
+never billed in the first paid cycle. A shop with no readable cycle after its trial is held.
+
+**Cycle rollover on the Billing page.** The page compares the cursor's cycle with Shopify's live
+`currentBillingCycle.startTime` (reconcile) and shows 0 for a new cycle the meter has not counted
+in yet (was: last cycle's count until the next resolution). The Trial badge shows only while the
+trial runs; "extra resolutions billed" = Shopify's quantity − included.
+
+**Cursors written before this change** (no `cycleReported`): their in-cycle count may include
+trial backlog, and production never reported a unit (no App Events credential, 0 MeterDelivery
+rows, checked 2026-11-26). The meter treats that count as already settled (no catch-up), so the
+merchant is never billed for usage we cannot prove billable; a new cycle starts exact.
+
 ## Env / ops
 
 No new env vars. Reuses `SHOPIFY_APP_EVENTS_CLIENT_ID`/`_SECRET` (App Events),
@@ -205,9 +244,11 @@ the store).
   candidate batch, retry-stable cursor, fail-closed on an unreadable MCP read.
 - `test/meterOutbox.test.ts` — the delivery core (cherry-picked from the prior
   draft, PR #28 — see below), unchanged.
-- `test/usageBilling.test.ts` — the allowance/cap pure logic, unchanged
-  (`meterShop`'s tested behavior was not touched; only `liveMeterDeps()`, the
-  production wiring, changed).
+- `test/plans.test.ts` — `computeUsageReport` against Shopify's tier: exact charges per plan
+  (Starter 38 → $0, 39 → $0.49, 100 → $30.38; caps $199.92 / $999.68 / $4,999.68).
+- `test/usageBilling.test.ts` — `meterShop`: every resolution reported, cap ceiling, trial never
+  billed (during and after), tier guard, pre-change cursors, Free limit.
+- `test/usageDisplay.test.ts` — current-cycle count after a rollover.
 
 ## Superseded: draft PR #28
 

@@ -12,6 +12,13 @@ export interface MeterCursor {
   /** Resolutions counted so far in `cycleKey` (billable or not). */
   cycleResolutions: number;
   /**
+   * Paid plans: usage units already reported to Shopify (App Events `ai_resolution`) in
+   * `cycleKey` — every post-trial resolution, up to the cap ceiling (plans.ts
+   * `computeUsageReport`). Absent on cursors written before 2026-11-26; the meter then treats
+   * that cycle's count as settled (usageBilling.ts), never catching up possible trial backlog.
+   */
+  cycleReported?: number;
+  /**
    * Free plan only: the cycle's end (when the allowance resets) and whether the platform has
    * recorded the "allowance used — conversations go to your team" hold (`set_partner_shop_limit`).
    * Absent on paid-plan cursors, so their serialized form (the outbox's identity) is unchanged.
@@ -35,6 +42,7 @@ export function parseMeterCursor(raw: string | null | undefined): MeterCursor {
     };
     if (typeof j.cycleEnd === "string" && j.cycleEnd) out.cycleEnd = j.cycleEnd;
     if (j.limitHeld === true) out.limitHeld = true;
+    if (typeof j.cycleReported === "number" && Number.isSafeInteger(j.cycleReported) && j.cycleReported >= 0) out.cycleReported = j.cycleReported;
     return out;
   } catch {
     return { ...EMPTY, cursor: raw };
@@ -46,5 +54,6 @@ export function serializeMeterCursor(c: MeterCursor): string {
     v: 1, cursor: c.cursor, cycleKey: c.cycleKey, cycleResolutions: c.cycleResolutions,
     ...(c.cycleEnd ? { cycleEnd: c.cycleEnd } : {}),
     ...(c.limitHeld ? { limitHeld: true } : {}),
+    ...(typeof c.cycleReported === "number" ? { cycleReported: c.cycleReported } : {}),
   });
 }
