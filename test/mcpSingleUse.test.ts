@@ -139,7 +139,7 @@ describe("ECO-03 — signed tool is enforced", () => {
 
   it("the same holds when v3 rides X-Bmai-Actor beside a v2 bearer (dual-sign)", async () => {
     const h = harness();
-    const json = await h.call("create_refund", { ...bearer(v2({ confirmed: true })), "x-bmai-actor": await v3({ tool: "get_order_status", confirmed: true }) });
+    const json = await h.call("cancel_order", { ...bearer(v2({ confirmed: true })), "x-bmai-actor": await v3({ tool: "get_order_status", confirmed: true }) });
     expect(json.error?.message).toMatch(/different tool/);
     expect(h.state.adminCalls).toBe(0);
   });
@@ -175,8 +175,8 @@ describe("ECO-03 — single use", () => {
   it("a replayed confirmed v2 write is refused", async () => {
     const h = harness();
     const token = v2({ confirmed: true });
-    expect((await h.call("create_refund", bearer(token), { order_number: "#1001", amount_cents: 100 })).error).toBeUndefined();
-    const replay = await h.call("create_refund", bearer(token), { order_number: "#1001", amount_cents: 100 });
+    expect((await h.call("cancel_order", bearer(token), { order_number: "#1001" })).error).toBeUndefined();
+    const replay = await h.call("cancel_order", bearer(token), { order_number: "#1001" });
     expect(replay.error?.message).toMatch(/already used/);
     expect(h.state.adminCalls).toBe(1);
   });
