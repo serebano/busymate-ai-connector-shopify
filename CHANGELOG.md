@@ -4,6 +4,20 @@ Newest first. Each entry names the app-repo commit on `main`, the Shopify app ve
 it released (Dev Dashboard → Versions) and the host build serving
 `https://store.busymate.ai`.
 
+## 2026-11-26 — a signed actor credential runs ONE call of ONE tool (ECO-03, P1 security)
+
+- `app/mcp/auth.ts` now carries the verified v3 `tool` claim (actor token and guest binding) and the
+  credentials' single-use ids through `resolveCaller`. `app/mcp/route.ts` refuses a `tools/call` whose
+  tool differs from the signed one (-32001) before any lookup or side effect, then burns the jti in the
+  app's own Postgres (`ActorJti`, unique insert, kept until exp + 10 s skew, swept opportunistically)
+  before `adminForShop`. A replay — on any replica — or a store error is refused (-32001).
+- v3 ids are always single-use (the platform mints one per call; its retries resend only when
+  `tools/call` provably did not start). A v2 id (no tool claim) is burned for a confirmed write only:
+  the platform's unattended test-account check reuses one unconfirmed v2 token for several reads.
+- Migration `20261126120000_actor_jti` must be applied before the new image serves traffic.
+- Tests: `test/mcpSingleUse.test.ts` (A→B refused, replay refused, expired refused, positive paths,
+  dual-sign strip, store failure) + `test/actorJti.postgres.test.ts` (racing replicas, sweep).
+
 ## 2026-11-11 — guests keep their tools on a v3 workspace: signed guest binding (busymate-ai-src#3156)
 
 - On a workspace with the `actor_token_v3` switch on, a guest's public call carries no identity token, only

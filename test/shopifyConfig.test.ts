@@ -43,8 +43,12 @@ describe("package.json", () => {
     expect(pkg.dependencies["@shopify/shopify-app-session-storage-prisma"]).toBe("10.0.1");
     expect(pkg.dependencies["@shopify/shopify-api"]).toBe("14.0.1");
     // Keep Shopify's own graph native; #1388's independently tested config
-    // merger is the sole approved exception, restricted to its exact consumer.
-    expect(pkg.overrides).toEqual({ "@prisma/config@6.19.3": { "deepmerge-ts": "8.0.2" } });
+    // merger and the effect ReDoS fix (GHSA effect <=3.22.0, prisma CLI only; see
+    // test/depsFloor.test.ts) are the sole approved exceptions, restricted to their
+    // exact consumer.
+    expect(pkg.overrides).toEqual({
+      "@prisma/config@6.19.3": { "deepmerge-ts": "8.0.2", effect: "3.22.5" },
+    });
   });
 
   it("requires Node ≥22 (the library floor) and builds in production mode", () => {

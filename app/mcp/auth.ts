@@ -31,6 +31,31 @@ export interface ConnectorCaller {
    * (`X-Bmai-Binding`): a guest's public call on a v3 workspace. Never an identity.
    */
   binding?: true;
+  /**
+   * ECO-03 — the ONE tool the verified v3 credential (actor token or guest binding) was signed
+   * for (`tool` claim). The transport refuses a `tools/call` of any other tool. Absent for a
+   * v2-only caller: the HS256 v2 token carries no tool claim.
+   */
+  signedTool?: string;
+  /**
+   * ECO-03 — single-use ids of the verified credentials, burned by the transport before any
+   * side effect. v3 (actor/binding) ids are always burned (one token = one call); a v2 id is
+   * burned for a confirmed write (the platform's unattended checker reuses ONE unconfirmed v2
+   * token across several read calls, so burning v2 on reads would break it).
+   */
+  singleUse?: ReadonlyArray<SingleUseId>;
+}
+
+export interface SingleUseId {
+  /** Store key: version + tenant + connector + jti (a jti is only unique per signer scope). */
+  key: string;
+  /** The token's signed `exp` (seconds). */
+  exp: number;
+  version: 2 | 3;
+}
+
+function singleUseKey(kind: "v2" | "v3" | "binding", tenantId: string, connectorId: string, jti: string): string {
+  return `${kind}:${tenantId}:${connectorId}:${jti}`;
 }
 
 /**
@@ -108,7 +133,16 @@ async function resolveV3Caller(token: string, deps: ResolveCallerDeps): Promise<
     ...(deps.now !== undefined ? { nowSeconds: deps.now } : {}),
   });
   if (!claims) return null;
-  return { shop, customerId: claims.sub, confirmed: claims.confirmed, actor: "bmai", actorVersion: 3, actorJti: claims.jti };
+  return {
+    shop,
+    customerId: claims.sub,
+    confirmed: claims.confirmed,
+    actor: "bmai",
+    actorVersion: 3,
+    actorJti: claims.jti,
+    signedTool: claims.tool,
+    singleUse: [{ key: singleUseKey("v3", binding.tenantId, binding.connectorId, claims.jti), exp: claims.exp, version: 3 }],
+  };
 }
 
 /**
@@ -130,7 +164,17 @@ async function resolveBindingCaller(token: string, deps: ResolveCallerDeps): Pro
     ...(deps.now !== undefined ? { nowSeconds: deps.now } : {}),
   });
   if (!claims) return null;
-  return { shop, customerId: null, confirmed: false, actor: "bmai", actorVersion: 3, actorJti: claims.jti, binding: true };
+  return {
+    shop,
+    customerId: null,
+    confirmed: false,
+    actor: "bmai",
+    actorVersion: 3,
+    actorJti: claims.jti,
+    binding: true,
+    signedTool: claims.tool,
+    singleUse: [{ key: singleUseKey("binding", binding.tenantId, binding.connectorId, claims.jti), exp: claims.exp, version: 3 }],
+  };
 }
 
 function bearerToken(request: Request): string | null {
@@ -225,6 +269,7 @@ export async function resolveCaller(
       if (!claims || claims.tenantId !== peek.tenantId || claims.connectorId !== peek.connectorId) {
         return null;
       }
+      const v2Use: SingleUseId = { key: singleUseKey("v2", claims.tenantId, claims.connectorId, claims.jti), exp: claims.exp, version: 2 };
       // busymate-ai-src#3103 dual-sign: v2 authenticated the call; a v3 token beside it
       // upgrades the identity ONLY when it verifies AND names the same shop binding and,
       // for an identified v2 actor, the same subject. A bad v3 header never breaks v2.
@@ -232,7 +277,7 @@ export async function resolveCaller(
         const v3 = await resolveV3Caller(v3Header, deps);
         const v2Customer = claims.actorKind === "identified" ? claims.sub : null;
         if (v3 && v3.shop === shop && (v2Customer === null || v2Customer === v3.customerId)) {
-          return { ...v3, confirmed: claims.confirmed && v3.confirmed };
+          return { ...v3, confirmed: claims.confirmed && v3.confirmed, singleUse: [...(v3.singleUse ?? []), v2Use] };
         }
       }
       return {
@@ -246,6 +291,7 @@ export async function resolveCaller(
         confirmed: claims.confirmed,
         actor: "bmai",
         actorVersion: 2,
+        singleUse: [v2Use],
       };
     }
     // Bearer present but not an actor-shaped token → fall through (dev only).

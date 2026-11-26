@@ -64,6 +64,8 @@ export interface ActorClaims {
    * confirm acknowledgement for the actor-token path; a bare header is never enough.
    */
   confirmed: boolean;
+  /** Signed expiry (seconds) — how long the single-use store must remember `jti` (ECO-03). */
+  exp: number;
 }
 
 export interface VerifyActorTokenOptions {
@@ -211,5 +213,5 @@ export function verifyActorToken(token: string, opts: VerifyActorTokenOptions): 
     return null;
   }
 
-  return { sub, actorKind, supportSessionId, jti, tenantId, connectorId, confirmed: payload.confirmed === true };
+  return { sub, actorKind, supportSessionId, jti, tenantId, connectorId, confirmed: payload.confirmed === true, exp };
 }
