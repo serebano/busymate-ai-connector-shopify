@@ -98,8 +98,21 @@ function mailingAddressInput(raw: unknown): Record<string, unknown> | null {
   for (const k of ADDRESS_FIELDS) {
     if (src[k] != null && src[k] !== "") out[k] = src[k];
   }
-  return Object.keys(out).length ? out : null;
+  if (!Object.keys(out).length) return null;
+  // Full replacement (D10, review2 2026-11-26): Shopify's orderUpdate keeps every address
+  // field it is not sent, so a new street address that leaves out the apartment line, the
+  // company or the phone silently kept the previous ones ("Apt 4" survived while the
+  // assistant said it was cleared). A new street address replaces the whole address:
+  // these three fields are sent as "" (the empty string clears a MailingAddressInput
+  // field) unless the shopper gave them. The Approve card shows the complete address, so
+  // it now matches exactly what is saved.
+  if (out.address1) {
+    for (const k of CLEARABLE_FIELDS) if (out[k] === undefined) out[k] = "";
+  }
+  return out;
 }
+
+const CLEARABLE_FIELDS = ["address2", "company", "phone"] as const;
 
 export async function updateShippingAddress(
   args: Record<string, unknown>,
